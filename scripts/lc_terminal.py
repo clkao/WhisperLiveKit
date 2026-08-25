@@ -3,7 +3,7 @@
 
 In-process (no server, no WebSocket). Uses the two new backends:
   --backend mlx-qwen3-asr            (pure-MLX Qwen3-ASR, moona3k)
-  --translation-backend hunyuan-mlx  (Tencent Hy-MT2 via mlx-lm, in-process)
+  --translation-backend mlx-llm-mt   (generic decoder-LLM MT via mlx-lm, in-process)
 
 With --overlay: drives the native macOS caption window (always-on-top NSWindow,
 ported from livecaption/overlay.py). The WLK asyncio loop runs in a worker
@@ -41,8 +41,8 @@ def _make_engine_kwargs(args) -> dict:
         "backend": "mlx-qwen3-asr",
         "mlx_qwen3_asr_model": args.mlx_qwen3_asr_model,
         "target_language": args.target_language,
-        "translation_backend": "hunyuan-mlx",
-        "hunyuan_mlx_model": args.hunyuan_mlx_model,
+        "translation_backend": "mlx-llm-mt",
+        "mlx_llm_mt_model": args.mlx_llm_mt_model,
         # WLK defaults to 5s pause-segmentation (too long — utterances merge into
         # one growing line). The VAD fires short silence events (0.1-0.3s), so the
         # threshold must be low to split at natural speech pauses.
@@ -255,7 +255,7 @@ def main() -> None:
     p.add_argument("--language", default="zh")
     p.add_argument("--target-language", default="en")
     p.add_argument("--mlx-qwen3-asr-model", default="Qwen/Qwen3-ASR-0.6B")
-    p.add_argument("--hunyuan-mlx-model", default="hy-mt2-1.8b-8bit")
+    p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit")
     p.add_argument("--overlay", action="store_true",
                    help="display captions in a native always-on-top macOS overlay window")
     p.add_argument("--overlay-hold", type=float, default=3.5,
