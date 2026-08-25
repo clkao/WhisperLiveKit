@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:4903005btdrgc54j17s5bcax:ideation:attempt-1:revision-1",
+  "question": "Approve ideation: stderr status line on 1s timer",
+  "artifacts": [
+    {
+      "id": "artifact:4903005btdrgc54j17s5bcax:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/f35cada500ba293a779436de6a4dfd9e08d805b9/terminal-cli-stats.md",
+      "rev": "sha256:57a9e2dcdf6134132e42f8f0cf2559f83decd15ee92a86d1cf2a5eeafa1d9760",
+      "mediaType": "text/markdown",
+      "summary": "Port livecaption's --mem readout to lc_terminal.py"
+    }
+  ]
+}

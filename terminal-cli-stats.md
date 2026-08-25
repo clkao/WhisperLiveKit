@@ -26,6 +26,25 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:4903005btdrgc54j17s5bcax:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:4903005btdrgc54j17s5bcax-ideation-1
+              briefing:
+                id: briefing:4903005btdrgc54j17s5bcax:ideation:attempt-1:revision-1
+                digest: sha256:5bbb17f776da5b9322828d0db92b05ddf042aa188c033e713818bc3353ea7d1d
+                request-digest: sha256:decbbea9e41332e7f6c7904db4d40ba9b54951cf93e631486168ac820c45c835
+                room-ref: ./terminal-cli-stats/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:4903005btdrgc54j17s5bcax:ideation:1
+                briefing: briefing:4903005btdrgc54j17s5bcax:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T16:55:57.878895Z"
+                decision: approve
+              application:
+                target-stage: implementation
+                state: pending
 ---
 
 The prototype runs in two output modes: a native macOS overlay and a terminal printout. The terminal printout today is plain text with no instrumentation. For calibration and A/B measurement, the operator needs live stats: ASR latency, MT latency, MLX memory, and commit/emit counts.
