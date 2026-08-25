@@ -591,6 +591,23 @@ def parse_args():
         dest="mlx_qwen3_asr_finalization_mode",
         help="Finalization mode (default accuracy; latest = lower latency).",
     )
+    mlx_qwen3_group.add_argument(
+        "--mlx-qwen3-asr-hold-back-units",
+        type=int,
+        default=6,
+        dest="mlx_qwen3_asr_hold_back_units",
+        help="Hold-back text units for the stable-commit wrapper (Job 1). "
+        "Commits are delayed by this many units to avoid committing "
+        "unstable rolling-decode output (default 6).",
+    )
+    mlx_qwen3_group.add_argument(
+        "--mlx-qwen3-asr-stable-iterations",
+        type=int,
+        default=2,
+        dest="mlx_qwen3_asr_stable_iterations",
+        help="Number of consecutive decode passes a prefix must be stable "
+        "before the stable-commit wrapper commits it (default 2).",
+    )
     qwen3_streaming_group.add_argument(
         "--qwen3-streaming-chunk-sec",
         type=float,
