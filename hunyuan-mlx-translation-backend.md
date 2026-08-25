@@ -10,6 +10,28 @@ score:
 worktree:
 issue:
 pr:
+gates:
+    version: 1
+    records:
+        - id: gate:bp5akt44cfke2akcttkkaag9:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:bp5akt44cfke2akcttkkaag9-backlog-1
+              briefing:
+                id: briefing:bp5akt44cfke2akcttkkaag9:backlog:attempt-1:revision-1
+                digest: sha256:5848b254fddb5b11c4aeefda4920fdb34634e9bf3dab0d072db3c3f3aaa9314d
+                request-digest: sha256:f20cc3f4ef2df47c4918388f83521324d950e12800242022c529bbec8f679945
+                room-ref: ./hunyuan-mlx-translation-backend/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:bp5akt44cfke2akcttkkaag9:backlog:1
+                briefing: briefing:bp5akt44cfke2akcttkkaag9:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T17:17:47.088206Z"
+                decision: approve
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 # mlx-llm-mt: generic decoder-LLM translation backend

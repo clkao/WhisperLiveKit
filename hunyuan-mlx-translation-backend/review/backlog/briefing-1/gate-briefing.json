@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:bp5akt44cfke2akcttkkaag9:backlog:attempt-1:revision-1",
+  "question": "Approve backlog: mlx-llm-mt generic decoder-LLM backend (Hunyuan as first config)",
+  "artifacts": [
+    {
+      "id": "artifact:bp5akt44cfke2akcttkkaag9:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/64db0aa36a83f6c1d780faa098ebb0c022221428/hunyuan-mlx-translation-backend.md",
+      "rev": "sha256:d7d87e19c7e37ae6436f5eba882d51f53bda6c042ba6edf9b421a4b9a79b8225",
+      "mediaType": "text/markdown",
+      "summary": "Refactor translation_hunyuan_mlx.py into a generic MlxLlmTranslation base; prompt/EOS/model-registry as config"
+    }
+  ]
+}
