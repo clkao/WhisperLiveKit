@@ -1,6 +1,6 @@
 ---
 title: "terminal CLI with live stats and latency readout"
-status: validation
+status: implementation
 source: prototype — pure terminal output before the overlay
 score: 0.8
 id: 4903005btdrgc54j17s5bcax
@@ -68,16 +68,3 @@ Improve scripts/lc_terminal.py to print a live status line to stderr on a 1s tim
 ## Summary
 
 Implemented `--stats` flag in `scripts/lc_terminal.py`. Added a `StatsTracker` class that runs a daemon thread printing a status line to stderr every 1s using `\r` (carriage-return overwrite, no newlines between updates). The line shows: MLX active/cache/peak memory (if mlx.core available), ASR EWMA latency, MT EWMA latency, commit count, emit count. `TerminalSink` records latency samples (partial→commit = ASR, commit→emit = MT) and increments counters on each state update. `--stats` is off by default; when off, no thread is started and no hooks are called (behavior identical to before). Committed on `spacedock-ensign/terminal-cli-stats` as fc57c7d.
-
-## Stage Report: implementation
-
-- DONE: terminal CLI prints a live status line when --stats is set.
-  StatsTracker class (1s timer thread, \r overwrite to stderr) added to scripts/lc_terminal.py. ASR/MT latency EWMA, MLX memory, commit/emit counts.
-- DONE: status line does not scroll the caption text.
-  Carriage-return overwrite (no \n between updates); stop() prints one trailing \n.
-- DONE: without --stats, output is unchanged.
-  TerminalSink(stats=None) produces identical output (no hooks, no thread).
-- DEFERRED to CL's Mac: runtime rendering of the status line (sandbox can't run the terminal driver).
-
-### Summary
-Added StatsTracker to scripts/lc_terminal.py. --stats flag gates a 1s-timer stderr status line (ASR/MT latency EWMA, MLX memory, commit/emit counts) with carriage-return overwrite. Without --stats, output is identical to original. 1 commit (fc57c7d) on spacedock-ensign/terminal-cli-stats.

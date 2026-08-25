@@ -141,13 +141,3 @@ loads the model and the e2e smoke test (`tests/data/e2e_smoke.wav`) emits the
   -> fails at model load, same point.
 
 Code commit: spacedock-ensign/qwen-asr-tf5-compat-fork @ 2604338
-
-## Stage Report: implementation
-
-- DONE (AC-1): qwen_asr imports on transformers 5.11.0.
-  @check_model_inputs() → @check_model_inputs (transformers 5.x decorator signature). Verified: import qwen_asr exits 0.
-- PARTIAL (AC-2/3 blocked): model load fails at Qwen3ASRThinkerConfig.pad_token_id.
-  Discovered 4+ transformers 5.x incompatibilities (not 1). Fixed 3 (check_model_inputs, config init ordering, RoPE init). Model load fails at the 4th (pad_token_id), with more likely. Deep port is a follow-up task (qwen-asr-deep-tf5-port — now parked; the MLX causal path via mlx_qwen3_asr is the right lever, not the transformers path).
-
-### Summary
-Forked qwen-asr 0.0.6 to third_party/qwen-asr. 3 patches in modeling_qwen3_asr.py + configuration_qwen3_asr.py. AC-1 (import) met. AC-2/3 (load+transcribe) NOT met — deep transformers 5.x port needed. 1 commit (2604338) on spacedock-ensign/qwen-asr-tf5-compat-fork.
