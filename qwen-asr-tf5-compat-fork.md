@@ -4,6 +4,28 @@ status: backlog
 source: dep cleanup — unblocks qwen3-asr-causal on our Apple-Silicon prototype
 score: 0.9
 id: zyarn2ybkarvajyz0dd46m1r
+gates:
+    version: 1
+    records:
+        - id: gate:zyarn2ybkarvajyz0dd46m1r:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:zyarn2ybkarvajyz0dd46m1r-backlog-1
+              briefing:
+                id: briefing:zyarn2ybkarvajyz0dd46m1r:backlog:attempt-1:revision-1
+                digest: sha256:d71b77f9a57e84c1ff3386da4dc169e200e43b17078fce5d6af6bd31c63c7f4c
+                request-digest: sha256:69ee3b3fc12324e03b0e916f804f3d0c140c9a905e7ab49945ef028128a4ebce
+                room-ref: ./qwen-asr-tf5-compat-fork/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:zyarn2ybkarvajyz0dd46m1r:backlog:1
+                briefing: briefing:zyarn2ybkarvajyz0dd46m1r:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T16:55:48.567447Z"
+                decision: approve
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 The qwen3-asr-causal backend uses a stronger commit policy (LocalAgreement via stable_commit) than mlx-qwen3-asr. It gives more accurate ASR text for our zh-tw prototype. But qwen3-asr-causal depends on the qwen_asr package, which fails to import on transformers 5.x.

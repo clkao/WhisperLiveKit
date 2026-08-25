@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:zyarn2ybkarvajyz0dd46m1r:backlog:attempt-1:revision-1",
+  "question": "Approve backlog: qwen-asr transformers 5.x compat fork",
+  "artifacts": [
+    {
+      "id": "artifact:zyarn2ybkarvajyz0dd46m1r:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/c6deb66c18f274d21eb77ac64adfb0db4f8a0919/qwen-asr-tf5-compat-fork.md",
+      "rev": "sha256:035a8a4cfadab29166049c4cc9e1efecf24c89a260e98b7768e6291e731d0d41",
+      "mediaType": "text/markdown",
+      "summary": "Fork qwen-asr, patch check_model_inputs for transformers 5.x"
+    }
+  ]
+}
