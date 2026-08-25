@@ -32,6 +32,25 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:p0f67wa79kd56yh3bs0cca2e:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-ideation-1
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:ideation:attempt-1:revision-1
+                digest: sha256:310c8f277c1978bb079cf950d0496ca5f8a3373f1c30e5373f9da928a37d21f3
+                request-digest: sha256:6118e433ecf891f9c5b5de3f8cf0d3f4506ff416e7027a25354b6a1ab68390c0
+                room-ref: ./mlx-qwen3-asr-backend/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:ideation:1
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T15:52:05.624809Z"
+                decision: approve
+              application:
+                target-stage: implementation
+                state: pending
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer

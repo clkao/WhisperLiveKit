@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:ideation:attempt-1:revision-1",
+  "question": "Approve ideation: build mlx-qwen3-asr through generalized wrapper; second provider proof",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/5a02e319fafcf14178e63a5b3614ed203a17eb57/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:0f0c27b34ce9363c44bbb766ab816579fcf8226298332bb0bad2cb018ade6935",
+      "mediaType": "text/markdown",
+      "summary": "Ideation: the design is the task body (generalized asr_commit/asr_timestamps wrapper + mlx-qwen3-asr + one second provider)"
+    }
+  ]
+}
