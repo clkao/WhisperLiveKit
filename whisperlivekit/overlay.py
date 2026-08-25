@@ -309,8 +309,9 @@ class OverlayRenderer:
         attr = "_lat_asr" if which == "asr" else "_lat_cap"
         prev = getattr(self, attr)
         setattr(self, attr, lat if prev is None else prev + self._lat_alpha * (lat - prev))
-        cur = getattr(self, attr)
-        print(f"[lat] {which} {cur:.2f}s", file=sys.stderr, flush=True)
+        if self._show_mem:
+            cur = getattr(self, attr)
+            print(f"[lat] {which} {cur:.2f}s", file=sys.stderr, flush=True)
 
     def _mem_line(self) -> str:
         """One stderr status line: MLX unified-memory + caption latency. Mirrors
