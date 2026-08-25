@@ -29,3 +29,15 @@ Continue the fork at third_party/qwen-asr. Work through each modeling/config 5.x
 ## Out of scope
 
 - Upstreaming the fork. The vllm-metal loader swap. Any change to the check_model_inputs decorator itself.
+
+## Correction (2026-08-25)
+
+This task targets the WRONG path. `qwen3-streaming` (via `qwen_asr`) is the
+torch/transformers path. The MLX causal path is `qwen3-vllm-metal` (via
+`vllm_metal` + `metal.py`), which is already implemented in the package —
+blocked only by the vllm-metal install (Python 3.12 + the [stt] extra from
+the official install script), not by a transformers port.
+
+Do NOT dispatch this task. The real unblock is installing vllm-metal[stt]
+in a Python 3.12 venv and running `wlk serve --backend qwen3-vllm-metal
+--audio-backend causal`. No code to write for the MLX causal path.

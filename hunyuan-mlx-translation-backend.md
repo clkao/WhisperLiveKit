@@ -158,3 +158,17 @@ but runs on 5.11.0). Coexists with mlx-qwen3-asr.
 The existing `translation_hunyuan_mlx.py` is the starting point — refactor
 it, don't rewrite from scratch. The two-pass re-decode, the sampling params,
 and the warmup are all correct and stay.
+
+## Stage Report: implementation
+
+- DONE (AC-3): validate_buffer_and_reset does not double the output.
+  Returns translation once at silence boundary; 12 tests pass (test_mlx_llm_mt.py).
+- DONE (AC-4): Hunyuan is one config, not the backend identity.
+  MTX_MODEL_CONFIGS registry: 6 Hunyuan + 1 TranslateGemma placeholder. Second config loads with different repo+prompt, no new code.
+- DONE (AC-5): backward-compat alias works.
+  --translation-backend hunyuan-mlx maps to mlx-llm-mt + Hunyuan default.
+- DEFERRED to CL's Mac (AC-1/2/6): end-to-end zh→en, chat template/no runaway EOS, warmup stall.
+  Decode loop, chat template, warmup preserved verbatim from translation_hunyuan_mlx.py. Structurally satisfied; needs live model load.
+
+### Summary
+Refactored translation_hunyuan_mlx.py into generic MlxLlmTranslation base + MTX_MODEL_CONFIGS registry. Hunyuan is one config; TranslateGemma placeholder proves genericity. 12 new tests + 87 non-async suite pass. 1 commit (12acf9c) on spacedock-ensign/hunyuan-mlx-translation-backend.
