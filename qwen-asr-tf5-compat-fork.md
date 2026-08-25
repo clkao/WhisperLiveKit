@@ -1,5 +1,5 @@
 ---
-id: sd-dep-cleanup-qwen-asr-tf5
+id: zcj7d9suqr3aruk8lv35d199
 title: "qwen-asr transformers 5.x compatibility fork"
 status: backlog
 source: dep cleanup — unblocks qwen3-asr-causal on our Apple-Silicon prototype

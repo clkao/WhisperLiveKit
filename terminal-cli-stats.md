@@ -1,5 +1,5 @@
 ---
-id: sd-terminal-cli-stats
+id: dbmp9w86thdf390a1apenzys
 title: "terminal CLI with live stats and latency readout"
 status: backlog
 source: prototype — pure terminal output before the overlay

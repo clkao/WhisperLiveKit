@@ -1,5 +1,5 @@
 ---
-id: sd-bench-alignatt-ab
+id: pzdu5xftp6kkjeb1olvcm89q
 title: "A/B benchmark: with and without simultaneous MT (AlignAtt)"
 status: backlog
 source: prototype — measure the simultaneous-MT latency win
