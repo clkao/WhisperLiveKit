@@ -325,10 +325,18 @@ class TranscriptionEngine:
                     latency=config.alignatt_latency,
                     context_text=config.alignatt_context,
                 )
-            elif getattr(config, "translation_backend", "nllb") == "hunyuan-mlx":
-                from whisperlivekit.translation_hunyuan_mlx import HunyuanMlxTranslation
-                self.translation_model = HunyuanMlxTranslation(
-                    model_id=getattr(config, "hunyuan_mlx_model", "hy-mt2-1.8b-8bit"),
+            elif getattr(config, "translation_backend", "nllb") in ("mlx-llm-mt", "hunyuan-mlx"):
+                # Generic decoder-LLM MT backend via mlx-lm. ``hunyuan-mlx`` is a
+                # backward-compat alias that maps to ``mlx-llm-mt`` with the
+                # default Hunyuan config. Hunyuan is one config entry, not the
+                # backend identity — see MTX_MODEL_CONFIGS.
+                from whisperlivekit.translation_mlx_llm_mt import MlxLlmTranslation
+                model_id = getattr(config, "mlx_llm_mt_model", None)
+                if not model_id:
+                    # Legacy knob (``--hunyuan-mlx-model``) for backward compat.
+                    model_id = getattr(config, "hunyuan_mlx_model", "hy-mt2-1.8b-8bit")
+                self.translation_model = MlxLlmTranslation(
+                    model_id=model_id,
                     target_language=config.target_language,
                 )
             else:
@@ -463,10 +471,11 @@ def online_translation_factory(args, translation_model):
     from whisperlivekit.translation_alignatt import AlignAttRemoteEngine
     if isinstance(translation_model, AlignAttRemoteEngine):
         return translation_model.new_session(args.target_language)
-    # Hunyuan-MLX is already a per-session instance (constructed in _do_init with
-    # the target language); return it directly, no nllw wrapping.
-    from whisperlivekit.translation_hunyuan_mlx import HunyuanMlxTranslation
-    if isinstance(translation_model, HunyuanMlxTranslation):
+    # mlx-llm-mt (and the legacy hunyuan-mlx alias) is already a per-session
+    # instance (constructed in _do_init with the target language); return it
+    # directly, no nllw wrapping.
+    from whisperlivekit.translation_mlx_llm_mt import MlxLlmTranslation
+    if isinstance(translation_model, MlxLlmTranslation):
         return translation_model
     #should be at speaker level in the future:
     #one shared nllb model for all speaker

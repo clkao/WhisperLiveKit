@@ -923,19 +923,29 @@ def parse_args():
         "--translation-backend",
         type=str,
         default="nllb",
-        choices=["nllb", "alignatt", "hunyuan-mlx"],
+        choices=["nllb", "alignatt", "mlx-llm-mt", "hunyuan-mlx"],
         help="Translation engine for --target-language: 'nllb' (in-process, "
         "CPU-friendly) or 'alignatt' (Alignatt4LLM sidecar over WebSocket, "
         "streaming LLM translation with attention-gated commits; requires a "
-        "running alignatt-mt-server) or 'hunyuan-mlx' (Tencent Hy-MT2 via mlx-lm, "
-        "Apple Silicon in-process, zh->en strong).",
+        "running alignatt-mt-server) or 'mlx-llm-mt' (generic decoder-LLM MT "
+        "via mlx-lm, Apple Silicon in-process; Hunyuan-MT is the first config) "
+        "or 'hunyuan-mlx' (backward-compat alias for mlx-llm-mt with the "
+        "default Hunyuan config).",
+    )
+    translation_group.add_argument(
+        "--mlx-llm-mt-model",
+        type=str,
+        default="hy-mt2-1.8b-8bit",
+        help="Model id for --translation-backend mlx-llm-mt "
+        "(default: hy-mt2-1.8b-8bit; also: hy-mt2-1.8b-4bit, hy-mt2-7b-4bit, "
+        "hunyuan-mt-7b-4bit, translategemma-4b-4bit).",
+        dest="mlx_llm_mt_model",
     )
     translation_group.add_argument(
         "--hunyuan-mlx-model",
         type=str,
         default="hy-mt2-1.8b-8bit",
-        help="Hunyuan-MT model id for --translation-backend hunyuan-mlx "
-        "(default: hy-mt2-1.8b-8bit; also: hy-mt2-7b-4bit, hunyuan-mt-7b-4bit).",
+        help="Deprecated alias for --mlx-llm-mt-model (kept for backward compat).",
         dest="hunyuan_mlx_model",
     )
     translation_group.add_argument(

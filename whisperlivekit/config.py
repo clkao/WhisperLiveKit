@@ -51,9 +51,12 @@ class WhisperLiveKitConfig:
     punctuation_split: bool = False
     target_language: str = ""
     # "nllb" (in-process, CPU-friendly) or "alignatt" (Alignatt4LLM sidecar
-    # over WebSocket, streaming LLM translation with attention-gated commits).
+    # over WebSocket, streaming LLM translation with attention-gated commits)
+    # or "mlx-llm-mt" (generic decoder-LLM MT via mlx-lm, Apple Silicon
+    # in-process). "hunyuan-mlx" is a backward-compat alias for mlx-llm-mt.
     translation_backend: str = "nllb"
     alignatt_url: str = "ws://localhost:8765"
+    mlx_llm_mt_model: str = "hy-mt2-1.8b-8bit"
     hunyuan_mlx_model: str = "hy-mt2-1.8b-8bit"
 
     # mlx-qwen3-asr backend (pure-MLX qwen3-asr; coexists with mlx-lm on transformers 5.x)
@@ -196,6 +199,14 @@ class WhisperLiveKitConfig:
         self.pause_segmentation_seconds = validate_pause_segmentation_seconds(
             self.pause_segmentation_seconds
         )
+        # Reconcile the legacy --hunyuan-mlx-model knob into mlx_llm_mt_model so
+        # the mlx-llm-mt backend picks it up. If the new knob is at its default
+        # and the legacy knob was set to something else, use the legacy value.
+        if (
+            self.mlx_llm_mt_model == "hy-mt2-1.8b-8bit"
+            and self.hunyuan_mlx_model != "hy-mt2-1.8b-8bit"
+        ):
+            self.mlx_llm_mt_model = self.hunyuan_mlx_model
         if self.sortformer_max_speakers is not None:
             if (
                 isinstance(self.sortformer_max_speakers, bool)
