@@ -1,6 +1,6 @@
 ---
 title: "qwen-asr transformers 5.x compatibility fork"
-status: backlog
+status: ideation
 source: dep cleanup — unblocks qwen3-asr-causal on our Apple-Silicon prototype
 score: 0.9
 id: zyarn2ybkarvajyz0dd46m1r
@@ -25,7 +25,7 @@ gates:
                 decision: approve
               application:
                 target-stage: ideation
-                state: pending
+                state: consumed
 ---
 
 The qwen3-asr-causal backend uses a stronger commit policy (LocalAgreement via stable_commit) than mlx-qwen3-asr. It gives more accurate ASR text for our zh-tw prototype. But qwen3-asr-causal depends on the qwen_asr package, which fails to import on transformers 5.x.
