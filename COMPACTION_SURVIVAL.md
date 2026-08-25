@@ -2,27 +2,32 @@
 
 Read this first after compaction. Then `SESSION_STATE.md` for the resume checklist.
 
-## Where we are (2026-08-25, post-worker-merge)
+## Where we are (2026-08-25, post-worker-merge + fork cleanup)
 
-Three async workers ran and merged to `feat/apple-silicon-backends`:
-- **terminal-cli-stats** (DONE): `--stats` live status line (ASR/MT latency EWMA, MLX memory, commit/emit counts). Merge `5caea1d`.
-- **mlx-qwen3-asr-backend** (DONE): generalized wrapper layer — `asr_commit.py` (Job 1), `asr_timestamps.py` (Job 2), `asr_wrapper.py` (composable chain), mlx-qwen3-asr routed through it, Voxtral-MLX converted (second-provider proof), 38 tests pass. Merge `f4d469b`. Runtime test (wlk serve) needs CL's Mac.
-- **qwen-asr-tf5-compat-fork** (PARTIAL): fixed the import (AC-1) but model load fails at `Qwen3ASRThinkerConfig.pad_token_id` — a 4th transformers 5.x incompatibility, with more likely. The deep port is a new task (`qwen-asr-deep-tf5-port`). Merge `0165d50` (fork is a foundation; AC-2/3 unmet).
+Four async workers ran on WLK + one on the fork:
+- **terminal-cli-stats** (DONE, merged to feat `5caea1d`): `--stats` live status line. NOT validated (stage report missing — see dispatch diagnosis).
+- **mlx-qwen3-asr-backend** (DONE, merged to feat `f4d469b`): generalized wrapper layer + 38 tests. Has a stage report (the one worker that wrote one). At `validation`.
+- **qwen-asr-tf5-compat-fork** (PARTIAL, merged to feat `0165d50`): AC-1 (import) only; model load fails. PARKED — the transformers path is the wrong lever; the MLX causal path is the right one.
+- **hunyuan-mlx-translation-backend / mlx-llm-mt** (DONE, merged to feat `56b3983`): generic decoder-LLM MT, 6 Hunyuan + TranslateGemma config, 12 tests. NOT validated (stage report missing).
+- **qwen3-asr-causal fork cleanup** (DONE, fork commit `8607d2e` on `feat/mlx-native-no-vllm`): `metal.py` now loads via `mlx_qwen3_asr`, NO vllm/torch. AC-1 (import, no vllm/torch) + AC-4 (no torch.load) PASS. AC-2 (transcribe) the worker reported PASS; my quick re-check came back empty (likely needs warmup or the tower checkpoint download on your Mac). AC-3 (behavior match vs vllm-metal reference) deferred to your Mac.
 
-Fun-ASR-Nano-2512-4bit spiked: NOT viable (translate task outputs Chinese not English; transcription truncates at 10 tokens). Stay with qwen3-asr + Hunyuan-MT.
+Fun-ASR-Nano-2512-4bit spiked: NOT viable (translate outputs Chinese; transcription truncates). Stay with qwen3-asr + Hunyuan-MT.
 
-Primer updated: `docs/asr-streaming-explainer.md` now has 8 new sections (MT landscape, AlignAtt internals, nemotron+AlignAtt, Fun-ASR-Nano, FunASR framework, generalized wrapper, mlx-llm-mt shape, OpenAI comparison).
+Primer updated: `docs/asr-streaming-explainer.md` has 8 new sections.
+
+## The dispatch diagnosis (written to /tmp/spacedock-pi-dispatch-diagnosis.md)
+
+`spacedock dispatch build` artifacts claim to contain the stage report format but don't. The format lives in the ensign skill, which `skill="ensign"` makes available but doesn't auto-load. 3 of 4 workers didn't load the skill and wrote summaries in result messages instead of `## Stage Report:` sections in entity files. Fix: embed the format in `--checklist-file` / the task prompt; proper upstream fix is the binary should emit the template.
 
 ## The immediate next actions
 
-1. **Verify on CL's Mac** (the validation gate): `wlk serve --backend mlx-qwen3-asr --language zh` still transcribes after the wrapper refactor; `python scripts/lc_terminal.py --stats` shows the status line.
-2. **Amend `hunyuan-mlx-translation-backend` → `mlx-llm-mt`** (generic decoder-LLM shape; Hunyuan as config). Not urgent until Tier B port.
-3. **Dispatch `qwen-asr-deep-tf5-port`** when ready to unblock qwen3-asr-causal (the accuracy upgrade).
-4. **Tier B simultaneous MT** (port livecaption's `simul_mt.py` into mlx-llm-mt) — the real latency win; needs the mlx-llm-mt refactor first.
+1. **Re-dispatch the 3 workers missing stage reports** (terminal-cli, qwen-asr-tf5 [park it instead], mlx-llm-mt) with the stage report format embedded in the task prompt.
+2. **Verify on CL's Mac**: `wlk serve --backend mlx-qwen3-asr --language zh` (wrapper refactor); `python scripts/lc_terminal.py --stats` (status line); `wlk serve --backend qwen3-vllm-metal --qwen3-vllm-metal-audio-backend causal --language zh` (the native causal path — the fork cleanup).
+3. **Tier B simultaneous MT** (port livecaption's `simul_mt.py` into mlx-llm-mt) — the real latency win; needs the validated mlx-llm-mt base first.
 
 ## What was dispatched (the contract I initially missed)
 
-`spacedock dispatch build` emits the assignment artifact; the FO's next action is `«worker.spawn»` — call `subagent(agent=<artifact.agent>, skill=<artifact.skill>, context="fresh", cwd=<repo root>, task=<built prompt>)`. I did this for all three tasks. The contract: `first-officer-shared-core.md:31,46` + `pi-first-officer-runtime.md:9`.
+`spacedock dispatch build` emits the assignment artifact; the FO's next action is `«worker.spawn»` — call `subagent(agent=<artifact.agent>, skill=<artifact.skill>, context="fresh", cwd=<repo root>, task=<built prompt>)`. I did this for all tasks. The contract: `first-officer-shared-core.md:31,46` + `pi-first-officer-runtime.md:9`.
 
 ## The active track CL is steering toward
 
