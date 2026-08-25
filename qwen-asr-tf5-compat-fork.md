@@ -141,3 +141,19 @@ loads the model and the e2e smoke test (`tests/data/e2e_smoke.wav`) emits the
   -> fails at model load, same point.
 
 Code commit: spacedock-ensign/qwen-asr-tf5-compat-fork @ 2604338
+
+## Parked (2026-08-25)
+
+This task is parked at implementation. AC-1 (import) is met; AC-2/3 (model
+load + transcribe) are NOT met — qwen_asr 0.0.6 has 4+ transformers 5.x
+incompatibilities, not the one the spec assumed.
+
+The transformers path (qwen3-streaming via qwen_asr) is the WRONG lever. The
+MLX causal path (qwen3-vllm-metal via metal.py) is the RIGHT one — and it's
+now dep-cleaned: the fork at third_party/qwen3-asr-causal (branch
+feat/mlx-native-no-vllm, commit 8607d2e) loads via mlx_qwen3_asr with NO
+vllm and NO torch. That unblocks the causal ASR without this transformers
+port.
+
+Do not re-dispatch this task. The deep-tf5-port task in backlog is also
+parked (same wrong-path annotation).
