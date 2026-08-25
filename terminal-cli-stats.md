@@ -1,6 +1,6 @@
 ---
 title: "terminal CLI with live stats and latency readout"
-status: implementation
+status: validation
 source: prototype — pure terminal output before the overlay
 score: 0.8
 id: 4903005btdrgc54j17s5bcax
