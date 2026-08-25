@@ -176,6 +176,20 @@ class TranscriptionEngine:
                     **transcription_common_params, **qwen3_streaming_params
                 )
                 logger.info("Using Qwen3-ASR streaming (HF Transformers) backend")
+            elif config.backend == "mlx-qwen3-asr":
+                import argparse
+                from whisperlivekit.asr_mlx_qwen3 import _resolve_language
+                self.tokenizer = None
+                self.asr = argparse.Namespace(
+                    model_id=config.mlx_qwen3_asr_model,
+                    language=_resolve_language(config.lan),
+                    hotwords=config.mlx_qwen3_asr_context,
+                    chunk_size_sec=config.mlx_qwen3_asr_chunk_sec,
+                    max_context_sec=config.mlx_qwen3_asr_max_context_sec,
+                    finalization_mode=config.mlx_qwen3_asr_finalization_mode,
+                    sep="",  # CJK: no space between tokens (mirrors qwen3-asr-causal)
+                )
+                logger.info("Using mlx-qwen3-asr (pure MLX) backend")
             elif config.backend == "qwen3-vllm":
                 from whisperlivekit.qwen3_vllm_asr import Qwen3VLLMASR
                 self.tokenizer = None
@@ -311,12 +325,16 @@ class TranscriptionEngine:
                     latency=config.alignatt_latency,
                     context_text=config.alignatt_context,
                 )
+            elif getattr(config, "translation_backend", "nllb") == "hunyuan-mlx":
+                from whisperlivekit.translation_hunyuan_mlx import HunyuanMlxTranslation
+                self.translation_model = HunyuanMlxTranslation(
+                    model_id=getattr(config, "hunyuan_mlx_model", "hy-mt2-1.8b-8bit"),
+                    target_language=config.target_language,
+                )
             else:
-                if config.backend in {"qwen3-vllm", "qwen3-vllm-metal", "qwen3-streaming"}:
-                    raise ValueError(
-                        f"{config.backend} does not support in-process NLLB translation; "
-                        "use --translation-backend alignatt with an alignatt-mt-server sidecar."
-                    )
+                # qwen3+NLLB guard removed: the _ASRTokenNormalizer already converts
+                # qwen3 tokens to ASRToken (with has_punctuation), so the in-process
+                # NLLB path works. See lc_terminal investigation.
                 try:
                     from nllw import load_model
                 except ImportError:
@@ -434,6 +452,9 @@ def online_factory(args, asr, language=None):
     if backend == "qwen3-streaming":
         from whisperlivekit.qwen3_streaming import Qwen3StreamingOnlineProcessor
         return _ASRTokenNormalizer(Qwen3StreamingOnlineProcessor(asr))
+    if backend == "mlx-qwen3-asr":
+        from whisperlivekit.asr_mlx_qwen3 import MlxQwen3AsrOnlineProcessor
+        return _ASRTokenNormalizer(MlxQwen3AsrOnlineProcessor(asr))
     if backend == "qwen3-vllm":
         from whisperlivekit.qwen3_vllm_asr import (
             Qwen3VLLMCausalOnlineProcessor,
@@ -484,6 +505,11 @@ def online_translation_factory(args, translation_model):
     from whisperlivekit.translation_alignatt import AlignAttRemoteEngine
     if isinstance(translation_model, AlignAttRemoteEngine):
         return translation_model.new_session(args.target_language)
+    # Hunyuan-MLX is already a per-session instance (constructed in _do_init with
+    # the target language); return it directly, no nllw wrapping.
+    from whisperlivekit.translation_hunyuan_mlx import HunyuanMlxTranslation
+    if isinstance(translation_model, HunyuanMlxTranslation):
+        return translation_model
     #should be at speaker level in the future:
     #one shared nllb model for all speaker
     #one tokenizer per speaker/language

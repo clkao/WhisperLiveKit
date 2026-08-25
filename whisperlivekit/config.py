@@ -54,6 +54,14 @@ class WhisperLiveKitConfig:
     # over WebSocket, streaming LLM translation with attention-gated commits).
     translation_backend: str = "nllb"
     alignatt_url: str = "ws://localhost:8765"
+    hunyuan_mlx_model: str = "hy-mt2-1.8b-8bit"
+
+    # mlx-qwen3-asr backend (pure-MLX qwen3-asr; coexists with mlx-lm on transformers 5.x)
+    mlx_qwen3_asr_model: str = "Qwen/Qwen3-ASR-0.6B"
+    mlx_qwen3_asr_context: str = ""  # hotword bias (space-separated terms)
+    mlx_qwen3_asr_chunk_sec: float = 2.0
+    mlx_qwen3_asr_max_context_sec: float = 30.0
+    mlx_qwen3_asr_finalization_mode: str = "accuracy"
     alignatt_preset: Optional[str] = None
     # quality | balanced | low; see docs/translation-alignatt.md
     alignatt_latency: str = "balanced"
