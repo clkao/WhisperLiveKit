@@ -7,7 +7,6 @@ from whisperlivekit.config import WhisperLiveKitConfig
 from whisperlivekit.local_agreement.online_asr import OnlineASRProcessor
 from whisperlivekit.local_agreement.whisper_online import backend_factory
 from whisperlivekit.simul_whisper import SimulStreamingASR
-from whisperlivekit.timed_objects import ASRToken, TimedText
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +177,7 @@ class TranscriptionEngine:
                 logger.info("Using Qwen3-ASR streaming (HF Transformers) backend")
             elif config.backend == "mlx-qwen3-asr":
                 import argparse
+
                 from whisperlivekit.asr_mlx_qwen3 import _resolve_language
                 self.tokenizer = None
                 self.asr = argparse.Namespace(
@@ -346,69 +346,15 @@ class TranscriptionEngine:
                     nllb_size=config.nllb_size,
                 )
 
-def _to_wlk_token(tok):
-    """Convert a qwen3_asr_causal token into WhisperLiveKit's ASRToken.
+# The token-normalize wrapper and _to_wlk_token are now provided by the
+# generalized wrapper layer (asr_wrapper.py).  Re-export for any code that
+# imports them from core.
+from whisperlivekit.asr_wrapper import (  # noqa: E402,F401
+    AsrWrapper,
+    _ASRTokenNormalizer,
+    _to_wlk_token,
+)
 
-    qwen3's ASRToken is a separate class that doesn't derive from TimedText, so
-    it lacks helpers (has_punctuation) the diarization alignment needs.
-    """
-    if isinstance(tok, TimedText):
-        return tok
-    is_silence = getattr(tok, "is_silence", None)
-    if callable(is_silence) and is_silence():
-        return tok
-    # start/end/text accessed directly on purpose: a token missing them is a real
-    # incompatibility that should raise here, not be masked with defaults.
-    return ASRToken(
-        start=tok.start,
-        end=tok.end,
-        text=tok.text or "",
-        speaker=getattr(tok, "speaker", -1),
-        detected_language=getattr(tok, "detected_language", None),
-        probability=getattr(tok, "probability", None),
-    )
-
-
-class _ASRTokenNormalizer:
-    """Wraps a qwen3 online processor, converting emitted tokens to WhisperLiveKit
-    ASRTokens. finish is wrapped via __getattr__ (not an explicit method) so that
-    hasattr(proc, "finish") stays honest for the loop's fallback probe.
-    """
-
-    _WRAP = {"finish"}
-
-    def __init__(self, inner):
-        object.__setattr__(self, "_inner", inner)
-
-    @staticmethod
-    def _convert(result):
-        tokens, *rest = result # (tokens, end_time)
-        converted = [_to_wlk_token(t) for t in (tokens or [])]
-        return (converted, *rest)
-
-    def process_iter(self, *args, **kwargs):
-        return self._convert(self._inner.process_iter(*args, **kwargs))
-
-    def start_silence(self, *args, **kwargs):
-        return self._convert(self._inner.start_silence(*args, **kwargs))
-
-    def new_speaker(self, *args, **kwargs):
-        """Preserve Qwen boundary tokens discarded by its compatibility API.
-
-        The current qwen3 processors implement new_speaker() as a bare call to
-        start_silence() and drop its return value. Calling start_silence()
-        directly keeps the identical reset behavior while exposing the tokens
-        and processed position required by AudioProcessor.
-        """
-        return self.start_silence()
-
-    def __getattr__(self, name):
-        attr = getattr(self._inner, name)
-        if name in self._WRAP and callable(attr):
-            def wrapped(*args, **kwargs):
-                return self._convert(attr(*args, **kwargs))
-            return wrapped
-        return attr
 
 def online_factory(args, asr, language=None):
     """Create an online ASR processor for a session.
@@ -453,8 +399,20 @@ def online_factory(args, asr, language=None):
         from whisperlivekit.qwen3_streaming import Qwen3StreamingOnlineProcessor
         return _ASRTokenNormalizer(Qwen3StreamingOnlineProcessor(asr))
     if backend == "mlx-qwen3-asr":
+        from whisperlivekit.asr_commit import StableCommitTransform
         from whisperlivekit.asr_mlx_qwen3 import MlxQwen3AsrOnlineProcessor
-        return _ASRTokenNormalizer(MlxQwen3AsrOnlineProcessor(asr))
+        # Job 1: stable_commit wrapper commits only the stable prefix
+        # from the rolling decode; the backend's two-pass re-decode at
+        # start_silence/finish provides the clean per-utterance text.
+        hold_back = getattr(args, "mlx_qwen3_asr_hold_back_units", 6)
+        stable_iter = getattr(args, "mlx_qwen3_asr_stable_iterations", 2)
+        return AsrWrapper(
+            MlxQwen3AsrOnlineProcessor(asr),
+            transforms=[StableCommitTransform(
+                hold_back_units=hold_back,
+                stable_iterations=stable_iter,
+            )],
+        )
     if backend == "qwen3-vllm":
         from whisperlivekit.qwen3_vllm_asr import (
             Qwen3VLLMCausalOnlineProcessor,

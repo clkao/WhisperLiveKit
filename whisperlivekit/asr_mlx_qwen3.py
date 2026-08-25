@@ -17,11 +17,12 @@ this backend does NOT run its own VAD — unlike livecaption's QwenOnlineStream
 which carries its own Silero VAD. That VAD logic is dropped here; WLK provides it.
 
 Tokens: mlx-qwen3-asr emits a `stable_text` prefix (monotonically non-decreasing
-committed text) plus the full rolling `text`. We emit WLK ASRTokens for the
-stable prefix as committed, with synthetic timestamps derived from the audio
-chunk boundaries (mlx-qwen3-asr does not emit per-token timestamps mid-utterance
-— it's an attention encoder-decoder, same as the qwen3-asr-causal backend, which
-also synthesizes timestamps via commit-lag back-dating).
+committed text) plus the full rolling `text`. The decode loop returns the raw
+rolling hypothesis via `get_buffer()`; a `StableCommitTransform` in the wrapper
+chain (applied by `online_factory`) commits only the stable prefix — Job 1 of
+the generalized wrapper layer. The two-pass re-decode at `start_silence` /
+`finish` stays here (model-specific: re-decode the utterance audio offline for
+clean text). Warmup runs at init.
 """
 from __future__ import annotations
 
@@ -144,21 +145,12 @@ class MlxQwen3AsrOnlineProcessor:
         self._utt_audio.append(np.asarray(audio, dtype=np.float32))  # retain for two-pass
         self._feed(np.asarray(audio, dtype=np.float32))
 
-    def _emit_new_stable(self) -> Tuple[List, float]:
-        """Emit ASRTokens for the committed prefix grown since last emit.
-
-        We deliberately do NOT emit committed tokens during the session: the
-        rolling-decode text repeats and wraps, and committing those partials
-        produces garbage that the MT then translates. Instead the live display
-        reads the rolling `text` via get_buffer() (the unstable buffer), and
-        we emit ONE clean committed token at finish() after the two-pass
-        re-decode. This mirrors livecaption's shape (streaming partial shown
-        live, clean two-pass text committed at finalization).
-        """
-        return [], self._audio_end_time
-
     def process_iter(self, is_last=False) -> Tuple[List, float]:
-        return self._emit_new_stable()
+        # Return the raw rolling hypothesis.  The stable_commit wrapper
+        # (applied by online_factory) reads get_buffer() for the rolling
+        # text and commits only the stable prefix — Job 1 of the wrapper
+        # layer.  We do NOT commit here; the wrapper does.
+        return [], self._audio_end_time
 
     def start_silence(self) -> Tuple[List, float]:
         # Utterance boundary (silence detected): do the two-pass re-decode of the
