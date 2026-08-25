@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:zyarn2ybkarvajyz0dd46m1r:ideation:attempt-1:revision-1",
+  "question": "Approve ideation: patch check_model_inputs decorator call",
+  "artifacts": [
+    {
+      "id": "artifact:zyarn2ybkarvajyz0dd46m1r:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/2917d4c10a2b8b5172380dba41faceed18af16d7/qwen-asr-tf5-compat-fork.md",
+      "rev": "sha256:f073f7b5185e603601a4527077626918f6ec0d2bd54e25c3e2f80acfb38b5a9c",
+      "mediaType": "text/markdown",
+      "summary": "One-line patch at modeling_qwen3_asr.py:986"
+    }
+  ]
+}

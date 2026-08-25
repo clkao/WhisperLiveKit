@@ -26,6 +26,25 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:zyarn2ybkarvajyz0dd46m1r:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:zyarn2ybkarvajyz0dd46m1r-ideation-1
+              briefing:
+                id: briefing:zyarn2ybkarvajyz0dd46m1r:ideation:attempt-1:revision-1
+                digest: sha256:1a60f871591c407965cdcda8e4c2dadb95f7684d1feac88fa043c6360c76ec2f
+                request-digest: sha256:d678d56522856f9cda829c448d660b8b5967c97bd268ab2ff02da3ba65c202c7
+                room-ref: ./qwen-asr-tf5-compat-fork/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:zyarn2ybkarvajyz0dd46m1r:ideation:1
+                briefing: briefing:zyarn2ybkarvajyz0dd46m1r:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T16:55:51.593875Z"
+                decision: approve
+              application:
+                target-stage: implementation
+                state: pending
 ---
 
 The qwen3-asr-causal backend uses a stronger commit policy (LocalAgreement via stable_commit) than mlx-qwen3-asr. It gives more accurate ASR text for our zh-tw prototype. But qwen3-asr-causal depends on the qwen_asr package, which fails to import on transformers 5.x.
