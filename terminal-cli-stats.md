@@ -68,3 +68,16 @@ Improve scripts/lc_terminal.py to print a live status line to stderr on a 1s tim
 ## Summary
 
 Implemented `--stats` flag in `scripts/lc_terminal.py`. Added a `StatsTracker` class that runs a daemon thread printing a status line to stderr every 1s using `\r` (carriage-return overwrite, no newlines between updates). The line shows: MLX active/cache/peak memory (if mlx.core available), ASR EWMA latency, MT EWMA latency, commit count, emit count. `TerminalSink` records latency samples (partial→commit = ASR, commit→emit = MT) and increments counters on each state update. `--stats` is off by default; when off, no thread is started and no hooks are called (behavior identical to before). Committed on `spacedock-ensign/terminal-cli-stats` as fc57c7d.
+
+## Stage Report: implementation
+
+- DONE: terminal CLI prints a live status line when --stats is set. Verified by: run with --stats; stderr shows a line that updates every second.
+  StatsTracker class added to scripts/lc_terminal.py (1s timer thread, \r overwrite to stderr); unit test confirms thread starts and produces a status line.
+- DONE: status line does not scroll the caption text. Verified by: captions appear above; status line overwrites in place.
+  Carriage-return overwrite (no \n between updates); stop() prints one trailing \n; captions go to stdout, stats to stderr.
+- DONE: without --stats, output is unchanged. Verified by: run without --stats; output matches current behavior.
+  TerminalSink(stats=None) produces identical output (no hooks, no thread); --stats defaults off in argparse.
+
+### Summary
+
+Implemented `--stats` flag in `scripts/lc_terminal.py` with a `StatsTracker` class (1s daemon thread, \r-overwrite status line to stderr showing MLX memory, ASR/MT latency EWMA, commit/emit counts). Without `--stats` no thread or hooks are active, so output is byte-identical to before. Runtime rendering verification needs CL's Mac (sandbox cannot run the terminal driver); unit test passed and commit landed as fc57c7d on spacedock-ensign/terminal-cli-stats.
