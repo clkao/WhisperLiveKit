@@ -45,6 +45,8 @@ gates:
               application:
                 target-stage: implementation
                 state: consumed
+started: 2026-08-25T16:56:14Z
+worktree: .worktrees/spacedock-ensign-qwen-asr-tf5-compat-fork
 ---
 
 The qwen3-asr-causal backend uses a stronger commit policy (LocalAgreement via stable_commit) than mlx-qwen3-asr. It gives more accurate ASR text for our zh-tw prototype. But qwen3-asr-causal depends on the qwen_asr package, which fails to import on transformers 5.x.
