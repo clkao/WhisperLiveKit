@@ -159,6 +159,7 @@ conflicts = [
 
 [tool.uv.sources]
 qwen3-asr-causal = { path = "third_party/qwen3-asr-causal", editable = true }
+qwen-asr = { path = "third_party/qwen-asr", editable = true }
 vllm-metal = { url = "https://github.com/vllm-project/vllm-metal/releases/download/v0.2.0-20260519-054638/vllm_metal-0.2.0-cp312-cp312-macosx_11_0_arm64.whl" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu", marker = "platform_system != 'Darwin'" },
