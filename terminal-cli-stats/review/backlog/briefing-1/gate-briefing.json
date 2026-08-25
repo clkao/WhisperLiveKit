@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:4903005btdrgc54j17s5bcax:backlog:attempt-1:revision-1",
+  "question": "Approve backlog: terminal CLI with live stats",
+  "artifacts": [
+    {
+      "id": "artifact:4903005btdrgc54j17s5bcax:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/7702df1f6bdcea98d9fee2edbfce60e2464a57b2/terminal-cli-stats.md",
+      "rev": "sha256:667d2d58c7a3ceb67acfaf0abdf1e7a8db083b956cd1fde828ebd53c47eb410d",
+      "mediaType": "text/markdown",
+      "summary": "Live status line in lc_terminal.py with --stats flag"
+    }
+  ]
+}

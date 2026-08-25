@@ -4,6 +4,28 @@ status: backlog
 source: prototype — pure terminal output before the overlay
 score: 0.8
 id: 4903005btdrgc54j17s5bcax
+gates:
+    version: 1
+    records:
+        - id: gate:4903005btdrgc54j17s5bcax:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:4903005btdrgc54j17s5bcax-backlog-1
+              briefing:
+                id: briefing:4903005btdrgc54j17s5bcax:backlog:attempt-1:revision-1
+                digest: sha256:f80754ffe2446de7cdc7900d1047c1f666f881488c1ab791d54dfe7e773822ee
+                request-digest: sha256:77b6a271c089875c2626b020527fe7bf7666157db7577bbe3419ad96bd623ade
+                room-ref: ./terminal-cli-stats/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:4903005btdrgc54j17s5bcax:backlog:1
+                briefing: briefing:4903005btdrgc54j17s5bcax:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T16:55:54.498568Z"
+                decision: approve
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 The prototype runs in two output modes: a native macOS overlay and a terminal printout. The terminal printout today is plain text with no instrumentation. For calibration and A/B measurement, the operator needs live stats: ASR latency, MT latency, MLX memory, and commit/emit counts.
