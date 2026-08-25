@@ -3,11 +3,11 @@ id: bp5akt44cfke2akcttkkaag9
 title: "mlx-llm-mt: generic decoder-LLM translation backend (Hunyuan-MT as first config)"
 status: implementation
 source: WhisperLiveKit Apple-Silicon backend work
-started:
+started: 2026-08-25T17:18:01Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-hunyuan-mlx-translation-backend
 issue:
 pr:
 gates:
