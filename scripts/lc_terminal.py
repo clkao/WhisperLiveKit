@@ -35,11 +35,10 @@ from whisperlivekit.test_harness import TestHarness
 
 
 def _make_engine_kwargs(args) -> dict:
-    return {
+    kw = {
         "lan": args.language,
         "pcm_input": True,
-        "backend": "mlx-qwen3-asr",
-        "mlx_qwen3_asr_model": args.mlx_qwen3_asr_model,
+        "backend": args.backend,
         "target_language": args.target_language,
         "translation_backend": "mlx-llm-mt",
         "mlx_llm_mt_model": args.mlx_llm_mt_model,
@@ -48,6 +47,12 @@ def _make_engine_kwargs(args) -> dict:
         # threshold must be low to split at natural speech pauses.
         "pause_segmentation_seconds": 0.1,
     }
+    if args.backend == "mlx-qwen3-asr":
+        kw["mlx_qwen3_asr_model"] = args.mlx_qwen3_asr_model
+    elif args.backend == "qwen3-vllm-metal":
+        kw["qwen3_vllm_metal_audio_backend"] = args.qwen3_vllm_metal_audio_backend
+        kw["qwen3_vllm_metal_tower_checkpoint"] = args.qwen3_vllm_metal_tower_checkpoint
+    return kw
 
 
 class OverlaySink:
@@ -254,8 +259,14 @@ def main() -> None:
     p.add_argument("--source", choices=["mic", "file"], default="file")
     p.add_argument("--language", default="zh")
     p.add_argument("--target-language", default="en")
+    p.add_argument("--backend", choices=["mlx-qwen3-asr", "qwen3-vllm-metal"], default="mlx-qwen3-asr",
+                   help="ASR backend: mlx-qwen3-asr (windowed, pure MLX) or qwen3-vllm-metal (causal, native MLX via the fork)")
     p.add_argument("--mlx-qwen3-asr-model", default="Qwen/Qwen3-ASR-0.6B")
     p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit")
+    p.add_argument("--qwen3-vllm-metal-audio-backend", choices=["standard", "causal"], default="causal",
+                   help="qwen3-vllm-metal audio backend: 'causal' (append-only KV, flat-cost) or 'standard' (re-encode window)")
+    p.add_argument("--qwen3-vllm-metal-tower-checkpoint", default="qfuxa/qwen3-asr-0.6b-streaming",
+                   help="tower checkpoint for the causal audio encoder")
     p.add_argument("--overlay", action="store_true",
                    help="display captions in a native always-on-top macOS overlay window")
     p.add_argument("--overlay-hold", type=float, default=3.5,
