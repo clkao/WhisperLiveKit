@@ -45,6 +45,8 @@ gates:
               application:
                 target-stage: implementation
                 state: consumed
+started: 2026-08-25T16:56:15Z
+worktree: .worktrees/spacedock-ensign-terminal-cli-stats
 ---
 
 The prototype runs in two output modes: a native macOS overlay and a terminal printout. The terminal printout today is plain text with no instrumentation. For calibration and A/B measurement, the operator needs live stats: ASR latency, MT latency, MLX memory, and commit/emit counts.
