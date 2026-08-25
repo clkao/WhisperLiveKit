@@ -64,3 +64,7 @@ Improve scripts/lc_terminal.py to print a live status line to stderr on a 1s tim
 ## Out of scope
 
 - The overlay. A TUI framework. Logfile output.
+
+## Summary
+
+Implemented `--stats` flag in `scripts/lc_terminal.py`. Added a `StatsTracker` class that runs a daemon thread printing a status line to stderr every 1s using `\r` (carriage-return overwrite, no newlines between updates). The line shows: MLX active/cache/peak memory (if mlx.core available), ASR EWMA latency, MT EWMA latency, commit count, emit count. `TerminalSink` records latency samples (partial→commit = ASR, commit→emit = MT) and increments counters on each state update. `--stats` is off by default; when off, no thread is started and no hooks are called (behavior identical to before). Committed on `spacedock-ensign/terminal-cli-stats` as fc57c7d.
