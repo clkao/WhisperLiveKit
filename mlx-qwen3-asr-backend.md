@@ -1,7 +1,7 @@
 ---
 id: p0f67wa79kd56yh3bs0cca2e
 title: mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
-status: backlog
+status: ideation
 source: WhisperLiveKit Apple-Silicon backend work
 started:
 completed:
@@ -31,7 +31,7 @@ gates:
                 decision: approve
               application:
                 target-stage: ideation
-                state: pending
+                state: consumed
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
