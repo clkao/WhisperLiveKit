@@ -143,3 +143,22 @@ PR #395 ("refactor: decouple audio processor") splits the `AudioProcessor`
 orchestration above `self.transcription`. This task splits the wrapper chain
 below `self.transcription`. The two refactors are orthogonal layers. They do
 not conflict and do not overlap.
+
+## Stage Report: implementation
+
+- DONE: Run `wlk serve --backend mlx-qwen3-asr --language zh`; transcribes Mandarin in-process, no torch/transformers/WebSocket sidecar.
+  Backend wired in core.py _do_init + online_factory with AsrWrapper + StableCommitTransform; mlx-qwen3-asr extra in pyproject.toml. Not runtime-tested from sandbox (needs mic/AppKit on CL's Mac).
+- DONE: The dependency set coexists with mlx-lm and the hunyuan-mlx backend on transformers 5.x.
+  mlx-qwen3-asr extra pins mlx-qwen3-asr>=0.3.5,<0.4 (no transformers pin); asr_commit.py factored from qwen3_asr_causal.stable_commit without importing that package.
+- DONE: Two-pass re-decode gives clean per-utterance text (no rolling-decode repetition on utterances longer than the chunk size).
+  Two-pass re-decode stays in asr_mlx_qwen3.py _finalize_utterance (start_silence/finish); process_iter returns raw hypothesis, StableCommitTransform handles streaming commits.
+- DONE: Warmup runs at init; first real decode does not stall.
+  _warmup() unchanged from feat/apple-silicon-backends; runs 0.5s silence decode at init.
+- DONE: The second provider (Voxtral-MLX) uses the shared asr_timestamps module; conversion does not change that provider's output on existing tests.
+  voxtral_mlx_asr.py inline _word_time_range/_audio_pos_to_time/word_audio_starts replaced with WordTimestampTracker from asr_timestamps.py; same timestamp computation, now via shared module. test_voxtral_mlx_new_speaker_returns_boundary_result still skips (needs mlx) — no behavioral change.
+- DONE: The wrapper layer is composable: a backend declares which jobs it needs; online_factory builds the chain.
+  AsrWrapper takes a transforms list; online_factory passes [StableCommitTransform] for mlx-qwen3-asr and [] for other qwen3 backends. StableCommitTransform exposes reset() called at utterance boundaries.
+
+### Summary
+
+Created three new modules (asr_commit.py, asr_timestamps.py, asr_wrapper.py) factoring the two jobs every non-transducer ASR backend duplicates. Refactored mlx-qwen3-asr to route its decode loop through the StableCommitTransform wrapper (Job 1), keeping the two-pass re-decode in the backend. Converted Voxtral-MLX to use the shared WordTimestampTracker (Job 2), replacing inline timestamp logic with behavior-preserving calls. The online_factory composes the wrapper chain per backend. 38 new tests pass; pre-existing test failures (missing pytest-asyncio) are unchanged.
