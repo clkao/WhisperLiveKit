@@ -2,24 +2,27 @@
 
 Read this first after compaction. Then `SESSION_STATE.md` for the resume checklist.
 
-## Where we are (one paragraph)
+## Where we are (2026-08-25, post-worker-merge)
 
-Built and committed three WLK backends on `feat/apple-silicon-backends` (4 commits): `asr_mlx_qwen3.py` (pure-MLX Qwen3-ASR), `translation_hunyuan_mlx.py` (in-process Hunyuan-MT via mlx-lm), `overlay.py` + `lc_terminal.py` (native macOS overlay). All work end-to-end zh→en in-process (verified via `wlk serve` + test_client). A detached split-root spacedock workflow is set up at `.spacedock/` (VALID), three tasks filed in backlog, the `mlx-qwen3-asr-backend` task amended to build through a generalized ASR wrapper layer (prove with a second provider) and advanced to `implementation` with a worktree stamped at `.worktrees/spacedock-ensign-mlx-qwen3-asr-backend` (branch `ensign/mlx-qwen3-asr-backend`).
+Three async workers ran and merged to `feat/apple-silicon-backends`:
+- **terminal-cli-stats** (DONE): `--stats` live status line (ASR/MT latency EWMA, MLX memory, commit/emit counts). Merge `5caea1d`.
+- **mlx-qwen3-asr-backend** (DONE): generalized wrapper layer — `asr_commit.py` (Job 1), `asr_timestamps.py` (Job 2), `asr_wrapper.py` (composable chain), mlx-qwen3-asr routed through it, Voxtral-MLX converted (second-provider proof), 38 tests pass. Merge `f4d469b`. Runtime test (wlk serve) needs CL's Mac.
+- **qwen-asr-tf5-compat-fork** (PARTIAL): fixed the import (AC-1) but model load fails at `Qwen3ASRThinkerConfig.pad_token_id` — a 4th transformers 5.x incompatibility, with more likely. The deep port is a new task (`qwen-asr-deep-tf5-port`). Merge `0165d50` (fork is a foundation; AC-2/3 unmet).
 
-## The immediate next action (the one I missed)
+Fun-ASR-Nano-2512-4bit spiked: NOT viable (translate task outputs Chinese not English; transcription truncates at 10 tokens). Stay with qwen3-asr + Hunyuan-MT.
 
-The `mlx-qwen3-asr-backend` task is at `implementation`, worktree stamped, but **`«worker.spawn»` has NOT run** — I stopped at `dispatch build --stamp` and wrongly said "the worker isn't auto-launched." The contract (`first-officer-shared-core.md:31,46` + `pi-first-officer-runtime.md:9`) is explicit: `dispatch build` emits the assignment artifact; the FO's next action is to call `subagent(agent=<artifact.agent>, skill=<artifact.skill>, context="fresh", cwd=<repo root>, task=<built prompt>)`. Do that to launch the ensign. CL corrected me on this; do not repeat the miss.
+Primer updated: `docs/asr-streaming-explainer.md` now has 8 new sections (MT landscape, AlignAtt internals, nemotron+AlignAtt, Fun-ASR-Nano, FunASR framework, generalized wrapper, mlx-llm-mt shape, OpenAI comparison).
 
-To resume the dispatch:
-```
-cd /Users/clkao/git/asr/WhisperLiveKit
-spacedock dispatch build --workflow-dir .spacedock/dev --host pi \
-  --entity-path "$(realpath .spacedock/dev/.spacedock-state/mlx-qwen3-asr-backend.md)" \
-  --stage implementation --checklist-file <checklist> --stamp
-# read the artifact's agent/skill fields, then:
-subagent(agent=..., skill=..., context="fresh", cwd=<repo>, task=<built prompt>)
-subagent_wait({id, nonBlocking: true})  # async wake pattern
-```
+## The immediate next actions
+
+1. **Verify on CL's Mac** (the validation gate): `wlk serve --backend mlx-qwen3-asr --language zh` still transcribes after the wrapper refactor; `python scripts/lc_terminal.py --stats` shows the status line.
+2. **Amend `hunyuan-mlx-translation-backend` → `mlx-llm-mt`** (generic decoder-LLM shape; Hunyuan as config). Not urgent until Tier B port.
+3. **Dispatch `qwen-asr-deep-tf5-port`** when ready to unblock qwen3-asr-causal (the accuracy upgrade).
+4. **Tier B simultaneous MT** (port livecaption's `simul_mt.py` into mlx-llm-mt) — the real latency win; needs the mlx-llm-mt refactor first.
+
+## What was dispatched (the contract I initially missed)
+
+`spacedock dispatch build` emits the assignment artifact; the FO's next action is `«worker.spawn»` — call `subagent(agent=<artifact.agent>, skill=<artifact.skill>, context="fresh", cwd=<repo root>, task=<built prompt>)`. I did this for all three tasks. The contract: `first-officer-shared-core.md:31,46` + `pi-first-officer-runtime.md:9`.
 
 ## The active track CL is steering toward
 
@@ -55,10 +58,9 @@ The dep cleanup (fork `qwen3-asr-causal`) is independent and worth doing regardl
 
 ## What is NOT done
 
-1. `«worker.spawn»` for the mlx-qwen3-asr task (the immediate next action above).
-2. The pyproject extras + transformers/huggingface_hub pin declaration (PR-readiness gap).
-3. The GitHub fork + push (blocked on `gh auth login` — token invalid).
-4. The dep cleanup fork of `qwen3-asr-causal` (the `check_model_inputs` decorator patch).
-5. Tier B simultaneous MT port (Option A — confirm intent first).
-6. The generalized wrapper layer (the amended task's scope).
-7. Second provider conversion to prove the wrapper (part of the amended task).
+1. **Verify on CL's Mac**: `wlk serve --backend mlx-qwen3-asr --language zh` after the wrapper refactor; `python scripts/lc_terminal.py --stats`.
+2. **qwen-asr deep tf5 port** (filed, backlog): model load + transcribe on transformers 5.11.0. Unblocks qwen3-asr-causal.
+3. **Amend hunyuan-mlx → mlx-llm-mt** (generic decoder-LLM shape).
+4. **Tier B simultaneous MT** (port livecaption's `simul_mt.py` into mlx-llm-mt; needs the mlx-llm-mt refactor first).
+5. The pyproject extras + transformers/huggingface_hub pin declaration (PR-readiness gap).
+6. The GitHub fork + push (blocked on `gh auth login` — token invalid).
