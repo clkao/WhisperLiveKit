@@ -1,44 +1,44 @@
 ---
+id: p0f67wa79kd56yh3bs0cca2e
 title: mlx-qwen3-asr ASR backend (pure MLX, Apple Silicon)
 status: backlog
-source: livecaption port + this session's work
-id: p0f67wa79kd56yh3bs0cca2e
+source: WhisperLiveKit Apple-Silicon backend work
+started:
+completed:
+verdict:
+score:
+worktree:
+issue:
+pr:
 ---
-# mlx-qwen3-asr ASR backend for WhisperLiveKit
+
+# mlx-qwen3-asr ASR backend
 
 ## Goal
 
-Add `mlx-qwen3-asr` (moona3k's pure-MLX Qwen3-ASR reimplementation) as a new
-ASR backend for WLK. This is the Apple-Silicon qwen3 path that avoids the
-torch/transformers pin conflict: `mlx-qwen3-asr` is pure MLX (no torch, no
-transformers), so it coexists cleanly with `mlx-lm` and the `hunyuan-mlx`
-translation backend on transformers 5.x.
+Add a new ASR backend to WhisperLiveKit. The backend runs the Qwen3-ASR model via the `mlx-qwen3-asr` package on Apple Silicon.
+
+The `mlx-qwen3-asr` package is a pure-MLX reimplementation. The package needs no torch and no transformers. The backend coexists with mlx-lm and the hunyuan-mlx translation backend on transformers 5.x. The built-in `qwen3-streaming` backend pins transformers to 4.57.6. This backend avoids that pin.
 
 ## What ships
 
-- `whisperlivekit/asr_mlx_qwen3.py` — `MlxQwen3AsrOnlineProcessor` wrapping
-  mlx-qwen3-asr's `init_streaming`/`feed_audio`/`finish_streaming` behind WLK's
-  `insert_audio_chunk`/`process_iter`/`start_silence`/`end_silence`/`finish`/
-  `get_buffer` contract. Two-pass re-decode at `start_silence`/`finish`
-  (re-decodes the accumulated utterance audio offline for clean text, no
-  rolling-decode repetition). Warmup at init (absorbs Metal kernel compile).
-- Registration: `_do_init` + `online_factory` in `core.py`; `mlx_qwen3_asr_*`
-  config knobs; `--mlx-qwen3-asr-*` flags; `backend_support` available-check;
-  BACKENDS entry (streaming: native, platform: darwin-arm64).
-- The `mlx-qwen3-asr` extra in `pyproject.toml`.
+- `whisperlivekit/asr_mlx_qwen3.py`. The `MlxQwen3AsrOnlineProcessor` class wraps the `mlx-qwen3-asr` streaming API. The class exposes `insert_audio_chunk`, `process_iter`, `start_silence`, `end_silence`, `finish`, and `get_buffer`.
+- The backend warms up at init. The warmup runs one short decode on silence so the Metal kernel compile does not stall the first real sentence.
+- The `start_silence` and `finish` methods do a two-pass re-decode. The method re-decodes the accumulated utterance audio offline. The offline decode gives clean text with no rolling-decode repetition.
+- The `core.py` file adds the `_do_init` branch and the `online_factory` branch.
+- The `config.py` file adds the `mlx_qwen3_asr_*` knobs.
+- The `parse_args.py` file adds the `--mlx-qwen3-asr-*` flags.
+- The `backend_support.py` file adds the `mlx_qwen3_asr_backend_available` check.
+- The `cli.py` file adds the BACKENDS entry. The entry sets `streaming` to `native` and `platform` to `darwin-arm64`.
+- The `pyproject.toml` file adds the `mlx-qwen3-asr` extra.
 
 ## Acceptance criteria
 
-- `wlk serve --backend mlx-qwen3-asr --language zh` transcribes Mandarin
-  in-process, no torch/transformers dep, no WebSocket sidecar.
-- The dep combo coexists with `mlx-lm` and `hunyuan-mlx` on transformers 5.x
-  (document the working combo).
-- Two-pass re-decode produces clean per-utterance text (no rolling-decode
-  repetition) on utterances longer than the chunk size.
-- Warmup at init; first real decode is not a cold-start stall.
+- Run `wlk serve --backend mlx-qwen3-asr --language zh`. The command transcribes Mandarin audio in-process. The backend needs no torch, no transformers, and no WebSocket sidecar.
+- The dependency set coexists with mlx-lm and the hunyuan-mlx backend on transformers 5.x. Document the working set in the install hint.
+- The two-pass re-decode gives clean per-utterance text. The text has no rolling-decode repetition on utterances longer than the chunk size.
+- The warmup runs at init. The first real decode does not stall.
 
 ## Notes
 
-Working dep combo (measured this session): transformers==5.11.0,
-huggingface_hub==1.18.0, mlx-lm>=0.31.1, mlx-qwen3-asr>=0.3.5,<0.4. The
-transformers==4.57.6 pin from qwen3-asr-causal is the thing this avoids.
+The working dependency set is transformers 5.11.0, huggingface_hub 1.18.0, mlx-lm 0.31.1, and mlx-qwen3-asr 0.3.5. The `qwen3-asr-causal` package pins transformers to 4.57.6. This backend does not use that package.
