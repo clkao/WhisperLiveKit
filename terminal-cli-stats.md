@@ -1,6 +1,6 @@
 ---
 title: "terminal CLI with live stats and latency readout"
-status: ideation
+status: implementation
 source: prototype — pure terminal output before the overlay
 score: 0.8
 id: 4903005btdrgc54j17s5bcax
@@ -44,7 +44,7 @@ gates:
                 decision: approve
               application:
                 target-stage: implementation
-                state: pending
+                state: consumed
 ---
 
 The prototype runs in two output modes: a native macOS overlay and a terminal printout. The terminal printout today is plain text with no instrumentation. For calibration and A/B measurement, the operator needs live stats: ASR latency, MT latency, MLX memory, and commit/emit counts.
