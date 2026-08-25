@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:bp5akt44cfke2akcttkkaag9:ideation:attempt-1:revision-1",
+  "question": "Approve ideation: extract MlxLlmTranslation base, parameterize prompt/EOS/registry, backward-compat alias",
+  "artifacts": [
+    {
+      "id": "artifact:bp5akt44cfke2akcttkkaag9:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/aa4eb77a9b6b50014eafc02a76c0374c30f5dc06/hunyuan-mlx-translation-backend.md",
+      "rev": "sha256:7c718b65b44a8b0889570862ce3dea21dc356b130ff0f91224a957c2d833d911",
+      "mediaType": "text/markdown",
+      "summary": "Refactor existing translation_hunyuan_mlx.py; add config registry; rename backend to mlx-llm-mt"
+    }
+  ]
+}

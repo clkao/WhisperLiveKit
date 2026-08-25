@@ -32,6 +32,25 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:bp5akt44cfke2akcttkkaag9:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:bp5akt44cfke2akcttkkaag9-ideation-1
+              briefing:
+                id: briefing:bp5akt44cfke2akcttkkaag9:ideation:attempt-1:revision-1
+                digest: sha256:7d646e239409088b99b430c63eab100c2ae8dc16ad1f6ffc64647ca6d5655988
+                request-digest: sha256:2414bb531f45e98a4ea6e334510fc2c629ba0e36530978e4a7e52eb12cc06042
+                room-ref: ./hunyuan-mlx-translation-backend/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:bp5akt44cfke2akcttkkaag9:ideation:1
+                briefing: briefing:bp5akt44cfke2akcttkkaag9:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T17:17:50.252027Z"
+                decision: approve
+              application:
+                target-stage: implementation
+                state: pending
 ---
 
 # mlx-llm-mt: generic decoder-LLM translation backend
