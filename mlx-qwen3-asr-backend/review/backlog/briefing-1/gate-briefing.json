@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:backlog:attempt-1:revision-1",
+  "question": "Approve backlog: build mlx-qwen3-asr backend through generalized wrapper layer",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/29ed6af4c55acd20a070d4031d5dbe8c5e6345f5/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:ee0eda65e8294899aabef8064e613748ac2da80e7a06af6a216f60a28678f818",
+      "mediaType": "text/markdown",
+      "summary": "Build mlx-qwen3-asr ASR backend through a generalized wrapper layer; prove with a second provider"
+    }
+  ]
+}

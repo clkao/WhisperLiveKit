@@ -10,6 +10,28 @@ score:
 worktree:
 issue:
 pr:
+gates:
+    version: 1
+    records:
+        - id: gate:p0f67wa79kd56yh3bs0cca2e:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-backlog-1
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:backlog:attempt-1:revision-1
+                digest: sha256:14a721eace30cb5dff1a6e9ec663af359633fd29a807c1e78b8470fd792e43ee
+                request-digest: sha256:f4a49ab8d1f6708c4e86084aca2c5cca0a98834f85d5fb28125ae8462a3b6b60
+                room-ref: ./mlx-qwen3-asr-backend/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:backlog:1
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-25T15:51:48.661299Z"
+                decision: approve
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
