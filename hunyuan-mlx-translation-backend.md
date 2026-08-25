@@ -1,7 +1,7 @@
 ---
 id: bp5akt44cfke2akcttkkaag9
 title: "mlx-llm-mt: generic decoder-LLM translation backend (Hunyuan-MT as first config)"
-status: ideation
+status: implementation
 source: WhisperLiveKit Apple-Silicon backend work
 started:
 completed:
@@ -50,7 +50,7 @@ gates:
                 decision: approve
               application:
                 target-stage: implementation
-                state: pending
+                state: consumed
 ---
 
 # mlx-llm-mt: generic decoder-LLM translation backend
