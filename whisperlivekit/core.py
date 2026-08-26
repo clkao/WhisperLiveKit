@@ -335,10 +335,19 @@ class TranscriptionEngine:
                 if not model_id:
                     # Legacy knob (``--hunyuan-mlx-model``) for backward compat.
                     model_id = getattr(config, "hunyuan_mlx_model", "hy-mt2-1.8b-8bit")
-                self.translation_model = MlxLlmTranslation(
-                    model_id=model_id,
-                    target_language=config.target_language,
-                )
+                if getattr(config, "mlx_llm_mt_simultaneous", False):
+                    from whisperlivekit.translation_mlx_llm_mt_simul import (
+                        MlxLlmTranslationSimul,
+                    )
+                    self.translation_model = MlxLlmTranslationSimul(
+                        model_id=model_id,
+                        target_language=config.target_language,
+                    )
+                else:
+                    self.translation_model = MlxLlmTranslation(
+                        model_id=model_id,
+                        target_language=config.target_language,
+                    )
             else:
                 # qwen3+NLLB guard removed: the _ASRTokenNormalizer already converts
                 # qwen3 tokens to ASRToken (with has_punctuation), so the in-process

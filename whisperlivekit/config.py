@@ -58,6 +58,9 @@ class WhisperLiveKitConfig:
     alignatt_url: str = "ws://localhost:8765"
     mlx_llm_mt_model: str = "hy-mt2-1.8b-8bit"
     hunyuan_mlx_model: str = "hy-mt2-1.8b-8bit"
+    # Simultaneous-MT variant of mlx-llm-mt: drafts over the unstable ASR tail
+    # with the AlignAtt commit policy (calibrated zh→en Hunyuan heads).
+    mlx_llm_mt_simultaneous: bool = False
 
     # mlx-qwen3-asr backend (pure-MLX qwen3-asr; coexists with mlx-lm on transformers 5.x)
     mlx_qwen3_asr_model: str = "Qwen/Qwen3-ASR-0.6B"
