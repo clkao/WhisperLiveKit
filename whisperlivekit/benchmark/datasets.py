@@ -206,10 +206,10 @@ BENCHMARK_CATALOG = {
         "tags": {"multi_speaker", "long"},
         "max_duration": 60.0,
     },
-    # Mandarin zh→en benchmark (local file, no download).
-    # Set ZH_BENCH_WAV to a local Mandarin audio file before you run the
-    # benchmark. The reference transcript below is for the default file
-    # that ships with the example; verify it against your own audio.
+    # Mandarin zh→en benchmark (local file, no download)
+    # Reference is empty: the audio content does not match any known transcript,
+    # so WER is not applicable. The sample is for MT-RTF and translation
+    # quality, not ASR WER.
     "zh_long": {
         "dataset": "local",
         "language": "zh",
@@ -218,11 +218,21 @@ BENCHMARK_CATALOG = {
         "skip": 0,
         "tags": {"long", "zh_en"},
         "path": os.environ.get("ZH_BENCH_WAV", ""),
-        "reference": (
-            "我們今天來討論鐳射。這個網路上的資訊很重要。"
-            "鐳射在醫學上的應用也很重要。"
-        ),
+        "reference": "",
         "duration": 31.6,
+    },
+    # English sample for en→it translation comparison. Set EN_BENCH_WAV to a
+    # local English audio file (the benchmark cache ships en_long_clean.wav).
+    "en_long_clean": {
+        "dataset": "local",
+        "language": "en",
+        "category": "clean",
+        "n_samples": 1,
+        "skip": 0,
+        "tags": {"long"},
+        "path": os.environ.get("EN_BENCH_WAV", ""),
+        "reference": "",
+        "duration": 60.0,
     },
 }
 
