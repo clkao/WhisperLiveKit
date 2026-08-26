@@ -134,6 +134,11 @@ class OverlaySink:
         partial = (state.buffer_transcription or "").strip()
         if partial:
             self._r.partial("", self._cc_src(partial), datetime.now())
+        # Provisional translation (simul MT draft): forward as preview so the
+        # overlay shows it before the final arrives.
+        prov = (state.buffer_translation or "").strip()
+        if prov:
+            self._r.preview("", [(None, self._cc_target(prov))], datetime.now())
         # committed lines: finalized zh + translation
         for line in state.lines:
             txt = (line.get("text") or "").strip()
@@ -317,6 +322,11 @@ class TuiSink:
         partial = (state.buffer_transcription or "").strip()
         if partial:
             self._r.partial("mic", self._cc_src(partial), datetime.now(), speaker=None)
+        # Provisional translation (simul MT draft): forward as preview so the
+        # TUI shows it under the partial before the final arrives.
+        prov = (state.buffer_translation or "").strip()
+        if prov:
+            self._r.preview("mic", [(None, self._cc_target(prov))], datetime.now())
         for i, line in enumerate(state.lines):
             txt = (line.get("text") or "").strip()
             tr = (line.get("translation") or "").strip()
