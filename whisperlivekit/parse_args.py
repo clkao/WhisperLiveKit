@@ -608,6 +608,33 @@ def parse_args():
         help="Number of consecutive decode passes a prefix must be stable "
         "before the stable-commit wrapper commits it (default 2).",
     )
+    mlx_qwen3_group.add_argument(
+        "--second-pass",
+        dest="mlx_qwen3_asr_second_pass",
+        action=BooleanOptionalAction,
+        default=True,
+        help="Re-decode the whole utterance offline at finalization for "
+        "accuracy (default on). --no-second-pass trades accuracy for "
+        "~0.5-1.5s/sentence latency (uses the streaming text instead).",
+    )
+    vad_group = parser.add_argument_group("VAD tuning")
+    vad_group.add_argument(
+        "--vad-threshold",
+        type=float,
+        default=None,
+        dest="vad_threshold",
+        help="Silero speech-probability threshold; >= counts as speech. "
+        "Higher = more frames count as silence -> cuts sooner in quiet "
+        "rooms; default 0.5. 0.6 safe; 0.7 starts cutting real speech.",
+    )
+    vad_group.add_argument(
+        "--vad-min-silence-ms",
+        type=int,
+        default=None,
+        dest="vad_min_silence_ms",
+        help="Trailing silence (milliseconds) to wait before separating a "
+        "speech chunk. Lower = cuts sooner; default 100.",
+    )
     qwen3_streaming_group.add_argument(
         "--qwen3-streaming-chunk-sec",
         type=float,

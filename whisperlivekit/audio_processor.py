@@ -168,6 +168,13 @@ class AudioProcessor:
                 self.vac = FixedVADIterator(vac_model)
             else:
                 self.vac = FixedVADIterator(load_jit_vad())
+            # Apply VAD tuning overrides from config (None = keep defaults).
+            _vt = getattr(self.args, "vad_threshold", None)
+            _vms = getattr(self.args, "vad_min_silence_ms", None)
+            if _vt is not None:
+                self.vac.threshold = _vt
+            if _vms is not None:
+                self.vac.min_silence_samples = self.vac.sampling_rate * _vms / 1000
         self.ffmpeg_manager: Optional[FFmpegManager] = None
         self.ffmpeg_reader_task: Optional[asyncio.Task] = None
         self._ffmpeg_error: Optional[str] = None

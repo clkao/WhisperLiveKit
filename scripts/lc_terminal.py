@@ -12,6 +12,15 @@ this); the on_update callback marshals text to the overlay fields.
 
 Without --overlay: prints to the terminal.
 
+Ported from livecaption (livecaption/cli.py + livecaption/screen_ocr.py):
+  --opencc / --opencc-mt     OpenCC text conversion (s2twp etc.)
+  --ocr-display / --ocr-lang / --ocr-interval   Screen OCR hotword auto-refresh
+  --hotwords                Static hotword list
+  --vad-threshold / --vad-min-silence-ms        Silero VAD tuning
+  --second-pass / --no-second-pass              Two-pass re-decode toggle
+  --mem                     MLX memory readout (alias for --stats)
+  --simultaneous            Simultaneous-MT variant (AlignAtt commit policy)
+
 Usage:
     # terminal output:
     .venv/bin/python scripts/lc_terminal.py --audio /path/to/zh.wav
@@ -34,6 +43,27 @@ from datetime import datetime
 from whisperlivekit.test_harness import TestHarness
 
 
+# ---------------------------------------------------------------------------
+# OpenCC converter helpers
+# ---------------------------------------------------------------------------
+
+_TARGET_ZH_TW_CODES = {"zh-tw", "zh-hant", "zh-hk", "zh-mo"}
+
+
+def _make_opencc(config_name):
+    """Create an OpenCC converter, or None if the package is missing."""
+    try:
+        import opencc
+        return opencc.OpenCC(config_name)
+    except Exception as e:
+        print(f"OpenCC '{config_name}' failed: {e}", file=sys.stderr)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Engine kwargs builder
+# ---------------------------------------------------------------------------
+
 def _make_engine_kwargs(args) -> dict:
     kw = {
         "lan": args.language,
@@ -49,11 +79,30 @@ def _make_engine_kwargs(args) -> dict:
     }
     if args.backend == "mlx-qwen3-asr":
         kw["mlx_qwen3_asr_model"] = args.mlx_qwen3_asr_model
+        # Hotwords: static --hotwords take priority; OCR loop updates the
+        # recognizer's .hotwords live (via the ASR backend instance), but the
+        # initial context comes from this kwarg.
+        if args.hotwords:
+            kw["mlx_qwen3_asr_context"] = args.hotwords
     elif args.backend == "qwen3-vllm-metal":
         kw["qwen3_vllm_metal_audio_backend"] = args.qwen3_vllm_metal_audio_backend
         kw["qwen3_vllm_metal_tower_checkpoint"] = args.qwen3_vllm_metal_tower_checkpoint
+    # Two-pass toggle
+    kw["mlx_qwen3_asr_second_pass"] = args.second_pass
+    # VAD tuning (None = keep defaults)
+    if args.vad_threshold is not None:
+        kw["vad_threshold"] = args.vad_threshold
+    if args.vad_min_silence_ms is not None:
+        kw["vad_min_silence_ms"] = args.vad_min_silence_ms
+    # Simultaneous MT
+    if args.simultaneous:
+        kw["mlx_llm_mt_simultaneous"] = True
     return kw
 
+
+# ---------------------------------------------------------------------------
+# Sinks (terminal + overlay)
+# ---------------------------------------------------------------------------
 
 class OverlaySink:
     """Drives the livecaption OverlayRenderer from WLK stream state.
@@ -64,34 +113,43 @@ class OverlaySink:
       lines[].text (committed clean ASR)               -> overlay finalized zh line
     """
 
-    def __init__(self, renderer):
+    def __init__(self, renderer, opencc_conv=None, opencc_mt_conv=None, target_opencc=None):
         self._r = renderer
         self._last_final = ""
         self._last_transl = ""
+        self._opencc = opencc_conv      # source-side converter (display)
+        self._opencc_mt = opencc_mt_conv  # whether MT gets converted text
+        self._target_opencc = target_opencc  # target-side converter (zh-tw output)
+
+    def _cc_src(self, text):
+        return self._opencc.convert(text) if (self._opencc and text) else text
+
+    def _cc_target(self, text):
+        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
 
     def __call__(self, state):
-        # live partial: the rolling ASR buffer
+        # live partial: the rolling ASR buffer (converted for display)
         partial = (state.buffer_transcription or "").strip()
         if partial:
-            self._r.partial("", partial, datetime.now())
+            self._r.partial("", self._cc_src(partial), datetime.now())
         # committed lines: finalized zh + translation
         for line in state.lines:
             txt = (line.get("text") or "").strip()
             tr = (line.get("translation") or "").strip()
             if txt and txt != self._last_final:
                 self._last_final = txt
-                self._r.final("", [(None, txt)], datetime.now())
+                self._r.final("", [(None, self._cc_src(txt))], datetime.now())
             if tr and tr != self._last_transl:
                 self._last_transl = tr
-                self._r.translation("", [(None, tr)], datetime.now())
+                self._r.translation("", [(None, self._cc_target(tr))], datetime.now())
 
 
 class StatsTracker:
     """Live status line on stderr: ASR/MT latency EWMA, MLX memory, commit/emit counts.
 
     Prints one line per second using ``\r`` (carriage-return overwrite) so the status
-    stays in place without scrolling the caption text above it.  Enabled by ``--stats``;
-    off by default (no output, no thread).
+    stays in place without scrolling the caption text above it.  Enabled by ``--stats``
+    or ``--mem``; off by default (no output, no thread).
     """
 
     def __init__(self) -> None:
@@ -184,20 +242,31 @@ class TerminalSink:
     text prints once and its translation prints once (when it arrives).
 
     When *stats* is provided, records ASR/MT latency samples and commit/emit counts
-    on each state update; the StatsTracker thread prints a live status line to stderr."""
+    on each state update; the StatsTracker thread prints a live status line to stderr.
 
-    def __init__(self, stats=None):
+    When *opencc* is set, converts ASR text for display. When *target_opencc* is set,
+    converts MT output for display (zh-tw family targets)."""
+
+    def __init__(self, stats=None, opencc_conv=None, target_opencc=None):
         self._seen_text = set()
         self._seen_transl = set()
         self._lang = "en"
         self._stats = stats
+        self._opencc = opencc_conv
+        self._target_opencc = target_opencc
+
+    def _cc_src(self, text):
+        return self._opencc.convert(text) if (self._opencc and text) else text
+
+    def _cc_target(self, text):
+        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
 
     def __call__(self, state):
         partial = (state.buffer_transcription or "").strip()
         if partial:
             if self._stats is not None:
                 self._stats.on_partial(partial)
-            print(f"\r[zh*] {partial[:100]}", end="", flush=True)
+            print(f"\r[zh*] {self._cc_src(partial)[:100]}", end="", flush=True)
         for line in state.lines:
             txt = (line.get("text") or "").strip()
             tr = (line.get("translation") or "").strip()
@@ -205,24 +274,68 @@ class TerminalSink:
                 self._seen_text.add(txt)
                 if self._stats is not None:
                     self._stats.on_commit()
-                print(f"\n[zh] {txt}")
+                print(f"\n[zh] {self._cc_src(txt)}")
             if tr and tr not in self._seen_transl:
                 self._seen_transl.add(tr)
                 if self._stats is not None:
                     self._stats.on_emit()
-                print(f"[{self._lang}] {tr}")
+                print(f"[{self._lang}] {self._cc_target(tr)}")
 
 
-async def run_file(args, sink):
+# ---------------------------------------------------------------------------
+# Screen OCR hotword auto-refresh
+# ---------------------------------------------------------------------------
+
+def _start_ocr_loop(args, engine):
+    """Start the ScreenOcrLoop if --ocr-display is set. Returns the loop or None.
+
+    The loop updates the ASR backend's .hotwords live (the ASR worker reads it
+    at the next utterance onset, so the refresh lands at a sentence boundary).
+    """
+    if args.ocr_display is None:
+        return None
+    if args.backend != "mlx-qwen3-asr":
+        print("[ocr] --ocr-display requires --backend mlx-qwen3-asr; skipping", file=sys.stderr)
+        return None
+    try:
+        from whisperlivekit.screen_ocr import ScreenOcrLoop
+    except ImportError as e:
+        print(f"[ocr] screen_ocr import failed: {e}", file=sys.stderr)
+        return None
+
+    # Get the ASR backend instance from the engine; the loop writes .hotwords.
+    asr = getattr(engine, "asr", None)
+    if asr is None:
+        print("[ocr] engine has no .asr; cannot wire OCR hotwords", file=sys.stderr)
+        return None
+
+    ocr_loop = ScreenOcrLoop(
+        recognizer=asr,
+        display_index=args.ocr_display,
+        interval=args.ocr_interval,
+        languages=[l.strip() for l in args.ocr_lang.split(",") if l.strip()],
+        log=lambda m: print(m, file=sys.stderr),
+    )
+    ocr_loop.start()
+    return ocr_loop
+
+
+# ---------------------------------------------------------------------------
+# Runners
+# ---------------------------------------------------------------------------
+
+async def run_file(args, sink, ocr_loop=None):
     kwargs = _make_engine_kwargs(args)
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
+        if ocr_loop is not None:
+            _start_ocr_loop(args, h._processor._engine)
         await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
         await h.finish(timeout=180)
 
 
-async def run_mic(args, sink):
+async def run_mic(args, sink, ocr_loop=None):
     import sounddevice as sd
 
     SAMPLE_RATE = 16000
@@ -241,6 +354,8 @@ async def run_mic(args, sink):
 
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
+        if ocr_loop is not None:
+            _start_ocr_loop(args, h._processor._engine)
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                            blocksize=CHUNK, callback=audio_cb):
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
@@ -271,20 +386,77 @@ def main() -> None:
                    help="display captions in a native always-on-top macOS overlay window")
     p.add_argument("--overlay-hold", type=float, default=3.5,
                    help="minimum seconds a finalized EN caption stays before replacement")
+
+    # --- OpenCC ---
+    p.add_argument("--opencc", default=None, metavar="CONFIG",
+                   help="Convert ASR text via OpenCC before display (e.g. s2twp for Simplified→Taiwan Traditional). "
+                        "Values: s2t, s2twp, s2hk, t2s, tw2s, tw2sp, ...")
+    p.add_argument("--opencc-mt", action="store_true", default=False,
+                   help="Also feed OpenCC-converted text to MT (default off: MT gets raw ASR text, display gets converted)")
+
+    # --- Screen OCR ---
+    p.add_argument("--ocr-display", type=int, default=None, metavar="N",
+                   help="Capture display N, Vision OCR, extract hotwords, feed to ASR recognizer (mlx-qwen3-asr only)")
+    p.add_argument("--ocr-lang", default="zh-Hant",
+                   help="Vision recognition language(s), comma-separated (default zh-Hant)")
+    p.add_argument("--ocr-interval", type=float, default=5.0,
+                   help="Screen capture interval in seconds (default 5.0)")
+
+    # --- Hotwords ---
+    p.add_argument("--hotwords", default="", metavar="TERMS",
+                   help="Static hotword list (comma-separated) for ASR biasing (mlx-qwen3-asr only)")
+
+    # --- VAD tuning ---
+    p.add_argument("--vad-threshold", type=float, default=None,
+                   help="Silero speech-probability threshold (default 0.5; 0.6 safe, 0.7 aggressive)")
+    p.add_argument("--vad-min-silence-ms", type=int, default=None,
+                   help="Trailing silence (ms) to wait before separating speech (default 100)")
+
+    # --- Two-pass toggle ---
+    p.add_argument("--second-pass", action=argparse.BooleanOptionalAction, default=True,
+                   help="Re-decode the whole utterance offline at finalization for accuracy (default on; --no-second-pass trades accuracy for latency)")
+
+    # --- Stats / Memory ---
     p.add_argument("--stats", action="store_true",
                    help="print a live status line (ASR/MT latency, MLX memory, commit/emit counts) to stderr")
+    p.add_argument("--mem", action="store_true",
+                   help="alias for --stats (MLX memory readout + latency EWMA)")
+
+    # --- Simultaneous MT ---
+    p.add_argument("--simultaneous", action="store_true", default=False,
+                   help="Use the simultaneous-MT variant (AlignAtt commit policy, calibrated zh→en Hunyuan heads)")
+
     args = p.parse_args()
 
     if args.source == "file" and not args.audio:
         p.error("--audio is required for --source file")
 
+    # --mem is an alias for --stats
+    show_stats = args.stats or args.mem
+
+    # OpenCC converters
+    opencc_conv = None
+    target_opencc = None
+    if args.opencc is not None:
+        opencc_conv = _make_opencc(args.opencc)
+        if opencc_conv is None:
+            sys.exit(1)
+        # Target-side OpenCC: when target language is zh-tw family, auto-apply s2twp
+        if args.target_language.lower() in _TARGET_ZH_TW_CODES:
+            target_opencc = _make_opencc("s2twp")
+            if target_opencc:
+                print("OpenCC s2twp on target (zh-tw): MT output -> Taiwan Traditional", file=sys.stderr)
+
+    # Pre-create OCR loop placeholder (started after engine init)
+    ocr_loop = True if args.ocr_display is not None else None
+
     if not args.overlay:
         # terminal mode: simple async run
-        stats = StatsTracker() if args.stats else None
+        stats = StatsTracker() if show_stats else None
         if stats is not None:
             stats.start()
-        sink = TerminalSink(stats=stats)
-        coro = run_file(args, sink) if args.source == "file" else run_mic(args, sink)
+        sink = TerminalSink(stats=stats, opencc_conv=opencc_conv, target_opencc=target_opencc)
+        coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop)
         try:
             asyncio.run(coro)
         finally:
@@ -299,9 +471,9 @@ def main() -> None:
     from whisperlivekit.overlay import OverlayRenderer
 
     renderer = OverlayRenderer(theme="auto", show_mem=False, translate=True)
-    sink = OverlaySink(renderer)
+    sink = OverlaySink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
 
-    coro = run_file(args, sink) if args.source == "file" else run_mic(args, sink)
+    coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop)
     stop_event = threading.Event()
     worker_error: list = []
 

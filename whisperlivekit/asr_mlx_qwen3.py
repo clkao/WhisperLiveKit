@@ -90,6 +90,7 @@ class MlxQwen3AsrOnlineProcessor:
         self.chunk_size_sec = getattr(asr, "chunk_size_sec", 2.0)
         self.max_context_sec = getattr(asr, "max_context_sec", 30.0)
         self.finalization_mode = getattr(asr, "finalization_mode", "latest")
+        self.second_pass = getattr(asr, "second_pass", True)
         self._model_obj = _ensure_model(self.model_id)
         self.asr = asr  # back-ref (audio_processor reads self.asr.sep)
         self.sep = getattr(asr, "sep", "")  # CJK: no space between tokens
@@ -167,11 +168,15 @@ class MlxQwen3AsrOnlineProcessor:
     def _finalize_utterance(self) -> Tuple[List, float]:
         """Two-pass re-decode the accumulated utterance audio, emit the clean text
         as one committed token, and reset for the next utterance. Falls back to
-        the streaming text if the re-decode fails."""
+        the streaming text if the re-decode fails.
+
+        When ``self.second_pass`` is False (``--no-second-pass``), skip the
+        offline re-decode and emit the streaming text directly — trades
+        accuracy for ~0.5-1.5s/sentence latency."""
         from whisperlivekit.timed_objects import ASRToken
         final_text = self._text
         utt_audio_s = sum(len(a) for a in self._utt_audio) / self.SAMPLING_RATE if self._utt_audio else 0.0
-        if self._utt_audio:
+        if self._utt_audio and self.second_pass:
             try:
                 from mlx_qwen3_asr import transcribe
                 audio = np.concatenate(self._utt_audio)

@@ -71,6 +71,12 @@ class WhisperLiveKitConfig:
     # Stable-commit wrapper parameters (Job 1: hold-back and iteration count)
     mlx_qwen3_asr_hold_back_units: int = 6
     mlx_qwen3_asr_stable_iterations: int = 2
+    # Two-pass re-decode toggle (re-decode the whole utterance offline at
+    # finalization for accuracy; --no-second-pass trades accuracy for latency).
+    mlx_qwen3_asr_second_pass: bool = True
+    # Silero VAD tuning knobs (override the FixedVADIterator defaults).
+    vad_threshold: Optional[float] = None
+    vad_min_silence_ms: Optional[int] = None
     alignatt_preset: Optional[str] = None
     # quality | balanced | low; see docs/translation-alignatt.md
     alignatt_latency: str = "balanced"
