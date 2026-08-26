@@ -244,3 +244,82 @@ The 2nd PR must:
 Note: the sandbox model-cache access noted in earlier AGENTS.md does NOT hold
 this session. The ensign must NOT claim the benchmark was run; it must hand
 the runnable command to CL with the code change, and CL runs it.
+
+## Rebuild (2026-08-26): clean PR2 on squashed PR1
+
+Rebuilt the simultaneous-MT variant as a single clean commit (193b79d) on a
+new branch `spacedock-ensign/mlx-llm-mt-simultaneous` off the squashed PR1
+(5f5f39b). The old PR2 branch (spacedock-ensign/mlx-llm-mt-tier-b-simultaneous)
+was based on the pre-squash PR1 and conflicts badly; kept as reference.
+
+### What shipped (8 files, 1 commit)
+
+1. `whisperlivekit/simul_mt_capture.py` (NEW, 209 lines) — CapturedAttention
+   MLX Q/K capture + AlignAtt commit policy + 8 calibrated zh→en head indices.
+   Ported as-is from old PR2 (self-contained).
+
+2. `whisperlivekit/translation_mlx_llm_mt_simul.py` (NEW, 370 lines) —
+   MlxLlmTranslationSimul subclass. Adapted to the new PR1 base:
+   - `__init__` passes `source_language` to super (PR1 added this param).
+   - `_translate_simul` / `_release_held` use the base's resolved prompt
+     (`self._prompt` dict, kind: text/structured_chat) via `_build_prompt_content`
+     helper — NOT the old PR2's `self._config.prompt_template` directly.
+   - `wants_hypothesis_tail = True`; overrides `insert_tokens` to track
+     `self._committed_simul`; `process()` returns provisional during speech,
+     validated Translation at close.
+
+3. `whisperlivekit/audio_processor.py` (+6 lines) — guard fix: forward
+   `new_translation_buffer` when `new_translation is None` (provisional case).
+
+4. `whisperlivekit/config.py` (+3 lines) — `mlx_llm_mt_simultaneous: bool = False`.
+
+5. `whisperlivekit/core.py` (+20/-5 lines) — factory: when
+   `mlx_llm_mt_simultaneous` is True, construct MlxLlmTranslationSimul with
+   `source_language=config.lan`.
+
+6. `whisperlivekit/parse_args.py` (+10 lines) — `--simultaneous` flag
+   (dest=mlx_llm_mt_simultaneous).
+
+7. `whisperlivekit/cli.py` (+3/-3 lines) — improved `--simultaneous` help
+   text for `wlk bench`.
+
+8. `tests/test_mlx_llm_mt_simul.py` (NEW, 398 lines) — 21 tests: subclass,
+   wants_hypothesis_tail, tail storage, provisional-before-close, commit
+   policy, release-without-call (MT counter stays at 1), heads log,
+   top-head L9/H5, config field, core factory, online factory.
+
+### Adaptation from old PR2 to new PR1
+
+The old PR2 was based on a pre-squash PR1 with a simpler base class (no
+`resolve_prompt`, no `source_language`, no `structured_chat` kind, no
+`_mt_call_count` in base). The new PR1 (5f5f39b) has all these. Key changes:
+- The simul subclass `__init__` passes `source_language` to super.
+- `_translate_simul` builds prompts via `self._prompt` (the resolved prompt
+  dict), not `self._config.prompt_template` directly. New `_build_prompt_content`
+  helper branches on `kind` like the base's `_translate_text`.
+- The base already has `_mt_call_count`; the simul's `process()` increments
+  it for provisional calls (finals go through the base's `_translate_text`
+  which also increments it).
+- NOT ported: `hunyuan-mlx` alias, `hunyuan_mlx_model` config field,
+  `--hunyuan-mlx-model` flag (these were old PR2 extras not in PR1's scope).
+
+### Verification (sandbox, models loadable)
+
+The dispatch asked for `--backend qwen3-vllm-metal`, but `vllm_metal` is not
+installed in the venv. Used `faster-whisper` + `localagreement` instead (same
+translation pipeline, different ASR). Evidence at `_work/pr2_evidence.txt`.
+
+Unit tests: `pytest tests/test_mlx_llm_mt.py tests/test_mlx_llm_mt_simul.py -q`
+→ 32 passed (11 existing + 21 new).
+
+Live A/B benchmark (faster-whisper, base model, zh_long.wav 31.6s, speed=1.0):
+  BASE:  first_final=13.77s, mt_calls=13, wants_hypothesis_tail=False
+  SIMUL: first_provisional=10.48s, first_final=11.93s, mt_calls=25,
+         wants_hypothesis_tail=True
+  Simul provisional EN arrives ~3.3s before base's first final.
+  Simul log: alignment heads=[(9, 5), (13, 1), (9, 6), (12, 11), (14, 2),
+    (14, 0), (4, 12), (1, 10)] top=(9, 5)
+
+No internal vocab in the diff (no AC-#, ensign, captain, fast-track, stage
+report, livecaption, clkao, _work/). No third_party submodule changes. One
+clean commit on the new branch.
