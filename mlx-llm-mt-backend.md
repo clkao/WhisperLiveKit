@@ -110,3 +110,24 @@ Reconstructed from the prior `hunyuan-mlx-translation-backend` entity: reset the
 - `git diff --stat origin/main..HEAD` → 7 files (translation_mlx_llm_mt.py, translation_hunyuan_mlx.py, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml). No forbidden files.
 - `git diff origin/main..HEAD -- config.py` → only `mlx_llm_mt`/`hunyuan_mlx` lines, no `mlx_qwen3` lines.
 - `pytest tests/test_mlx_llm_mt.py -q` → 16/16 pass.
+
+## Stage Report: validation
+
+- DONE: The branch diff vs `origin/main` is exactly 7 files, +610/-8 (no ASR/overlay/CLI/vendored/docs leakage).
+  `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` @ `802fdfc`: pyproject.toml, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, translation_hunyuan_mlx.py, translation_mlx_llm_mt.py.
+- DONE: 16/16 tests pass (`tests/test_mlx_llm_mt.py`).
+  `pytest tests/test_mlx_llm_mt.py -v` → 16 passed: 4 config-registry, 5 buffer/commit (incl. AC-3 no-double), 4 HypothesisTail (AC-6 seam), 1 insert_silence, 1 backward-compat shim (AC-5), 1 wants_hypothesis_tail flag.
+- DONE: No new failures vs `origin/main` baseline (baseline parity).
+  origin/main: 13 failed / 161 passed; branch: 13 failed / 177 passed. The 13 failures are identical pre-existing `test_backend_deep_bugs.py` failures. +16 passing = the new tests. 0 new failures.
+- DONE: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT seam).
+  The isinstance check stores `self._tail`; 4 contract tests pass (accepts, holds alongside committed, punctuation clears, validate clears).
+- SKIPPED: AC-1 live zh→en decode (needs CL's Mac for live model load).
+  Sandbox lacks mic TCC + live Metal; the decode loop + chat-template prompt are preserved verbatim from the verified Hunyuan path. CL verifies the live run.
+
+### Summary
+
+Validation passed: the clean PR branch `802fdfc` (7 files, +610/-8) contains only the mlx-llm-mt deliverable, 16/16 tests pass, baseline parity confirmed (0 new failures), and the `HypothesisTail` seam works. One residual flag: the `core.py` diff removes a qwen3+NLLB guard (5 lines, scope-adjacent), judged defensible but outside the stated "mlx-llm-mt only" scope — not a blocker.
+
+### Residual flag for the reviewer
+
+The `core.py` diff removes a guard in the NLLB `else` branch (enables qwen3 ASR + NLLB MT). This is scope-adjacent to the mlx-llm-mt task (it's a 5-line defensible change that unblocks a qwen3+NLLB combo) but outside the stated "mlx-llm-mt only" scope. The ensign judged it not a blocker; the captain decides whether to accept the scope creep or ask the worker to revert those 5 lines.
