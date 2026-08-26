@@ -204,3 +204,43 @@ The comparison the validator must show:
 
 Run on CL's Mac (model cache + Metal). The validator shows the report
 output as evidence for each branch.
+
+## Rework (2026-08-26) addendum 2: wire the benchmark CLI; patch metrics
+
+The `wlk bench` CLI (`cli.py:_run_bench_new`) does not pass the new
+`translation_backend` / `target_language` params to `BenchmarkRunner`. The
+runner accepts them (the worker added them) but the CLI does not wire them,
+so `wlk bench` cannot exercise the translation path. This is a gap in the
+2nd PR.
+
+The 2nd PR must:
+1. **Wire the CLI**: add `--translation-backend` (default None) and
+   `--target-language` (default None) flags to the `wlk bench` subcommand
+   parser (`cli.py` ~line 814), and pass them to `BenchmarkRunner` in
+   `_run_bench_new` (~line 878). When `--translation-backend` is set, the
+   benchmark runs the translation path and reports the translation metrics.
+
+2. **Patch the metrics**: the runner already tracks `first_translation_time_s`,
+   `provisional_before_final`, `mt_call_count` (the worker added these). Add
+   **translation accuracy** (BLEU or chrF against a reference, or at minimum
+   a text-diff so the report shows translation quality, not only timing).
+   Add **translation RTF** (translation wall-time / audio duration) alongside
+   the ASR RTF. These belong in `SampleResult` + the report output.
+
+3. **The report output**: `print_report` (`benchmark/report.py`) must show
+   the translation metrics when a translation backend was run. A reviewer
+   reading the benchmark output sees WER (ASR) + translation-RTF + translation
+   latency + provisional-before-final, in one table.
+
+4. **Run it and record the output**: the sandbox CANNOT load models
+   (`~/.cache/huggingface` is permission-denied — re-probed this session).
+   The run must happen on CL's Mac. Record the `wlk bench` output (the full
+   report) as the validation evidence for both:
+   - causal (qwen3-vllm-metal --qwen3-vllm-metal-audio-backend causal) vs
+     standard (mlx-qwen3-asr) — ASR WER/RTF comparison
+   - base (no --translation-backend) vs simul (--translation-backend mlx-llm-mt
+     + --simultaneous) — translation RTF/latency/provisional comparison
+
+Note: the sandbox model-cache access noted in earlier AGENTS.md does NOT hold
+this session. The ensign must NOT claim the benchmark was run; it must hand
+the runnable command to CL with the code change, and CL runs it.
