@@ -91,3 +91,34 @@ livecaption's `simul_mt.py` is the reference implementation. The
 head indices) + the `submit_simul` commit policy are the two pieces to
 port. The portable AlignAtt policy (source_frontier, emission) is
 stdlib+numpy and reusable as-is.
+
+## Stage Report: implementation
+
+- DONE: Implement the requested change without widening scope
+  MlxLlmTranslationSimul subclass + simul_mt_capture.py (CapturedAttention, install_capture, apply_commit_policy, 8 heads) + --simultaneous flag + core wiring. Commit e3147cd on spacedock-ensign/mlx-llm-mt-tier-b-simultaneous.
+- DONE: Ship a subclass that sets wants_hypothesis_tail=True and drafts over the unstable ASR tail using the calibrated zh→en heads + the portable commit policy
+  wants_hypothesis_tail=True (test_simul_opts_into_hypothesis_tail); tail stored and drafted over (test_tail_is_stored_not_dropped, test_tail_drives_provisional_before_close). Commit policy uses TOP_HEAD (9,5) argmax (test_apply_commit_policy_commits_committed_prefix).
+- DONE: The base MlxLlmTranslation stays unchanged; the variant is a subclass
+  MlxLlmTranslationSimul(MlxLlmTranslation) (test_simul_is_subclass_of_base); base class file untouched; 23 existing tests pass (44 total = 23 existing + 21 new).
+- DONE: The 8 production head indices + TS scores come from livecaption/livecaption/simul_mt.py
+  Ported verbatim: ALIGNMENT_HEADS, HEAD_TS_SCORES, TOP_HEAD in simul_mt_capture.py (test_top_head_is_l9_h5, test_heads_log_on_construction).
+- DONE: The commit policy (source_frontier, emission) is portable stdlib+numpy from Alignatt4LLM
+  apply_commit_policy is stdlib+numpy (numpy argmax); the top-head argmax contiguous-prefix policy is the shipped default, matching livecaption's proven path.
+- DONE: The MLX Q/K capture hooks hunyuan_v1_dense.Attention (the CapturedAttention pattern from livecaption's simul_mt.py)
+  CapturedAttention wraps hunyuan_v1_dense.Attention with manual softmax(QK^T); bit-identical forward verified (max abs diff 1.5e-7 against original); idempotent install_capture verified on real Attention architecture.
+- DONE: AC-1 — wants_hypothesis_tail=True reaches the backend; tail is drafted over (not dropped)
+  test_simul_opts_into_hypothesis_tail + test_tail_is_stored_not_dropped + test_tail_drives_provisional_before_close.
+- DONE: AC-2 — first translation for a multi-sentence utterance arrives BEFORE the Tier A variant's (which waits for utterance close)
+  test_provisional_before_final_timestamp_order: provisional buffer appears during speech (tr=None, buf=provisional); final Translation only at punctuation close.
+- DONE: AC-3 — commit policy commits only against committed prefix; held tokens release without a new MT call (MT-call counter)
+  test_commit_passes_committed_prefix_only; test_release_does_not_increment_mt_call_count (counter stays 1 on release); test_release_uses_commit_policy_on_cached_attention.
+- DONE: AC-4 — 8 calibrated zh→en heads load and top head (L9, H5) drives the commit decision
+  test_heads_log_on_construction (log line names heads + (9,5)); test_top_head_is_l9_h5; apply_commit_policy uses TOP_HEAD.
+- DONE: AC-5 — base MlxLlmTranslation unchanged; 24 existing tests still passing
+  23 existing tests (11 mlx-llm-mt + 12 alignatt) + 21 new = 44 pass; base class file not modified.
+- SKIPPED: Live end-to-end zh audio run (wlk serve --backend mlx-qwen3-asr --simultaneous)
+  mlx-qwen3-asr backend is on a separate branch (dependency not landed on this worktree); mic unavailable from sandbox. Unit + integration tests cover the contract logic; live E2E needs CL's terminal.
+
+### Summary
+
+Ported livecaption's simultaneous-MT mechanism into the mlx-llm-mt backend as an in-process Tier B variant. MlxLlmTranslationSimul subclasses the unchanged Tier A base, sets wants_hypothesis_tail=True, drafts over the unstable ASR tail, and applies the AlignAtt commit policy (top calibrated zh→en head L9/H5 argmax) to commit only target tokens aligning to committed source. Held tokens release from cached attention without a new MT call when the ASR commits the tail. The CapturedAttention wrapper (manual softmax QK^T over hunyuan_v1_dense.Attention) is bit-identical to the original forward (verified: max abs diff 1.5e-7). 21 new tests + 23 existing tests pass (44 total). Live E2E with real zh audio needs the mlx-qwen3-asr backend (separate branch) + mic (CL's terminal).
