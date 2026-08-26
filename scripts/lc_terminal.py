@@ -384,6 +384,8 @@ def main() -> None:
                    help="tower checkpoint for the causal audio encoder")
     p.add_argument("--overlay", action="store_true",
                    help="display captions in a native always-on-top macOS overlay window")
+    p.add_argument("--overlay-mode", choices=["both", "target", "source"], default="both",
+                   help="overlay only: which text to show. 'both' = source + target, 'target' = translation only, 'source' = source only")
     p.add_argument("--overlay-hold", type=float, default=3.5,
                    help="minimum seconds a finalized EN caption stays before replacement")
 
@@ -470,7 +472,8 @@ def main() -> None:
     _ov.MIN_HOLD_SEC = args.overlay_hold
     from whisperlivekit.overlay import OverlayRenderer
 
-    renderer = OverlayRenderer(theme="auto", show_mem=False, translate=True)
+    renderer = OverlayRenderer(theme="auto", show_mem=False, translate=True,
+                              overlay_mode=args.overlay_mode)
     sink = OverlaySink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
 
     coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop)

@@ -80,8 +80,11 @@ class OverlayRenderer:
         theme: str = "auto",
         show_mem: bool = False,
         translate: bool = True,
+        suppress_mem_stderr: bool = False,
+        overlay_mode: str = "both",
     ) -> None:
         self._translate = translate
+        self._overlay_mode = overlay_mode  # "both" | "target" | "source"
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._pump_thread: threading.Thread | None = None
@@ -89,6 +92,10 @@ class OverlayRenderer:
         # The overlay window has no status line, so --mem prints MLX active/cache/peak + asr/cap
         # to the launching terminal on a 1s timer (same contract as the terminal renderer).
         self._show_mem = show_mem
+        # When the overlay co-exists with the terminal TUI (MultiRenderer), the TUI's
+        # bottom status line already shows MLX mem; the overlay's stderr print would spam
+        # new lines into the terminal. Suppress the stderr print in that mode.
+        self._suppress_mem_stderr = suppress_mem_stderr
         self._mx = None
         self._mem_stop = threading.Event()
         self._mem_thread: threading.Thread | None = None
@@ -171,7 +178,10 @@ class OverlayRenderer:
         sf = screen.frame()
         # full-width bottom bar: edge to edge, sits at the very bottom of the screen.
         w = sf.size.width
-        h = 190
+        if self._overlay_mode == "both":
+            h = 160
+        else:
+            h = 60  # single field, vertically centered
         x = 0
         y = 0
         rect = Foundation.NSMakeRect(x, y, w, h)
@@ -206,7 +216,7 @@ class OverlayRenderer:
 
         # three stacked fields. Layout bottom-up (AppKit origin is bottom-left):
         #   partial (dim italic) at y=12, zh (small muted) above it, en (large, WRAPPING, top).
-        def make_field(y, fh, font_size, color, italic=False, bold=False, wrap=False):
+        def make_field(y, fh, font_size, color, italic=False, bold=False, wrap=False, vcenter=False):
             f = AppKit.NSTextField.alloc().initWithFrame_(
                 Foundation.NSMakeRect(40, y, w - 80, fh)
             )
@@ -215,6 +225,8 @@ class OverlayRenderer:
             f.setEditable_(False)
             f.setSelectable_(False)
             f.setAlignment_(AppKit.NSCenterTextAlignment)
+            if vcenter:
+                f.cell()._setVerticallyCentered_(True)
             if wrap:
                 # multi-line wrapping so long EN captions don't clip; 0 lines = no cap
                 f.setUsesSingleLineMode_(False)
@@ -233,9 +245,18 @@ class OverlayRenderer:
 
         # taller window + a tall wrapping EN field so 2-3 lines fit without clipping.
         # EN is the focus: large (42pt), white, bold, wrapping. zh and partial smaller below.
-        self._field_partial = make_field(14, 24, 16, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.6, 0.9), italic=True)
-        self._field_zh = make_field(42, 28, 19, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.78, 0.95))
-        self._field_en = make_field(74, 108, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True)
+        if self._overlay_mode == "both":
+            self._field_partial = make_field(12, 22, 16, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.6, 0.9), italic=True)
+            self._field_zh = make_field(38, 26, 19, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.78, 0.95))
+            self._field_en = make_field(68, 84, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True)
+        elif self._overlay_mode == "target":
+            self._field_partial = None
+            self._field_zh = None
+            self._field_en = make_field(0, h, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True, vcenter=True)
+        else:  # "source"
+            self._field_partial = make_field(12, 22, 16, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.6, 0.9), italic=True)
+            self._field_zh = make_field(38, h - 40, 19, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.78, 0.95))
+            self._field_en = None
 
         win.setContentView_(view)
         win.orderFrontRegardless()
@@ -269,20 +290,27 @@ class OverlayRenderer:
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _drain_en(self) -> None:
         """Daemon thread: release queued EN sentences to the field one at a time, each held
-        for MIN_HOLD_SEC. FIFO order so split sentences read in order. A new utterance's
-        _enqueue_en clears pending unshown sentences (newest-utterance wins), but the
-        currently-shown sentence stays for its hold so the line never flashes mid-read."""
+        for MIN_HOLD_SEC. After the hold, if no new sentence is queued, clear the field
+        so the overlay does not show stale text. FIFO order so split sentences read in
+        order. A new utterance clears pending unshown sentences (newest-utterance wins),
+        but the currently-shown sentence stays for its hold so the line never flashes."""
         import time
         while not self._en_drain_stop.wait(0.1):
             with self._lock:
-                if not self._en_queue:
-                    continue
-                if time.monotonic() - self._en_shown_at < MIN_HOLD_SEC:
-                    continue
-                # release the OLDEST queued sentence (FIFO); the rest wait their turn
-                en = self._en_queue.pop(0)
-                self._en = en
-                self._en_shown_at = time.monotonic()
+                if self._en_queue:
+                    if time.monotonic() - self._en_shown_at < MIN_HOLD_SEC:
+                        continue
+                    en = self._en_queue.pop(0)
+                    self._en = en
+                    self._en_shown_at = time.monotonic()
+                else:
+                    # No queued sentence. If the current one has been held long enough,
+                    # clear it so stale text does not linger on the overlay.
+                    if self._en and time.monotonic() - self._en_shown_at >= MIN_HOLD_SEC:
+                        self._en = ""
+                        en = ""
+                    else:
+                        continue
             self._set(self._field_en, en)
 
     def _enqueue_en(self, en: str) -> None:
@@ -294,14 +322,11 @@ class OverlayRenderer:
         import time
         sents = _split_sentences(en)
         with self._lock:
-            # newest utterance wins: drop pending unshown sentences from older utterances,
-            # then queue this utterance's sentences in order.
             self._en_queue.clear()
             self._en_queue.extend(sents)
-            # if nothing is shown yet (first caption), show immediately by setting the
-            # shown timestamp to long ago so the drainer releases it right away
-            if self._en_shown_at == 0.0:
-                self._en_shown_at = -MIN_HOLD_SEC
+            # Reset the shown timestamp so the drainer releases the first new sentence
+            # immediately (not gated on the previous sentence's hold timer).
+            self._en_shown_at = -MIN_HOLD_SEC
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -309,9 +334,8 @@ class OverlayRenderer:
         attr = "_lat_asr" if which == "asr" else "_lat_cap"
         prev = getattr(self, attr)
         setattr(self, attr, lat if prev is None else prev + self._lat_alpha * (lat - prev))
-        if self._show_mem:
-            cur = getattr(self, attr)
-            print(f"[lat] {which} {cur:.2f}s", file=sys.stderr, flush=True)
+        cur = getattr(self, attr)
+        print(f"[lat] {which} {cur:.2f}s", file=sys.stderr, flush=True)
 
     def _mem_line(self) -> str:
         """One stderr status line: MLX unified-memory + caption latency. Mirrors
@@ -333,7 +357,10 @@ class OverlayRenderer:
 
     def _mem_loop(self) -> None:
         """Print the MLX+latency line to stderr on a 1s timer so it ticks during silence
-        (latency updates only fire when a sentence lands). Mirrors render.Renderer._mem_loop."""
+        (latency updates only fire when a sentence lands). Mirrors render.Renderer._mem_loop.
+        Suppressed when co-existing with the terminal TUI (suppress_mem_stderr)."""
+        if self._suppress_mem_stderr:
+            return
         while not self._mem_stop.wait(1.0):
             line = self._mem_line()
             if line:
@@ -343,7 +370,8 @@ class OverlayRenderer:
     def partial(self, label: str, text: str, started_at: datetime, speaker: int | None = None) -> None:
         with self._lock:
             self._partial = text
-        self._set(self._field_partial, text)
+        if self._overlay_mode != "target":
+            self._set(self._field_partial, text)
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
@@ -351,10 +379,13 @@ class OverlayRenderer:
             self._zh = zh
             self._partial = ""  # this utterance finalized; clear the partial line
         self._record_latency(started_at, "asr")
-        self._set(self._field_zh, zh)
+        if self._overlay_mode != "target":
+            self._set(self._field_zh, zh)
         self._set(self._field_partial, "")
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
+        if self._overlay_mode == "source":
+            return
         en = _segments_text(zh_segments)
         self._record_latency(started_at, "cap")
         self._enqueue_en(en)
