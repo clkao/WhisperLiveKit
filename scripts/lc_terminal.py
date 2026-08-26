@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""livecaption-equivalent tool on WhisperLiveKit — terminal OR native overlay.
+"""In-process captioning tool on WhisperLiveKit — terminal OR native overlay.
 
 In-process (no server, no WebSocket). Uses the two new backends:
   --backend mlx-qwen3-asr            (pure-MLX Qwen3-ASR, moona3k)
   --translation-backend mlx-llm-mt   (generic decoder-LLM MT via mlx-lm, in-process)
 
 With --overlay: drives the native macOS caption window (always-on-top NSWindow,
-ported from livecaption/overlay.py). The WLK asyncio loop runs in a worker
+ported from the overlay module). The WLK asyncio loop runs in a worker
 thread; the overlay NSWindow run loop runs on the main thread (pyobjc requires
 this); the on_update callback marshals text to the overlay fields.
 
 Without --overlay: prints to the terminal.
 
-Ported from livecaption (livecaption/cli.py + livecaption/screen_ocr.py):
+Features ported from the reference implementation:
   --opencc / --opencc-mt     OpenCC text conversion (s2twp etc.)
   --ocr-display / --ocr-lang / --ocr-interval   Screen OCR hotword auto-refresh
   --hotwords                Static hotword list
@@ -107,7 +107,7 @@ def _make_engine_kwargs(args) -> dict:
 # ---------------------------------------------------------------------------
 
 class OverlaySink:
-    """Drives the livecaption OverlayRenderer from WLK stream state.
+    """Drives the OverlayRenderer from WLK stream state.
 
     Maps WLK's per-update TestState -> overlay.partial / overlay.translation:
       buffer_transcription (live rolling ASR) -> overlay partial line
@@ -440,7 +440,7 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-    p = argparse.ArgumentParser(description="livecaption-equivalent on WLK (in-process)")
+    p = argparse.ArgumentParser(description="in-process captioning on WLK")
     p.add_argument("--audio", help="audio file path (file mode)")
     p.add_argument("--source", choices=["mic", "file"], default="file")
     p.add_argument("--language", default="zh")

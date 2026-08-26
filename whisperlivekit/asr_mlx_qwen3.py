@@ -13,7 +13,7 @@ The online processor adapts mlx-qwen3-asr's streaming API to WLK's
 `insert_audio_chunk` / `process_iter` / `start_silence` / `finish` /
 `get_buffer` contract (the same shape as Qwen3StreamingOnlineProcessor in
 qwen3-asr-causal/online.py). WLK's AudioProcessor owns the VAD endpointing, so
-this backend does NOT run its own VAD — unlike livecaption's QwenOnlineStream
+this backend does NOT run its own VAD (the upstream audio_processor VAD is used)
 which carries its own Silero VAD. That VAD logic is dropped here; WLK provides it.
 
 Tokens: mlx-qwen3-asr emits a `stable_text` prefix (monotonically non-decreasing
@@ -33,7 +33,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Language tag -> name mlx-qwen3-asr expects (mirrors livecaption's _QWEN_LANG_ALIASES).
+# Language tag -> name mlx-qwen3-asr expects.
 _QWEN_LANG_ALIASES = {
     "en": "English", "en-us": "English", "en-gb": "English", "english": "English",
     "zh": "Chinese", "zh-cn": "Chinese", "zh-hans": "Chinese", "cmn": "Chinese",
@@ -106,7 +106,7 @@ class MlxQwen3AsrOnlineProcessor:
     def _warmup(self) -> None:
         """Run one short decode on silence to absorb Metal kernel compilation
         now, so the first real sentence's partial doesn't stall. Mirrors
-        livecaption/asr_qwen.py:_warmup."""
+        the reference implementation's _warmup."""
         import numpy as np
         from mlx_qwen3_asr.streaming import feed_audio, finish_streaming
         try:
@@ -234,7 +234,7 @@ class MlxQwen3AsrOnlineProcessor:
         return self._finalize_utterance()
 
 
-# MLX lock: serialize MLX decode steps (mirrors livecaption's runtime.MLX_LOCK).
+# MLX lock: serialize MLX decode steps (one MLX eval at a time).
 # Imported lazily so this module imports even if mlx isn't ready yet.
 try:
     from whisperlivekit._mlx_lock import MLX_LOCK as _MLX_LOCK  # if WLK provides one

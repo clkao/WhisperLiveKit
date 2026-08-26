@@ -8,6 +8,7 @@ If this produces text, the model + streaming API work; the bug is in the
 WLK backend wrapper (asr_mlx_qwen3.py / asr_commit.py / asr_wrapper.py).
 If this produces no text, the issue is the model or the streaming API itself.
 """
+import os
 import sys
 import numpy as np
 import soundfile as sf
@@ -18,7 +19,7 @@ MODEL = "mlx-community/Qwen3-ASR-0.6B-8bit"
 LANG = "Chinese"
 
 def main():
-    wav = sys.argv[1] if len(sys.argv) > 1 else "/Users/clkao/git/asr/_work/zh_long.wav"
+    wav = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ZH_BENCH_WAV", "")
     print(f"Loading model {MODEL} ...", flush=True)
     model_obj, cfg = load_model(MODEL)
     print(f"Model loaded. dtype={getattr(model_obj, 'dtype', '?')}", flush=True)

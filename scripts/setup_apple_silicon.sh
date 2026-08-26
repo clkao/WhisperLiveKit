@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Setup + run script for the Apple-Silicon backends on WhisperLiveKit.
 # The mlx-qwen3-asr backend needs huggingface_hub==1.18.0 + transformers==5.11.0
-# (matches the livecaption venv). uv resolves hub 1.14.0 (faster-whisper constraint),
+# (the working combo). uv resolves hub 1.14.0 (faster-whisper constraint),
 # which breaks mlx-qwen3-asr model loading (silent: no ASR output).
 # So: uv sync for the binary deps, then hand-install the working combo.
 set -euo pipefail

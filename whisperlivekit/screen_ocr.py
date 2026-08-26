@@ -6,7 +6,7 @@ toward slide-specific proper nouns. This is the live half of the screen-hint fea
 the --hotwords flag is the static version (manual terms).
 
 Design:
-- One daemon thread per livecaption run. Captures the target display (CGWindowListCreateImage
+- One daemon thread per run. Captures the target display (CGWindowListCreateImage
   on that display's bounds), hashes the frame (downscale + perceptual hash) to detect
   CHANGE, and only re-OCRs when the frame differs from the last — so it's ~0 CPU between
   slides (slides change every 30-60s, not continuously).

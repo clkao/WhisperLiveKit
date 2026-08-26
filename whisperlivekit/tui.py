@@ -1,7 +1,7 @@
 """Terminal TUI renderer: a three-region persistent layout (scrolling captions,
 OCR line, status line) built on rich.Live.
 
-Ported from livecaption/render.py. The contract mirrors the overlay renderer:
+The contract mirrors the overlay renderer:
 __enter__/__exit__, partial, final, translation, preview, flush_pending,
 set_ocr_text. Both renderers can run together via MultiRenderer.
 

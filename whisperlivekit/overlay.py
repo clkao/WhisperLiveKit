@@ -1,8 +1,8 @@
-"""Borderless always-on-top caption overlay (PyObjC / AppKit) for livecaption.
+"""Borderless always-on-top caption overlay (PyObjC / AppKit).
 
 An OverlayRenderer implements the same callback contract as render.Renderer
 (partial / final / translation) but sinks to a transparent borderless NSWindow
-that floats over the screen instead of the terminal. Reuses livecaption's whole
+that floats over the screen instead of the terminal. The whole
 ASR + MT pipeline; this file only owns the display.
 
 Design:

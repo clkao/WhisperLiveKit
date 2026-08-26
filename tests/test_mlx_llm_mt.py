@@ -1,9 +1,9 @@
 """Tests for the generic mlx-llm-mt translation backend.
 
 Covers:
-  - AC-4: a second config (TranslateGemma placeholder) loads with a different
+  - a second config (TranslateGemma placeholder) loads with a different
     repo + prompt without new code — only the config dict changes.
-  - AC-3: ``validate_buffer_and_reset`` does not double the output (returns
+  - ``validate_buffer_and_reset`` does not double the output (returns
     the translation once at a silence boundary; returns empty when there is
     nothing to flush, not the stale buffer).
 
@@ -25,7 +25,7 @@ from whisperlivekit.translation_mlx_llm_mt import (
 
 
 # ---------------------------------------------------------------------------
-# AC-4: Hunyuan is one config, not the backend identity
+# Hunyuan is one config, not the backend identity
 # ---------------------------------------------------------------------------
 
 def test_registry_has_multiple_config_families():
@@ -74,7 +74,7 @@ def test_config_is_data_not_code():
 
 
 # ---------------------------------------------------------------------------
-# AC-3: validate_buffer_and_reset does not double the output
+# validate_buffer_and_reset does not double the output
 # ---------------------------------------------------------------------------
 
 def _make_backend(model_id="hy-mt2-1.8b-8bit"):
@@ -110,7 +110,7 @@ def test_validate_flushes_open_segment_once():
 
 
 def test_validate_does_not_double_after_process():
-    """AC-3 core: after ``process()`` has already emitted a translation for a
+    """After ``process()`` has already emitted a translation for a
     closed segment, ``validate_buffer_and_reset`` must NOT return it again —
     it returns empty (TimedText()), not the stale _last_buffer."""
     b = _make_backend()
@@ -144,7 +144,7 @@ def test_process_returns_none_when_no_closed_segment():
 
 
 def test_wants_hypothesis_tail_false():
-    """Tier A does not draft over the unstable ASR tail."""
+    """The base variant does not draft over the unstable ASR tail."""
     assert MlxLlmTranslation.wants_hypothesis_tail is False
 
 
@@ -152,7 +152,7 @@ def test_insert_tokens_accepts_hypothesis_tail():
     """``insert_tokens`` accepts a ``HypothesisTail`` item (stores it as
     ``self._tail``) instead of dropping it. The pipeline sends the unstable
     ASR tail when ``wants_hypothesis_tail`` is True; dropping it breaks the
-    contract. Tier A does not draft over it, but must hold onto it so a Tier
+    contract. The base does not draft over it, but must hold onto it so a
     B subclass can read ``self._tail`` in ``process()``."""
     from whisperlivekit.timed_objects import HypothesisTail
 
@@ -204,7 +204,7 @@ def test_validate_buffer_and_reset_clears_tail():
 
 
 def test_insert_silence_noop():
-    """``insert_silence`` is a no-op for Tier A."""
+    """``insert_silence`` is a no-op for the base variant."""
     b = _make_backend()
     b.insert_tokens([_token("测试", 0.0, 0.5)])
     b.insert_silence(1.0)
@@ -215,7 +215,7 @@ def test_insert_silence_noop():
 
 
 # ---------------------------------------------------------------------------
-# AC-5: backward-compat alias
+# backward-compat alias
 # ---------------------------------------------------------------------------
 
 def test_hunyuan_mlx_shim_reexports():

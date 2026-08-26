@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Simultaneous-MT A/B benchmark on the WLK pipeline (Tier A vs Tier B).
+"""Simultaneous-MT A/B benchmark on the WLK pipeline (base vs simul).
 
 Measures on real zh audio, through the real ASR + MT pipeline:
   - first-translation-time: wall-clock from feed start to the first EN line arriving.
   - MT-call-count: how many MT generate calls each variant made.
-  - provisional-before-final: did Tier B emit a provisional EN before the final?
+  - provisional-before-final: did the simul variant emit a provisional EN before the final?
 
-This is the live validation evidence for the Tier B task's AC-2 and AC-3
-(the ensign's unit tests prove the mechanism; this proves the outcome on
+This is the validation evidence: first-translation-time and MT-call-count
+on real audio. The unit tests prove the mechanism; this proves the outcome
 real audio).
 
 Run on CL's Mac (needs the model cache + Metal):
@@ -93,7 +93,7 @@ async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
     rtf = wall_elapsed / audio_duration
 
     return {
-        "variant": "Tier B (simul)" if simultaneous else "Tier A (serial)",
+        "variant": "simul" if simultaneous else "serial",
         "lines": lines_seen,
         "committed_text": " ".join(committed_text_parts),
         "first_translation_s": first_translation_at[0] if first_translation_at else None,
@@ -110,8 +110,8 @@ async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Simultaneous-MT A/B benchmark (Tier A vs Tier B)")
-    p.add_argument("audio", nargs="?", default="/Users/clkao/git/asr/_work/zh_long.wav")
+    p = argparse.ArgumentParser(description="Simultaneous-MT A/B benchmark (base vs simul)")
+    p.add_argument("audio", nargs="?", default=os.environ.get("ZH_BENCH_WAV", ""))
     p.add_argument("--model", default="hy-mt2-1.8b-8bit")
     p.add_argument("--reference", default=None, help="reference transcript for WER (one line of text). Omit to skip WER.")
     args = p.parse_args()
@@ -124,7 +124,7 @@ def main() -> None:
 
     results = []
     for simul in (False, True):
-        label = "Tier B (simul)" if simul else "Tier A (serial)"
+        label = "simul" if simul else "serial"
         print(f"\nRunning {label} ...")
         r = asyncio.run(run_one(args.audio, simultaneous=simul, model_id=args.model))
         # WER against the reference (ASR quality; same for both variants since the
