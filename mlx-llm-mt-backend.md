@@ -5,6 +5,7 @@ source: fast-tracked from hunyuan-mlx-translation-backend (completion-guard wedg
 score: 0.8
 worktree: .worktrees/spacedock-ensign-hunyuan-mlx-translation-backend
 id: 5c87da2jhj60dtxmybb72v6p
+started: 2026-08-26T06:46:29Z
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the
