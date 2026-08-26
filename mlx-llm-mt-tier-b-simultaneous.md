@@ -1,6 +1,6 @@
 ---
 title: "mlx-llm-mt Tier B: simultaneous MT via AlignAtt commit policy (in-process, no sidecar)"
-status: validation
+status: implementation
 source: prototype — port livecaption's simultaneous MT into mlx-llm-mt as the stable test path
 score: 0.8
 id: ksxw8mezhk10fzx2yw7mfvj7
@@ -138,3 +138,35 @@ Expected: Tier B's first-translation arrives earlier (provisional during
 speech); Tier B makes fewer or equal MT calls (release-without-call). This
 is the live validation gate for AC-2/AC-3 — the unit tests alone are not
 sufficient (they skipped the live E2E).
+
+## Rework (2026-08-26): internal-vocabulary cleanup + guard fix landed
+
+The validation review found two issues:
+
+1. **Missing guard fix**: the audio_processor.py guard
+   `if new_translation is not None:` dropped the provisional buffer. Commit
+   `2a3c5a0` on this branch fixes it (forward the buffer when the translation
+   is None). This is load-bearing for AC-2 — without it the live A/B benchmark
+   shows `provisional-before-final: B=False`. Keep this commit; build on it.
+
+2. **Internal vocabulary in source/tests**: 17 hits of `AC-#`, `Tier A/B`,
+   `ensign`, `captain`, `fast-track`, `stage report` in
+   `whisperlivekit/translation_mlx_llm_mt_simul.py` (2) and
+   `tests/test_mlx_llm_mt_simul.py` (15). These leak workflow vocabulary into
+   a PR a reviewer reads cold. Clean them to plain repo vocabulary:
+   - `Tier A` / `Tier B` → "the base" / "the simultaneous variant" (or the
+     class names: `MlxLlmTranslation` / `MlxLlmTranslationSimul`)
+   - `AC-#` references in test docstrings → restate what the test checks in
+     plain language (e.g. "AC-2: provisional arrives before close" →
+     "the provisional buffer appears during speech; the final translation
+     arrives at utterance close")
+   - `ensign`/`captain`/`fast-track`/`stage report` → remove (none should appear
+     in code)
+
+Do NOT remove `AlignAtt`, `HypothesisTail`, `wants_hypothesis_tail`,
+`simultaneous`, `calibrated heads`, `CapturedAttention` — those are
+legitimate method/contract names the PR describes.
+
+After cleanup: run the tests, confirm 44 pass, confirm the live A/B
+benchmark (`scripts/bench_simul_ab.py`) shows
+`provisional-before-final: B=True`. Then advance to validation.
