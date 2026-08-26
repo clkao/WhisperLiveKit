@@ -7,9 +7,9 @@ wrapper replicates the forward with a manual ``softmax(QK^T)`` so the
 alignment-head attention is capturable. The forward is bit-identical to the
 original (only attention storage is added).
 
-The 8 production head indices + TS scores come from the livecaption
-calibration (``_work/simul_mt_calibration_verdict.md``), hardcoded here so
-the simultaneous variant is self-contained.
+The 8 production head indices + TS scores come from a calibration run on
+tencent/Hy-MT2-1.8B (zh→en), hardcoded here so the simultaneous variant is
+self-contained.
 
 Load-bearing details (learned in the livecaption spike):
   1. ``create_attention_mask`` returns the string ``"causal"``, not an
@@ -27,8 +27,8 @@ import mlx.nn as nn
 
 # 8 calibrated production head indices (layer, head) for tencent/Hy-MT2-1.8B
 # zh→en. Top head (L9, H5, TS=0.79) is the primary alignment signal; the
-# others are cross-check / stability heads. From the livecaption calibration
-# verdict (``_work/simul_mt_calibration_verdict.md``).
+# others are cross-check / stability heads. Hardcoded from the calibration
+# run so the variant is self-contained.
 ALIGNMENT_HEADS: List[Tuple[int, int]] = [
     (9, 5), (13, 1), (9, 6), (12, 11), (14, 2), (14, 0), (4, 12), (1, 10),
 ]

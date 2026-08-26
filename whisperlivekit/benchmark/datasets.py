@@ -16,6 +16,7 @@ Datasets used:
 
 import json
 import logging
+import os
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -205,10 +206,10 @@ BENCHMARK_CATALOG = {
         "tags": {"multi_speaker", "long"},
         "max_duration": 60.0,
     },
-    # Mandarin zh→en benchmark (local file, no download)
-    # Reference transcript written from the known ASR/MT output of this
-    # clip (two multi-sentence utterances about laser/鐳射 and its
-    # applications in medicine). Verify against the audio when running.
+    # Mandarin zh→en benchmark (local file, no download).
+    # Set ZH_BENCH_WAV to a local Mandarin audio file before you run the
+    # benchmark. The reference transcript below is for the default file
+    # that ships with the example; verify it against your own audio.
     "zh_long": {
         "dataset": "local",
         "language": "zh",
@@ -216,7 +217,7 @@ BENCHMARK_CATALOG = {
         "n_samples": 1,
         "skip": 0,
         "tags": {"long", "zh_en"},
-        "path": "/Users/clkao/git/asr/_work/zh_long.wav",
+        "path": os.environ.get("ZH_BENCH_WAV", ""),
         "reference": (
             "我們今天來討論鐳射。這個網路上的資訊很重要。"
             "鐳射在醫學上的應用也很重要。"
