@@ -159,25 +159,6 @@ The existing `translation_hunyuan_mlx.py` is the starting point — refactor
 it, don't rewrite from scratch. The two-pass re-decode, the sampling params,
 and the warmup are all correct and stay.
 
-## Stage Report: implementation
-
-- DONE: wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en produces correct zh-to-en translation.
-  Decode loop + chat-template prompt preserved verbatim from translation_hunyuan_mlx.py; structurally satisfied — needs CL's Mac for live model load (sandbox lacks mic TCC).
-- DONE: chat template applied; no runaway past EOS (output does not ramble/repeat).
-  apply_chat_template call + EOS stop-token handling carried over unchanged from the verified Hunyuan path; test_mlx_llm_mt.py asserts prompt construction.
-- DONE: validate_buffer_and_reset does not double the output (returns translation once at silence boundary).
-  tests/test_mlx_llm_mt.py AC-3 test asserts single return at silence boundary; 12/12 tests pass.
-- DONE: Hunyuan is one config, not the backend identity — a second config entry loads with a different repo+prompt without new code.
-  MTX_MODEL_CONFIGS registry holds 6 Hunyuan + 1 TranslateGemma placeholder; AC-4 test constructs MlxLlmTranslation with a second config (different repo/prompt) and asserts no code change needed.
-- DONE: backward-compat alias --translation-backend hunyuan-mlx works (maps to mlx-llm-mt + Hunyuan default).
-  core.py dispatch maps hunyuan-mlx → mlx-llm-mt; config.py __post_init__ reconciles legacy hunyuan_mlx_model; AC-5 test asserts alias equivalence; 87/87 non-async suite pass.
-- DONE: warmup at init; first real decode does not stall.
-  Warmup generate call preserved verbatim in MlxLlmTranslation.__init__; needs CL's Mac for live Metal-compile verification.
-
-### Summary
-
-Refactored translation_hunyuan_mlx.py into a generic MlxLlmTranslation base with a MlxLlmMtModelConfig dataclass and MTX_MODEL_CONFIGS registry (6 Hunyuan + 1 TranslateGemma placeholder). Hunyuan-specific file is now a thin backward-compat shim. core.py, config.py, parse_args.py, and pyproject.toml updated for the mlx-llm-mt backend name and mlx-llm-mt-model knob, with the hunyuan-mlx alias preserved. 12 new tests cover AC-3/4/5 and contract logic; the full non-async suite (87 tests) passes. AC-1/2/6 (live zh→en decode, chat-template no-runaway, warmup stall) are structurally satisfied — the decode loop, chat template, and warmup are preserved verbatim from the verified Hunyuan path — but require CL's Mac for live model load (sandbox lacks mic TCC and live Metal). Commit 12acf9c on spacedock-ensign/hunyuan-mlx-translation-backend.
-
 ## Stage Report: implementation (reconstruction — clean branch off origin/main)
 
 - DONE: Rebuilt the mlx-llm-mt deliverable as a clean PR branch off `origin/main` — reset the worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` to `origin/main` and applied only the 7 mlx-llm-mt files as one clean commit `802fdfc`.
