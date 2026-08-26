@@ -124,9 +124,13 @@ def print_report(report: BenchmarkReport, out: TextIO = sys.stderr) -> None:
     rc = _rtf_color(report.overall_rtf)
     lc = _lat_color(report.avg_latency_ms)
 
-    w(f"    Avg WER (macro):   {wc}{report.avg_wer * 100:>6.1f}%{RESET}\n")
-    w(f"    Weighted WER:      {_wer_color(report.weighted_wer)}"
-      f"{report.weighted_wer * 100:>6.1f}%{RESET}\n")
+    if report.has_wer:
+        w(f"    Avg WER (macro):   {wc}{report.avg_wer * 100:>6.1f}%{RESET}\n")
+        w(f"    Weighted WER:      {_wer_color(report.weighted_wer)}"
+          f"{report.weighted_wer * 100:>6.1f}%{RESET}\n")
+    else:
+        w(f"    Avg WER (macro):       N/A (no applicable reference)\n")
+        w(f"    Weighted WER:          N/A\n")
     w(f"    Overall RTF:       {rc}{report.overall_rtf:>6.3f}x{RESET}  "
       f"({report.total_processing_s:.1f}s for {report.total_audio_s:.1f}s audio)\n")
     w(f"    Avg latency:       {lc}{report.avg_latency_ms:>6.0f}ms{RESET}\n")

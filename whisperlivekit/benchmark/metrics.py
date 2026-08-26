@@ -171,6 +171,9 @@ class BenchmarkReport:
             for r in self.results
         )
 
+    def has_wer(self) -> bool:
+        return any(r.wer_applicable for r in self.results)
+
     @property
     def total_translation_time_s(self) -> float:
         return sum(r.translation_time_s for r in self.results if r.translation_time_s)
