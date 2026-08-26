@@ -177,3 +177,60 @@ and the warmup are all correct and stay.
 ### Summary
 
 Refactored translation_hunyuan_mlx.py into a generic MlxLlmTranslation base with a MlxLlmMtModelConfig dataclass and MTX_MODEL_CONFIGS registry (6 Hunyuan + 1 TranslateGemma placeholder). Hunyuan-specific file is now a thin backward-compat shim. core.py, config.py, parse_args.py, and pyproject.toml updated for the mlx-llm-mt backend name and mlx-llm-mt-model knob, with the hunyuan-mlx alias preserved. 12 new tests cover AC-3/4/5 and contract logic; the full non-async suite (87 tests) passes. AC-1/2/6 (live zh→en decode, chat-template no-runaway, warmup stall) are structurally satisfied — the decode loop, chat template, and warmup are preserved verbatim from the verified Hunyuan path — but require CL's Mac for live model load (sandbox lacks mic TCC and live Metal). Commit 12acf9c on spacedock-ensign/hunyuan-mlx-translation-backend.
+
+## Stage Report: implementation (reconstruction — clean branch off origin/main)
+
+Validation sent this back: the worktree branch was off the accumulating
+integration branch `feat/apple-silicon-backends` (42 files, +32k lines) —
+not a mergeable mlx-llm-mt PR. Reconstructed as a clean branch off
+`origin/main`.
+
+### Reconstruction method
+
+1. `git reset --hard origin/main` on the worktree branch.
+2. Checked out the 3 whole files (self-contained, no ASR dependency) from
+   `feat/apple-silicon-backends`:
+   - `whisperlivekit/translation_mlx_llm_mt.py` (300 lines)
+   - `whisperlivekit/translation_hunyuan_mlx.py` (20 lines, backward-compat shim)
+   - `tests/test_mlx_llm_mt.py` (226 lines, 16 tests)
+3. For the 4 shared files, applied ONLY the mlx-llm-mt hunks by hand (did NOT
+   `git checkout feat/apple-silicon-backends -- <file>` — that brings ASR hunks):
+   - `config.py`: translation_backend doc comment mentioning
+     mlx-llm-mt/hunyuan-mlx; `mlx_llm_mt_model` field (default
+     `hy-mt2-1.8b-8bit`); `hunyuan_mlx_model` alias field; `__post_init__`
+     reconciliation mapping legacy `--hunyuan-mlx-model` into `mlx_llm_mt_model`.
+     No `mlx_qwen3_asr_*` fields.
+   - `core.py`: the `elif getattr(config, "translation_backend", "nllb") in
+     ("mlx-llm-mt", "hunyuan-mlx"):` branch importing `MlxLlmTranslation`;
+     removal of the stale qwen3+NLLB guard (replaced with a comment); the
+     `MlxLlmTranslation` early-return in `online_translation_factory`. No
+     `mlx-qwen3-asr`/`qwen3-vllm` backend branches, no `asr_wrapper` re-export.
+     `_to_wlk_token` and `_ASRTokenNormalizer` stay in core.py (the
+     asr_wrapper move is the ASR PR, not this one).
+   - `parse_args.py`: added `mlx-llm-mt` and `hunyuan-mlx` to
+     `--translation-backend` choices; `--mlx-llm-mt-model` arg (default
+     `hy-mt2-1.8b-8bit`); `--hunyuan-mlx-model` deprecated alias. No
+     `--mlx-qwen3-asr-*` args.
+   - `pyproject.toml`: the `mlx-llm-mt` extra (`mlx-lm>=0.31.1`). No
+     `mlx-qwen3-asr` extra, no `qwen-asr` uv source.
+4. Single clean commit `802fdfc` on `spacedock-ensign/hunyuan-mlx-translation-backend`.
+5. Did NOT push or open a PR.
+
+### Verification (run by the worker)
+
+- `git diff --stat origin/main..HEAD` shows ONLY the 7 files (3 new + 4
+  shared): translation_mlx_llm_mt.py, translation_hunyuan_mlx.py,
+  test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml. No
+  cli.py, backend_support.py, overlay.py, asr_*.py, third_party/, uv.lock,
+  or docs.
+- `git diff origin/main..HEAD -- config.py` contains only `mlx_llm_mt`/
+  `hunyuan_mlx` lines — no `mlx_qwen3` lines.
+- `git diff origin/main..HEAD -- core.py` contains only the
+  `("mlx-llm-mt", "hunyuan-mlx")` branch + qwen3+NLLB guard removal +
+  online_translation_factory early-return — no ASR backend branches, no
+  asr_wrapper re-export.
+- `pytest tests/test_mlx_llm_mt.py -q` → 16/16 pass (mock _translate_text,
+  no model load).
+- Broader non-async suite: 209 passed, 12 skipped, 1 error
+  (test_asr_coalescing_pipeline test-data download failure — pre-existing on
+  origin/main, unrelated to this change).
