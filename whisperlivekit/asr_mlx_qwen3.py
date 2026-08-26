@@ -140,7 +140,7 @@ class MlxQwen3AsrOnlineProcessor:
             self._text = (getattr(self._state, "text", "") or "").strip()
             self._stable_text = (getattr(self._state, "stable_text", "") or "").strip()
             if self._text:
-                logger.debug("mlx-qwen3-asr _feed: audio=%d samples text=%r", len(audio), self._text[:80])
+                logger.info("mlx-qwen3-asr _feed: audio=%d samples text=%r", len(audio), self._text[:80])
         except Exception as exc:
             logger.warning("mlx-qwen3-asr _feed FAILED (audio=%d samples): %s", len(audio), exc)
             raise

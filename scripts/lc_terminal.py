@@ -336,7 +336,7 @@ async def run_file(args, sink, ocr_loop=None):
         await h.finish(timeout=180)
 
 
-async def run_mic(args, sink, ocr_loop=None):
+async def run_mic(args, sink, ocr_loop=None, stop_event=None):
     import sounddevice as sd
 
     SAMPLE_RATE = 16000
@@ -361,10 +361,17 @@ async def run_mic(args, sink, ocr_loop=None):
                            blocksize=CHUNK, callback=audio_cb):
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
                   flush=True)
-            try:
-                await stop.wait()
-            except KeyboardInterrupt:
+            if stop_event is not None:
+                # Bridge the threading stop_event (set by the signal handler on the
+                # main thread) to the asyncio stop event (awaited here) so Ctrl-C
+                # actually wakes this coro.
+                await asyncio.to_thread(stop_event.wait)
                 stop.set()
+            else:
+                try:
+                    await stop.wait()
+                except KeyboardInterrupt:
+                    stop.set()
         await h.drain(3.0)
         await h.finish(timeout=60)
 
@@ -378,7 +385,7 @@ def main() -> None:
     p.add_argument("--target-language", default="en")
     p.add_argument("--backend", choices=["mlx-qwen3-asr", "qwen3-vllm-metal"], default="mlx-qwen3-asr",
                    help="ASR backend: mlx-qwen3-asr (windowed, pure MLX) or qwen3-vllm-metal (causal, native MLX via the fork)")
-    p.add_argument("--mlx-qwen3-asr-model", default="Qwen/Qwen3-ASR-0.6B")
+    p.add_argument("--mlx-qwen3-asr-model", default="mlx-community/Qwen3-ASR-0.6B-8bit")
     p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit")
     p.add_argument("--qwen3-vllm-metal-audio-backend", choices=["standard", "causal"], default="causal",
                    help="qwen3-vllm-metal audio backend: 'causal' (append-only KV, flat-cost) or 'standard' (re-encode window)")
@@ -478,8 +485,8 @@ def main() -> None:
                               overlay_mode=args.overlay_mode)
     sink = OverlaySink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
 
-    coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop)
     stop_event = threading.Event()
+    coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop, stop_event=stop_event)
     worker_error: list = []
 
     def worker():
@@ -501,7 +508,15 @@ def main() -> None:
             renderer.run_until(stop_event)  # blocks on the main thread
         finally:
             signal.signal(signal.SIGINT, _prev)
-        t.join(timeout=5)
+        # The worker coro awaits an asyncio.Event (``stop`` in run_mic) that is
+        # separate from ``stop_event`` (threading). Wake it: the mic's
+        # audio_cb checks stop.is_set() and raises CallbackStop once the
+        # asyncio event is set, but that event is internal to the coro. The
+        # daemon thread + a short join is enough; if it hangs, force-exit.
+        t.join(timeout=3)
+        if t.is_alive():
+            import os
+            os._exit(0)
     if worker_error:
         raise worker_error[0]
 
