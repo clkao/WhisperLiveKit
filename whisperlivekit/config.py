@@ -51,9 +51,13 @@ class WhisperLiveKitConfig:
     punctuation_split: bool = False
     target_language: str = ""
     # "nllb" (in-process, CPU-friendly) or "alignatt" (Alignatt4LLM sidecar
-    # over WebSocket, streaming LLM translation with attention-gated commits).
+    # over WebSocket, streaming LLM translation with attention-gated commits)
+    # or "mlx-llm-mt" (in-process MLX translation via mlx-lm). "hunyuan-mlx"
+    # is an alias for mlx-llm-mt.
     translation_backend: str = "nllb"
     alignatt_url: str = "ws://localhost:8765"
+    mlx_llm_mt_model: str = "hy-mt2-1.8b-8bit"
+    hunyuan_mlx_model: str = "hy-mt2-1.8b-8bit"
     alignatt_preset: Optional[str] = None
     # quality | balanced | low; see docs/translation-alignatt.md
     alignatt_latency: str = "balanced"
@@ -185,6 +189,13 @@ class WhisperLiveKitConfig:
         self.pause_segmentation_seconds = validate_pause_segmentation_seconds(
             self.pause_segmentation_seconds
         )
+        # If --hunyuan-mlx-model is set to a non-default value and
+        # --mlx-llm-mt-model is at its default, use the hunyuan-mlx value.
+        if (
+            self.mlx_llm_mt_model == "hy-mt2-1.8b-8bit"
+            and self.hunyuan_mlx_model != "hy-mt2-1.8b-8bit"
+        ):
+            self.mlx_llm_mt_model = self.hunyuan_mlx_model
         if self.sortformer_max_speakers is not None:
             if (
                 isinstance(self.sortformer_max_speakers, bool)
