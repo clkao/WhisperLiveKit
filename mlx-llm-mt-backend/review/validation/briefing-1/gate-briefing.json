@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-1:revision-1",
+  "question": "Validation gate: is the mlx-llm-mt PR (7 files, 16 tests) ready to merge?",
+  "artifacts": [
+    {
+      "id": "artifact:5c87da2jhj60dtxmybb72v6p:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/37f9f0a582dde85628ccb5e409513c822df4904b/mlx-llm-mt-backend_validation_artifact.md",
+      "rev": "sha256:32b5555e8a140f9b69c52aed208a2ce6190fd7f31116e100e6c892cfb280986e",
+      "mediaType": "text/markdown",
+      "summary": "16/16 tests pass; 7-file clean diff; baseline parity; HypothesisTail seam works."
+    }
+  ]
+}

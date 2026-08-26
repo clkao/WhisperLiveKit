@@ -6,6 +6,29 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-hunyuan-mlx-translation-backend
 id: 5c87da2jhj60dtxmybb72v6p
 started: 2026-08-26T06:46:29Z
+gates:
+    version: 1
+    records:
+        - id: gate:5c87da2jhj60dtxmybb72v6p:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:5c87da2jhj60dtxmybb72v6p-validation-1
+              briefing:
+                id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-1:revision-1
+                digest: sha256:21b32644c9410811b7a44f71b6ddbd07140b1d55c47acb91a945c53847d9587a
+                request-digest: sha256:1225fcf0e869da48adc53a771d3e9282e9c25ea5fe5e05ed99943aa90a32e570
+                room-ref: ./mlx-llm-mt-backend/review/validation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:5c87da2jhj60dtxmybb72v6p:validation:1
+                briefing: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-26T07:07:16.255645Z"
+                decision: approve
+                reason: 16/16 tests pass; 7-file clean diff vs origin/main; baseline parity; HypothesisTail seam verified. Residual core.py guard removal is defensible scope creep (accept).
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the
