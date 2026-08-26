@@ -67,6 +67,17 @@ mlx-llm-mt = [
     'mlx>=0.11.0; sys_platform == "darwin" and platform_machine == "arm64"',
     'mlx-lm>=0.31.1; sys_platform == "darwin" and platform_machine == "arm64"',
 ]
+# Native macOS overlay window (always-on-top NSWindow) and screen OCR hotwords.
+# Install with: uv sync --extra overlay (combine: -e mlx-llm-mt -e mlx-qwen3-asr).
+overlay = [
+    'pyobjc-framework-cocoa>=12.2.2; sys_platform == "darwin" and platform_machine == "arm64"',
+    'pyobjc-framework-quartz>=12.2.2; sys_platform == "darwin" and platform_machine == "arm64"',
+    'pyobjc-framework-vision>=12.2.2; sys_platform == "darwin" and platform_machine == "arm64"',
+    'pyobjc-framework-naturallanguage>=12.2.2; sys_platform == "darwin" and platform_machine == "arm64"',
+]
+# OpenCC s2twp: converts Simplified Chinese ASR output to Taiwan Traditional
+# (characters + vocabulary) on the display path. Pure Python, no native build.
+opencc = ["opencc-python-reimplemented"]
 voxtral-hf = [
     "transformers>=5.2.0; python_version >= '3.10'",
     "mistral-common[audio]",
