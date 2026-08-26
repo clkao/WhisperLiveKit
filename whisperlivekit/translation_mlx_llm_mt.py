@@ -1,4 +1,4 @@
-"""Generic in-process decoder-LLM MT backend for WhisperLiveKit (Tier A: plain mlx-lm).
+"""Generic in-process decoder-LLM MT backend for WhisperLiveKit (plain mlx-lm).
 
 This is the generic shape: any decoder-LLM MT model (Hunyuan-MT, TranslateGemma,
 Aya, Qwen-MT) runs via mlx-lm in-process on Apple Silicon. The model-specific
@@ -6,9 +6,10 @@ parts — the prompt template, the EOS token, and the model registry — are
 externalized into a config dict (``MTX_MODEL_CONFIGS``). Hunyuan-MT is one
 config, not the backend identity.
 
-Tier A = plain mlx-lm ``stream_generate``, no attention capture, no
-simultaneous MT. ``wants_hypothesis_tail = False``. The simultaneous variant
-(Tier B: ``CapturedAttention`` + commit policy + calibrated heads) subclasses
+The base variant is plain mlx-lm ``stream_generate``, no attention capture,
+no simultaneous MT. ``wants_hypothesis_tail = False``. The simultaneous variant
+A simultaneous variant (``CapturedAttention`` + commit policy + calibrated
+heads) subclasses
 this base and adds attention capture; it is a separate upgrade that stays
 model-agnostic because the base is generic.
 
@@ -17,7 +18,8 @@ Duck-typed contract (mirrors nllw.OnlineTranslation and AlignAttRemoteEngine):
   - ``process()`` -> ``(Translation|None, TimedText buffer)``: translate closed segments.
   - ``validate_buffer_and_reset()`` -> ``(Translation, TimedText)``: flush at silence/speaker-change.
   - ``insert_silence(duration)``: no-op.
-  - ``wants_hypothesis_tail = False`` (Tier A does not draft over the unstable tail).
+  - ``wants_hypothesis_tail = False`` (the base does not draft over the
+  unstable tail).
 
 The MT input is raw ASR text (Simplified Chinese in production). OpenCC s2twp is
 a display-path concern, NOT this backend's job.
@@ -103,7 +105,7 @@ MTX_MODEL_CONFIGS: Dict[str, MlxLlmMtModelConfig] = {
     "hunyuan-mt-7b-8bit": MlxLlmMtModelConfig(
         repo="mlx-community/Hunyuan-MT-7B-8bit", **_HY,
     ),
-    # --- Second config family (AC-4) ---------------------------------------
+    # --- Second config family ---------------------------------------
     # A different repo + prompt loads without new code — only the config dict
     # changes. This is a placeholder (not a shipped model); the dry
     # import/construct check (test_mlx_llm_mt_config) verifies it resolves.
@@ -116,14 +118,14 @@ MTX_MODEL_CONFIGS: Dict[str, MlxLlmMtModelConfig] = {
 
 
 class MlxLlmTranslation:
-    """Generic in-process decoder-LLM MT backend via mlx-lm (Tier A).
+    """Generic in-process decoder-LLM MT backend via mlx-lm (the base variant).
 
     One shared model instance per repo per process (load is expensive); the
     OnlineTranslation contract is stateless across sessions except for the
     per-instance segment buffer.
     """
 
-    # Tier A: do not opt into the unstable ASR tail.
+    # The base variant does not opt into the unstable ASR tail.
     wants_hypothesis_tail = False
 
     _MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}  # repo → (model, tokenizer)
@@ -151,10 +153,10 @@ class MlxLlmTranslation:
         self._pending_finals: List[Tuple[str, float, float]] = []  # (text, start, end)
         self._last_buffer = TimedText()
         # The unstable ASR tail (HypothesisTail) — accepted (not dropped) when
-        # ``wants_hypothesis_tail`` is True. Tier A (this base) does not draft
-        # over it; a Tier B subclass (simultaneous MT) reads ``self._tail.text``
+        # ``wants_hypothesis_tail`` is True. This base does not draft
+        # over it; a simultaneous subclass reads ``self._tail.text``
         # to draft ahead and commits only against the committed prefix.
-        # Forward-compatible: a Tier B subclass overrides ``process`` to use it;
+        # Forward-compatible: a subclass overrides ``process`` to use it;
         # this base stores it so the pipeline contract holds either way.
         self._tail: Optional[HypothesisTail] = None
         self._eos_token = config.eos_token  # may be None → resolved at load
@@ -228,10 +230,10 @@ class MlxLlmTranslation:
 
     def insert_tokens(self, items: List[Any]) -> None:
         for item in items:
-            # Accept the unstable ASR tail (HypothesisTail). Tier A does not
+            # Accept the unstable ASR tail (HypothesisTail). This base does not
             # draft over it, but must not drop it — the pipeline sends it when
             # ``wants_hypothesis_tail`` is True, and dropping it breaks the
-            # contract. A Tier B subclass reads ``self._tail`` in ``process``.
+            # contract. A simultaneous subclass reads ``self._tail`` in ``process``.
             if isinstance(item, HypothesisTail):
                 self._tail = item
                 continue
