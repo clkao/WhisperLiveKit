@@ -122,3 +122,19 @@ stdlib+numpy and reusable as-is.
 ### Summary
 
 Ported livecaption's simultaneous-MT mechanism into the mlx-llm-mt backend as an in-process Tier B variant. MlxLlmTranslationSimul subclasses the unchanged Tier A base, sets wants_hypothesis_tail=True, drafts over the unstable ASR tail, and applies the AlignAtt commit policy (top calibrated zh→en head L9/H5 argmax) to commit only target tokens aligning to committed source. Held tokens release from cached attention without a new MT call when the ASR commits the tail. The CapturedAttention wrapper (manual softmax QK^T over hunyuan_v1_dense.Attention) is bit-identical to the original forward (verified: max abs diff 1.5e-7). 21 new tests + 23 existing tests pass (44 total). Live E2E with real zh audio needs the mlx-qwen3-asr backend (separate branch) + mic (CL's terminal).
+
+## Validation evidence (live A/B benchmark)
+
+The AC-2/AC-3 unit tests prove the mechanism (provisional appears, MT-call
+counter stays at 1 on release). The live outcome on real zh audio is the
+validation evidence: scripts/bench_simul_ab.py runs the full ASR+MT pipeline
+with simul on/off and measures first-translation-time, MT-call-count, and
+provisional-before-final.
+
+Run on CL's Mac (needs model cache + Metal):
+  .venv/bin/python scripts/bench_simul_ab.py /path/to/zh.wav
+
+Expected: Tier B's first-translation arrives earlier (provisional during
+speech); Tier B makes fewer or equal MT calls (release-without-call). This
+is the live validation gate for AC-2/AC-3 — the unit tests alone are not
+sufficient (they skipped the live E2E).
