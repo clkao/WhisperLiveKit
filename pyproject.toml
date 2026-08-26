@@ -26,7 +26,7 @@ dependencies = [
     "soundfile",
     "uvicorn",
     "websockets",
-    "huggingface-hub>=0.25.0",
+    "huggingface-hub>=1.18.0,<2.0.0",
     "faster-whisper>=1.2.0",
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
@@ -66,6 +66,7 @@ mlx-qwen3-asr = [
 mlx-llm-mt = [
     'mlx>=0.11.0; sys_platform == "darwin" and platform_machine == "arm64"',
     'mlx-lm>=0.31.1; sys_platform == "darwin" and platform_machine == "arm64"',
+    'transformers>=5.11.0,<6.0.0; sys_platform == "darwin" and platform_machine == "arm64"',
 ]
 # Native macOS overlay window (always-on-top NSWindow) and screen OCR hotwords.
 # Install with: uv sync --extra overlay (combine: -e mlx-llm-mt -e mlx-qwen3-asr).
