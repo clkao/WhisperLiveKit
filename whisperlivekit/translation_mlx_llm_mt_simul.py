@@ -1,6 +1,6 @@
 """Simultaneous-MT variant of the mlx-llm-mt translation backend.
 
-A ``MlxLlmTranslationSimul`` subclass of the Tier A ``MlxLlmTranslation``
+A ``MlxLlmTranslationSimul`` subclass of ``MlxLlmTranslation``
 that drafts translation over the unstable ASR tail (``HypothesisTail``)
 and applies the AlignAtt commit policy: commit only target tokens whose
 attention argmax (top calibrated zh→en head) lands on a source token the
@@ -8,7 +8,7 @@ ASR has committed; hold the rest. When the ASR later commits the tail,
 held tokens release from the cached attention WITHOUT a new MT call —
 that is the latency win.
 
-The base ``MlxLlmTranslation`` (Tier A) is unchanged; this variant only
+The base ``MlxLlmTranslation`` is unchanged; this variant only
 adds the simultaneous behaviour. The base's ``self._tail`` seam
 (``HypothesisTail`` storage) is the opt-in point.
 
@@ -273,7 +273,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 self._tail = None
 
     def process(self) -> Tuple[Optional[Translation], TimedText]:
-        # 1. Finals first (punctuation-closed segments): full Tier-A translation.
+        # 1. Finals first (punctuation-closed segments): full base-class translation.
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
             try:
@@ -323,7 +323,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         If a provisional was emitted, it was on screen — return it as the
         validated segment (append-only, like the AlignAtt client). The open
         utterance is queued as a final so the next ``process()`` produces the
-        quality pass (full Tier-A translation).
+        quality pass (full base-class translation).
         """
         validated = Translation(
             start=self._segment_start(self._utterance_start()),
@@ -346,7 +346,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 start=validated.start, end=validated.end, text=emitted
             )
             return validated, TimedText()
-        # Nothing was emitted; fall back to a Tier-A flush of any buffered
+        # Nothing was emitted; fall back to a base-class flush of any buffered
         # tokens (mirrors the base class behaviour for a non-simul flush).
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
