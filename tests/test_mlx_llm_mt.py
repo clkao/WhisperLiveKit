@@ -148,6 +148,61 @@ def test_wants_hypothesis_tail_false():
     assert MlxLlmTranslation.wants_hypothesis_tail is False
 
 
+def test_insert_tokens_accepts_hypothesis_tail():
+    """``insert_tokens`` accepts a ``HypothesisTail`` item (stores it as
+    ``self._tail``) instead of dropping it. The pipeline sends the unstable
+    ASR tail when ``wants_hypothesis_tail`` is True; dropping it breaks the
+    contract. Tier A does not draft over it, but must hold onto it so a Tier
+    B subclass can read ``self._tail`` in ``process()``."""
+    from whisperlivekit.timed_objects import HypothesisTail
+
+    b = _make_backend()
+    tail = HypothesisTail(start=0.5, end=1.8, text="how are")
+    b.insert_tokens([_token("Hello", 0.0, 0.4), tail])
+    assert b._tail is tail, "tail must be stored, not dropped"
+
+
+def test_insert_tokens_holds_tail_alongside_committed_tokens():
+    """A mixed list (committed ``ASRToken`` + ``HypothesisTail``) is split:
+    tokens buffer for translation, tail stored separately. The committed
+    token is still translatable; the tail does not pollute the committed
+    buffer."""
+    from whisperlivekit.timed_objects import HypothesisTail
+
+    b = _make_backend()
+    b.insert_tokens([_token("你好", 0.0, 0.5), HypothesisTail(start=0.5, end=1.0, text="世界")])
+    assert b._tail is not None and b._tail.text == "世界"
+    assert b._buffer_tokens == [_token("你好", 0.0, 0.5)] or (
+        len(b._buffer_tokens) == 1 and b._buffer_tokens[0].text == "你好"
+    ), "committed token buffers; tail stays separate"
+
+
+def test_punctuation_close_clears_tail():
+    """Punctuation closes a segment and clears the tail — the committed
+    segment is final; the tail no longer applies to it. Mirrors AlignAtt's
+    ``insert_tokens`` clearing ``self._tail`` on punctuation."""
+    from whisperlivekit.timed_objects import HypothesisTail
+
+    b = _make_backend()
+    b.insert_tokens([_token("你好", 0.0, 0.5), HypothesisTail(start=0.5, end=1.0, text="世界")])
+    assert b._tail is not None
+    # A punctuation token closes the segment.
+    b.insert_tokens([_token("。", 0.5, 0.6)])
+    assert b._tail is None, "punctuation close must clear the tail"
+
+
+def test_validate_buffer_and_reset_clears_tail():
+    """``validate_buffer_and_reset`` (silence/speaker boundary) clears the
+    tail — the open utterance is closed; the tail no longer applies."""
+    from whisperlivekit.timed_objects import HypothesisTail
+
+    b = _make_backend()
+    b.insert_tokens([_token("你好", 0.0, 0.5), HypothesisTail(start=0.5, end=1.0, text="世界")])
+    assert b._tail is not None
+    b.validate_buffer_and_reset()
+    assert b._tail is None, "validate_buffer_and_reset must clear the tail"
+
+
 def test_insert_silence_noop():
     """``insert_silence`` is a no-op for Tier A."""
     b = _make_backend()

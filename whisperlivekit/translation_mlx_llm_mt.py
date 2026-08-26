@@ -279,6 +279,8 @@ class MlxLlmTranslation:
             self._pending_finals.append((text, start, end))
             self._buffer_tokens = []
             self._buffer_start = None
+        # The open utterance is closed; the unstable tail no longer applies.
+        self._tail = None
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
             try:
