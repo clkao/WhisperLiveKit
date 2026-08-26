@@ -329,7 +329,7 @@ async def run_file(args, sink, ocr_loop=None):
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
-            _start_ocr_loop(args, h._processor._engine)
+            _start_ocr_loop(args, h._processor)
         await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
         await h.finish(timeout=180)
@@ -355,7 +355,7 @@ async def run_mic(args, sink, ocr_loop=None):
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
-            _start_ocr_loop(args, h._processor._engine)
+            _start_ocr_loop(args, h._processor)
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                            blocksize=CHUNK, callback=audio_cb):
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
