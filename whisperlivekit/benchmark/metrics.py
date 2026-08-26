@@ -164,7 +164,12 @@ class BenchmarkReport:
 
     @property
     def has_translation(self) -> bool:
-        return any(r.mt_call_count is not None for r in self.results)
+        return any(
+            r.mt_call_count is not None
+            or r.translation_rtf is not None
+            or (r.hypothesis_translation or "")
+            for r in self.results
+        )
 
     @property
     def total_translation_time_s(self) -> float:

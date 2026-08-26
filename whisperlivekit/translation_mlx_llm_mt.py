@@ -164,6 +164,7 @@ class MlxLlmTranslation:
         # Benchmark instrumentation: cumulative wall-time spent generating MT
         # output (excludes warmup, model load, and ASR).
         self._mt_total_time_s = 0.0
+        self._mt_call_count: int = 0
         if warmup:
             self._warmup()
 
@@ -191,6 +192,7 @@ class MlxLlmTranslation:
     def _translate_text(self, text: str) -> str:
         from mlx_lm import stream_generate  # lazy import in method scope
         from mlx_lm.sample_utils import make_logits_processors, make_sampler
+        self._mt_call_count += 1
 
         model, tokenizer = self._ensure_model(self._config)
         # Resolve the EOS token lazily (may need the tokenizer).
