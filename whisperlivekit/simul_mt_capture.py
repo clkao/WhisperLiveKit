@@ -1,7 +1,6 @@
 """Simultaneous-MT capture layer: MLX Q/K attention capture + AlignAtt commit policy.
 
-Ports the proven ``CapturedAttention`` pattern from livecaption's
-``simul_mt.py``. mlx-lm's ``hunyuan_v1_dense.Attention`` fuses Q/K into
+mlx-lm's ``hunyuan_v1_dense.Attention`` fuses Q/K into
 ``scaled_dot_product_attention`` and discards the attention weights; this
 wrapper replicates the forward with a manual ``softmax(QK^T)`` so the
 alignment-head attention is capturable. The forward is bit-identical to the
@@ -11,7 +10,7 @@ The 8 production head indices + TS scores come from a calibration run on
 tencent/Hy-MT2-1.8B (zh→en), hardcoded here so the simultaneous variant is
 self-contained.
 
-Load-bearing details (learned in the livecaption spike):
+Load-bearing details (learned during development):
   1. ``create_attention_mask`` returns the string ``"causal"``, not an
      array — the manual forward must build the additive causal mask itself.
   2. ``__call__`` dispatch is on the TYPE, not the instance — must use a
