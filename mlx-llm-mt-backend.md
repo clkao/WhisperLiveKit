@@ -1,6 +1,6 @@
 ---
 title: "mlx-llm-mt: generic decoder-LLM MT backend (clean PR off origin/main)"
-status: validation
+status: implementation
 source: fast-tracked from hunyuan-mlx-translation-backend (completion-guard wedged on the prior entity; captain authorized re-filing with the existing clean worktree)
 score: 0.8
 worktree: .worktrees/spacedock-ensign-hunyuan-mlx-translation-backend
@@ -28,7 +28,7 @@ gates:
                 reason: 16/16 tests pass; 7-file clean diff vs origin/main; baseline parity; HypothesisTail seam verified. Residual core.py guard removal is defensible scope creep (accept).
               application:
                 target-stage: done
-                state: pending
+                state: superseded
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the
