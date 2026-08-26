@@ -110,3 +110,45 @@ The AlignAtt4LLM `alignatt-mt-server` sidecar is NOT VIABLE on vllm-metal. Archi
 4. **The mlx-llm-mt validation gate**: CL decides approve or rework.
 5. **The en→zh calibration**: resumable when lunaroute recovers.
 6. **Archive `bench-alignatt-ab` + `hunyuan-mlx-translation-backend`** (orphaned/non-shippable).
+
+## Update 2026-08-26 (pre-restart): PR cleanup + benchmark wiring done
+
+### Branch state (all clean, 0 vocab hits)
+- **Tier A PR** `spacedock-ensign/hunyuan-mlx-translation-backend` @ `cddf74c` — 7 files, +481/-3, 11 tests. READY.
+- **Tier B PR** `spacedock-ensign/mlx-llm-mt-tier-b-simultaneous` @ `3d68bc7` — 15 files, ~+1900, 44 tests. READY (needs live benchmark run on CL's Mac).
+- **Integration** `feat/apple-silicon-backends` @ `71afe2b` — all features merged, 49 tests, 0 vocab hits.
+
+### The Tier B rework (this round)
+The worker (dispatched directly, NOT through the workflow — see gap below) did:
+- Vocab cleanup: AC-#/Tier-A/B → plain language in source+tests (commit `55e808f`).
+- Guard fix on Tier B: `audio_processor.py` forwards the provisional buffer when translation is None (commit `2a3c5a0`). Load-bearing for the simul provisional display.
+- Benchmark extension: `compat.py` (mlx-qwen3-asr + qwen3-vllm-metal), `runner.py` (translation metrics), `datasets.py` (zh_long sample), `metrics.py` (translation fields) — commit `4f34075`.
+- Personal-path + external-ref cleanup: `datasets.py` zh_long path → `ZH_BENCH_WAV` env var; `simul_mt_capture.py` livecaption refs removed — commits `e26fd24`, `a571a38`.
+- **wlk bench CLI wiring** (commit `3d68bc7`): `--translation-backend`, `--target-language`, `--simultaneous`, `--reference-translation` flags; translation RTF + accuracy (sacrebleu/chrF/overlap) + latency in the report.
+
+### The workflow-tracking gap (CL caught this)
+I dispatched the rework worker via `subagent(agent="worker")` directly, NOT through the FO ceremony (`spacedock dispatch build` → spawn with `skill="ensign"`). The code is on the branch, but the workflow entity `mlx-llm-mt-tier-b-simultaneous` is still at `implementation` with no ensign stage report for this rework round. **Next session: dispatch a fresh ensign through the workflow** to write the stage report, advance to validation, and gate on the live benchmark output.
+
+### The benchmark (NOT yet run — needs CL's Mac)
+The sandbox CANNOT load models this session (`~/.cache/huggingface` is permission-denied at the directory level — re-probed; contradicts the AGENTS.md note). The live `wlk bench` run is the remaining validation gate. Commands for CL:
+```
+wlk bench --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --languages zh --quick
+wlk bench --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --languages zh --quick --simultaneous
+wlk bench --backend qwen3-vllm-metal --languages en --quick
+```
+For translation accuracy, pass `--reference-translation "<EN text>"` (the zh_long sample has no reference EN in its catalog entry).
+
+### Two local tasks filed (dev-state, workflow VALID)
+- `wlk-translation-contract-tag-return` — tag the `process()` return (Final/Provisional/Idle) instead of overloading `None`.
+- `wlk-translation-push-events` — push events to display sinks (depends on the first).
+
+### Two upstream issue drafts (ASD-STE100, self-checked clean)
+- `/Users/clkao/git/asr/_work/wlk_issue_tag_return.md` — the guard bug + tagged-return proposal.
+- `/Users/clkao/git/asr/_work/wlk_issue_push_events.md` — the push-events architecture.
+Both framed as issues (not PRs) — upstream-incompatible contract changes; agree the contract first.
+
+### The provisional display bug (fixed this session)
+The simul MT `process()` returns `(None, buffer)` for provisional drafts; the `audio_processor.py:920` guard `if new_translation is not None:` dropped the buffer. Fixed (commit `51bee09` on integration, `2a3c5a0` on Tier B). The sinks (TuiSink, OverlaySink) now forward `state.buffer_translation` as `preview()`. The TUI + overlay show the provisional during speech.
+
+### The TUI (wired this session)
+`whisperlivekit/tui.py` (TuiRenderer + MultiRenderer, ported from livecaption) wired into `scripts/lc_terminal.py` (commit `45a34e4`). Three-region layout: scrolling captions / OCR line / status line. MultiRenderer fans out to TUI + overlay so both run together.
