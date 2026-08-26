@@ -1,15 +1,15 @@
 """Tests for the simultaneous-MT variant of the mlx-llm-mt backend.
 
-Covers the acceptance criteria:
-  - AC-1: ``wants_hypothesis_tail=True``; the tail is drafted over (not dropped).
-  - AC-2: the provisional translation arrives BEFORE utterance close.
-  - AC-3: the commit policy commits only against the committed prefix; held
+Covers:
+  - ``wants_hypothesis_tail=True``; the tail is drafted over (not dropped).
+  - the provisional translation arrives during speech, before utterance close.
+  - the commit policy commits only against the committed prefix; held
     tokens release when the ASR commits the tail WITHOUT a new MT call (MT-call
     counter does not increment on a release).
-  - AC-4: the calibrated zh→en heads load and the top head (L9, H5) drives the
+  - the calibrated zh→en heads load and the top head (L9, H5) drives the
     commit decision.
-  - AC-5: the base ``MlxLlmTranslation`` (Tier A) is unchanged; the variant is
-    a subclass; the 23 existing tests still pass.
+  - the base ``MlxLlmTranslation`` is unchanged; the variant is a subclass;
+    the existing tests still pass.
 
 These tests mock ``_translate_simul`` / ``_translate_text`` so they run without
 mlx-lm or a model download — they exercise the buffer, commit, and release
@@ -55,11 +55,11 @@ def _tail(text, start=0.0, end=0.0):
 
 
 # ---------------------------------------------------------------------------
-# AC-1: wants_hypothesis_tail; tail is drafted over
+# wants_hypothesis_tail; tail is drafted over
 # ---------------------------------------------------------------------------
 
 def test_simul_is_subclass_of_base():
-    """The Tier B variant is a subclass of the Tier A base, not a fork."""
+    """The simultaneous variant is a subclass of the base, not a fork."""
     assert issubclass(MlxLlmTranslationSimul, MlxLlmTranslation)
 
 
@@ -68,7 +68,7 @@ def test_simul_opts_into_hypothesis_tail():
     unstable ASR tail to this backend."""
     b = _make_simul()
     assert b.wants_hypothesis_tail is True
-    # The base (Tier A) does not opt in.
+    # The base does not opt in.
     base = MlxLlmTranslation(model_id="hy-mt2-1.8b-8bit", target_language="en", warmup=False)
     assert getattr(base, "wants_hypothesis_tail", False) is False
 
@@ -82,7 +82,7 @@ def test_tail_is_stored_not_dropped():
 
 
 def test_tail_drives_provisional_before_close(caplog):
-    """AC-2: with a tail present, ``process()`` produces a provisional buffer
+    """With a tail present, ``process()`` produces a provisional buffer
     BEFORE the utterance closes (no punctuation yet). The provisional is the
     committed target prefix drafted over the tail."""
     b = _make_simul()
@@ -105,7 +105,7 @@ def test_no_tail_no_provisional():
 
 
 # ---------------------------------------------------------------------------
-# AC-2: provisional arrives before close (timestamped ordering)
+# provisional arrives before close (timestamped ordering)
 # ---------------------------------------------------------------------------
 
 def test_provisional_before_final_timestamp_order():
@@ -130,7 +130,7 @@ def test_provisional_before_final_timestamp_order():
 
 
 # ---------------------------------------------------------------------------
-# AC-3: commit policy commits only against committed prefix; release without call
+# commit policy commits only against committed prefix; release without call
 # ---------------------------------------------------------------------------
 
 def test_commit_passes_committed_prefix_only():
@@ -153,7 +153,7 @@ def test_commit_passes_committed_prefix_only():
 
 
 def test_release_does_not_increment_mt_call_count():
-    """AC-3: when the ASR commits more of the tail but the total source text is
+    """When the ASR commits more of the tail but the total source text is
     unchanged, held tokens release WITHOUT a new MT call. The MT-call counter
     does not increment on a release."""
     b = _make_simul()
@@ -228,11 +228,11 @@ def test_release_uses_commit_policy_on_cached_attention():
 
 
 # ---------------------------------------------------------------------------
-# AC-4: calibrated heads load; top head drives the commit decision
+# calibrated heads load; top head drives the commit decision
 # ---------------------------------------------------------------------------
 
 def test_heads_log_on_construction(caplog):
-    """AC-4: a log line names the alignment heads in use at construction."""
+    """A log line names the alignment heads in use at construction."""
     with caplog.at_level(logging.INFO):
         MlxLlmTranslationSimul(
             model_id="hy-mt2-1.8b-8bit", target_language="en", warmup=False
@@ -295,12 +295,12 @@ def test_committed_src_end_from_text_rounds_down():
 
 
 # ---------------------------------------------------------------------------
-# AC-5: finals / validate behaviour (Tier-A parity on close)
+# finals / validate behaviour (parity with the base on close)
 # ---------------------------------------------------------------------------
 
 def test_final_translation_at_punctuation():
     """At punctuation close, the simul variant produces a validated Translation
-    via the Tier-A path (full translation of the committed sentence)."""
+    via the base-class path (full translation of the committed sentence)."""
     b = _make_simul()
     b._translate_simul = lambda source, committed: "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _token("。", 0.5, 0.6)])

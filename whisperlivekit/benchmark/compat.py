@@ -14,9 +14,13 @@ BACKEND_LANGUAGES: Dict[str, Optional[Set[str]]] = {
     "mlx-whisper": None,
     "voxtral-mlx": None,
     "voxtral": None,
-    # The qwen3 combos declare their own language restriction (the causal
-    # tower is English-only, the windowed tower is multilingual).
     "qwen3-streaming": None,
+    # Pure-MLX Qwen3-ASR (mlx-qwen3-asr package): multilingual, same
+    # language coverage as the qwen3 ASR model family.
+    "mlx-qwen3-asr": None,
+    # vllm-metal Qwen3-ASR with the LibriSpeech tower checkpoint: the
+    # checkpoint is English-only (verified on the tower training data).
+    "qwen3-vllm-metal": {"en"},
 }
 
 
@@ -64,6 +68,20 @@ def detect_available_backends() -> List[str]:
     except ImportError:
         pass
 
+    try:
+        import mlx_qwen3_asr  # noqa: F401
+        backends.append("mlx-qwen3-asr")
+    except ImportError:
+        pass
+
+    try:
+        import mlx.core  # noqa: F401
+
+        from whisperlivekit.qwen3_vllm_metal_asr import Qwen3VLLMMetalASR  # noqa: F401
+        backends.append("qwen3-vllm-metal")
+    except ImportError:
+        pass
+
     return backends
 
 
@@ -82,7 +100,7 @@ def resolve_backend(backend: str) -> str:
     # Priority order
     priority = [
         "faster-whisper", "mlx-whisper", "voxtral-mlx", "voxtral",
-        "whisper",
+        "whisper", "mlx-qwen3-asr", "qwen3-vllm-metal",
     ]
     for p in priority:
         if p in available:

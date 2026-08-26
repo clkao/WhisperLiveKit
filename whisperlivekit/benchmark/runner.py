@@ -22,6 +22,8 @@ class BenchmarkRunner:
         categories: Categories to benchmark (None = all).
         quick: Use a small subset for fast smoke tests.
         speed: Feed speed (0 = instant, 1.0 = real-time).
+        translation_backend: Translation backend name (None = no translation).
+        target_language: Target language for translation (e.g. "en").
         on_progress: Callback(sample_name, i, total) for progress updates.
     """
 
@@ -33,6 +35,8 @@ class BenchmarkRunner:
         categories: Optional[List[str]] = None,
         quick: bool = False,
         speed: float = 0,
+        translation_backend: Optional[str] = None,
+        target_language: Optional[str] = None,
         on_progress: Optional[Callable] = None,
     ):
         self.backend = resolve_backend(backend)
@@ -41,6 +45,8 @@ class BenchmarkRunner:
         self.categories = categories
         self.quick = quick
         self.speed = speed
+        self.translation_backend = translation_backend
+        self.target_language = target_language
         self.on_progress = on_progress
 
     async def run(self) -> BenchmarkReport:
@@ -80,6 +86,10 @@ class BenchmarkRunner:
         }
         if self.backend not in ("auto",):
             harness_kwargs["backend"] = self.backend
+        if self.translation_backend:
+            harness_kwargs["translation_backend"] = self.translation_backend
+        if self.target_language:
+            harness_kwargs["target_language"] = self.target_language
 
         report = BenchmarkReport(
             backend=self.backend,
@@ -113,20 +123,52 @@ class BenchmarkRunner:
         # Override language for the specific sample
         kwargs = {**harness_kwargs, "lan": sample.language}
 
+        # Translation tracking state (populated via on_update callback)
+        first_provisional_time: Optional[float] = None
+        first_final_time: Optional[float] = None
+
+        def _track_translation(state) -> None:
+            nonlocal first_provisional_time, first_final_time
+            now = time.perf_counter() - t_start
+            # Provisional: buffer_translation is non-empty during speech.
+            if state.buffer_translation and first_provisional_time is None:
+                first_provisional_time = now
+            # Final: a committed line carries a translation field.
+            if first_final_time is None:
+                for line in state.lines:
+                    if line.get("translation"):
+                        first_final_time = now
+                        break
+
+        # first_translation_time is whichever came first.
+        first_translation_time: Optional[float] = None
+
         # Memory before
         mem_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 
         t_start = time.perf_counter()
 
         async with TestHarness(**kwargs) as h:
+            if self.translation_backend:
+                h.on_update(_track_translation)
             await h.feed(sample.path, speed=self.speed)
             # Drain time scales with audio duration for slow backends
             drain = max(5.0, sample.duration * 0.5)
             await h.drain(drain)
             state = await h.finish(timeout=120)
+            # Final sweep: the last state update may carry the final translation.
+            if self.translation_backend:
+                _track_translation(h.state)
 
             # Extract metrics from the pipeline
             metrics = h.metrics
+
+            # Read MT-call count from the translation backend if available.
+            mt_call_count = None
+            if self.translation_backend and h._processor:
+                translation = getattr(h._processor, "translation", None)
+                if translation is not None:
+                    mt_call_count = getattr(translation, "_mt_call_count", None)
 
         t_elapsed = time.perf_counter() - t_start
 
@@ -143,6 +185,14 @@ class BenchmarkRunner:
         # WER
         hypothesis = state.committed_text or state.text
         wer_result = compute_wer(sample.reference, hypothesis)
+
+        # Compute translation timing metrics.
+        times = [t for t in (first_provisional_time, first_final_time) if t is not None]
+        first_translation_time = min(times) if times else None
+        provisional_before_final = (
+            first_provisional_time is not None
+            and (first_final_time is None or first_provisional_time < first_final_time)
+        )
 
         # Latency from SessionMetrics
         avg_lat = metrics.avg_latency_ms if metrics else 0
@@ -173,6 +223,9 @@ class BenchmarkRunner:
             timing_valid=state.timing_valid,
             timing_monotonic=state.timing_monotonic,
             peak_memory_mb=round(mem_delta, 1) if mem_delta > 0 else None,
+            first_translation_time_s=round(first_translation_time, 3) if first_translation_time is not None else None,
+            provisional_before_final=provisional_before_final,
+            mt_call_count=mt_call_count,
             hypothesis=hypothesis,
             reference=sample.reference,
             source=sample.source,

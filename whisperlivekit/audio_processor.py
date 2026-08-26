@@ -922,9 +922,9 @@ class AudioProcessor:
                         self.state.new_translation.append(new_translation)
                         self.state.new_translation_buffer = new_translation_buffer
                 elif new_translation_buffer is not None:
-                    # Provisional draft (simul MT): process() returns (None, buffer)
-                    # for the in-progress translation. Forward it so the display
-                    # shows the provisional before the final arrives.
+                    # A backend can return a provisional buffer with no finalized
+                    # translation (None). Forward the buffer so the display shows
+                    # the provisional draft before the final arrives.
                     async with self.lock:
                         self.state.new_translation_buffer = new_translation_buffer
             except Exception as e:
