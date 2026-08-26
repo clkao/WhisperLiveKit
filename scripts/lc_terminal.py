@@ -42,6 +42,7 @@ import time
 from datetime import datetime
 
 from whisperlivekit.test_harness import TestHarness
+from whisperlivekit.tui import TuiRenderer, MultiRenderer
 
 
 # ---------------------------------------------------------------------------
@@ -283,11 +284,61 @@ class TerminalSink:
                 print(f"[{self._lang}] {self._cc_target(tr)}")
 
 
+class TuiSink:
+    """Adapts WLK TestState → TuiRenderer / MultiRenderer contract.
+
+    Maps:
+      buffer_transcription → partial(label="mic", started_at=now, speaker=None)
+      lines[].text         → final(segments=[(speaker, text)], started_at=now)
+      lines[].translation  → translation(zh_segments=[(speaker, translation)])
+
+    Tracks per-line started_at so a translation arriving in a later update
+    matches the pending final entry (TuiRenderer pairs them by label+started_at).
+    """
+
+    def __init__(self, renderer, opencc_conv=None, target_opencc=None):
+        self._r = renderer
+        self._seen_finals: set[int] = set()
+        self._seen_transls: set[int] = set()
+        self._final_started_at: dict[int, datetime] = {}
+        self._opencc = opencc_conv
+        self._target_opencc = target_opencc
+
+    def _cc_src(self, text):
+        return self._opencc.convert(text) if (self._opencc and text) else text
+
+    def _cc_target(self, text):
+        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
+
+    def set_ocr_text(self, text):
+        self._r.set_ocr_text(text)
+
+    def __call__(self, state):
+        partial = (state.buffer_transcription or "").strip()
+        if partial:
+            self._r.partial("mic", self._cc_src(partial), datetime.now(), speaker=None)
+        for i, line in enumerate(state.lines):
+            txt = (line.get("text") or "").strip()
+            tr = (line.get("translation") or "").strip()
+            spk = line.get("speaker")
+            if spk is not None and spk <= 0:
+                spk = None
+            if txt and i not in self._seen_finals:
+                self._seen_finals.add(i)
+                started_at = datetime.now()
+                self._final_started_at[i] = started_at
+                self._r.final("mic", [(spk, self._cc_src(txt))], started_at)
+            if tr and i not in self._seen_transls:
+                self._seen_transls.add(i)
+                started_at = self._final_started_at.get(i, datetime.now())
+                self._r.translation("mic", [(spk, self._cc_target(tr))], started_at)
+
+
 # ---------------------------------------------------------------------------
 # Screen OCR hotword auto-refresh
 # ---------------------------------------------------------------------------
 
-def _start_ocr_loop(args, engine):
+def _start_ocr_loop(args, engine, on_hotwords=None, log=None):
     """Start the ScreenOcrLoop if --ocr-display is set. Returns the loop or None.
 
     The loop updates the ASR backend's .hotwords live (the ASR worker reads it
@@ -315,7 +366,8 @@ def _start_ocr_loop(args, engine):
         display_index=args.ocr_display,
         interval=args.ocr_interval,
         languages=[l.strip() for l in args.ocr_lang.split(",") if l.strip()],
-        log=lambda m: print(m, file=sys.stderr),
+        log=log or (lambda m: print(m, file=sys.stderr)),
+        on_hotwords=on_hotwords,
     )
     ocr_loop.start()
     return ocr_loop
@@ -325,18 +377,18 @@ def _start_ocr_loop(args, engine):
 # Runners
 # ---------------------------------------------------------------------------
 
-async def run_file(args, sink, ocr_loop=None):
+async def run_file(args, sink, ocr_loop=None, on_hotwords=None):
     kwargs = _make_engine_kwargs(args)
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
-            _start_ocr_loop(args, h._processor)
+            _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
         await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
         await h.finish(timeout=180)
 
 
-async def run_mic(args, sink, ocr_loop=None, stop_event=None):
+async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
     import sounddevice as sd
 
     SAMPLE_RATE = 16000
@@ -356,7 +408,7 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None):
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
-            _start_ocr_loop(args, h._processor)
+            _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                            blocksize=CHUNK, callback=audio_cb):
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
@@ -462,31 +514,39 @@ def main() -> None:
     ocr_loop = True if args.ocr_display is not None else None
 
     if not args.overlay:
-        # terminal mode: simple async run
-        stats = StatsTracker() if show_stats else None
-        if stats is not None:
-            stats.start()
-        sink = TerminalSink(stats=stats, opencc_conv=opencc_conv, target_opencc=target_opencc)
-        coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop)
-        try:
+        # terminal mode: TuiRenderer (rich.Live three-region) replaces print-based TerminalSink.
+        # The renderer's own status line handles MLX memory + latency (show_mem=show_stats),
+        # so the separate StatsTracker is no longer needed here.
+        with TuiRenderer(theme="auto", show_mem=show_stats, translate=True,
+                         show_ocr=(ocr_loop is not None)) as renderer:
+            sink = TuiSink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
+            on_hotwords = renderer.set_ocr_text if ocr_loop else None
+            coro = (run_file(args, sink, ocr_loop, on_hotwords=on_hotwords)
+                    if args.source == "file"
+                    else run_mic(args, sink, ocr_loop, on_hotwords=on_hotwords))
             asyncio.run(coro)
-        finally:
-            if stats is not None:
-                stats.stop()
         return
 
     # overlay mode: NSWindow run loop must be on the main thread.
-    # Run the WLK asyncio loop in a worker thread; drive the overlay from it.
+    # Run the WLK asyncio loop in a worker thread; drive BOTH the terminal TUI
+    # and the overlay window from it via MultiRenderer (fan-out).
     import whisperlivekit.overlay as _ov
     _ov.MIN_HOLD_SEC = args.overlay_hold
     from whisperlivekit.overlay import OverlayRenderer
 
-    renderer = OverlayRenderer(theme="auto", show_mem=False, translate=True,
+    terminal = TuiRenderer(theme="auto", show_mem=show_stats, translate=True,
+                            show_ocr=(ocr_loop is not None))
+    overlay = OverlayRenderer(theme="auto", show_mem=False, translate=True,
+                              suppress_mem_stderr=True,
                               overlay_mode=args.overlay_mode)
-    sink = OverlaySink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
+    renderer = MultiRenderer(terminal=terminal, overlay=overlay)
+    sink = TuiSink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc)
+    on_hotwords = renderer.set_ocr_text if ocr_loop else None
 
     stop_event = threading.Event()
-    coro = run_file(args, sink, ocr_loop) if args.source == "file" else run_mic(args, sink, ocr_loop, stop_event=stop_event)
+    coro = (run_file(args, sink, ocr_loop, on_hotwords=on_hotwords)
+            if args.source == "file"
+            else run_mic(args, sink, ocr_loop, stop_event=stop_event, on_hotwords=on_hotwords))
     worker_error: list = []
 
     def worker():
@@ -497,7 +557,7 @@ def main() -> None:
         finally:
             stop_event.set()
 
-    with renderer:  # creates the NSWindow on the main thread
+    with renderer:  # enters TuiRenderer + creates the NSWindow on the main thread
         t = threading.Thread(target=worker, daemon=True, name="wlk-asr")
         t.start()
         import signal
@@ -505,7 +565,7 @@ def main() -> None:
             stop_event.set()
         _prev = signal.signal(signal.SIGINT, _on_sigint)
         try:
-            renderer.run_until(stop_event)  # blocks on the main thread
+            renderer.run_until(stop_event)  # MultiRenderer forwards to overlay's run_until
         finally:
             signal.signal(signal.SIGINT, _prev)
         # The worker coro awaits an asyncio.Event (``stop`` in run_mic) that is
