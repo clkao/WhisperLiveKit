@@ -180,10 +180,14 @@ Refactored translation_hunyuan_mlx.py into a generic MlxLlmTranslation base with
 
 ## Stage Report: implementation (reconstruction — clean branch off origin/main)
 
-Validation sent this back: the worktree branch was off the accumulating
-integration branch `feat/apple-silicon-backends` (42 files, +32k lines) —
-not a mergeable mlx-llm-mt PR. Reconstructed as a clean branch off
-`origin/main`.
+- DONE: Rebuilt the mlx-llm-mt deliverable as a clean PR branch off `origin/main` — reset the worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` to `origin/main` and applied only the 7 mlx-llm-mt files as one clean commit `802fdfc`.
+- DONE: The branch diff vs `origin/main` shows ONLY the 7 files (3 whole: `translation_mlx_llm_mt.py`, `translation_hunyuan_mlx.py`, `test_mlx_llm_mt.py`; 4 shared with only mlx-llm-mt hunks: `config.py`, `core.py`, `parse_args.py`, `pyproject.toml`) — no ASR, overlay, CLI, vendored fork, or local docs.
+- DONE: The 16 tests in `tests/test_mlx_llm_mt.py` pass on the clean branch (`pytest tests/test_mlx_llm_mt.py -q` → 16/16).
+- DONE: The worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` is the PR source; the integration branch `feat/apple-silicon-backends` stays untouched.
+
+### Summary
+
+The reconstruction reset the worktree branch to `origin/main` and applied only the 7 mlx-llm-mt files (3 whole + 4 shared with mlx-llm-mt-only hunks) as a single clean commit `802fdfc`. The branch diff is exactly 7 files with no ASR/overlay/CLI/vendored leakage, and the 16 backend tests pass on the clean branch. The integration branch `feat/apple-silicon-backends` was not modified.
 
 ### Reconstruction method
 
