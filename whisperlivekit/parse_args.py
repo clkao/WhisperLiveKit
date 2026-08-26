@@ -889,6 +889,16 @@ def parse_args():
         dest="hunyuan_mlx_model",
     )
     translation_group.add_argument(
+        "--simultaneous",
+        action="store_true",
+        default=False,
+        help="Enable the simultaneous-MT variant of --translation-backend "
+        "mlx-llm-mt: drafts translation over the unstable ASR tail and "
+        "commits target tokens via the AlignAtt attention policy (calibrated "
+        "zh→en Hunyuan heads). Requires mlx-llm-mt (or hunyuan-mlx).",
+        dest="mlx_llm_mt_simultaneous",
+    )
+    translation_group.add_argument(
         "--alignatt-url",
         type=str,
         default="ws://localhost:8765",
