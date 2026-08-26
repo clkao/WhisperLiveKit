@@ -162,3 +162,25 @@ not conflict and do not overlap.
 ### Summary
 
 Created three new modules (asr_commit.py, asr_timestamps.py, asr_wrapper.py) factoring the two jobs every non-transducer ASR backend duplicates. Refactored mlx-qwen3-asr to route its decode loop through the StableCommitTransform wrapper (Job 1), keeping the two-pass re-decode in the backend. Converted Voxtral-MLX to use the shared WordTimestampTracker (Job 2), replacing inline timestamp logic with behavior-preserving calls. The online_factory composes the wrapper chain per backend. 38 new tests pass; pre-existing test failures (missing pytest-asyncio) are unchanged.
+
+## Validation findings (2026-08-25, route to implementation)
+
+Two findings from the validation audit (read-only, both backends audited):
+
+### Finding 1 — `get_buffer` returns the full rolling text, not the unstable tail (AlignAtt seam)
+
+The WLK contract (proven by `OnlineASRProcessor.get_buffer` → `self.transcript_buffer.buffer`, the unstable tail) is: `get_buffer()` returns a `Transcript(start, end, text)` where `text` is the unstable hypothesis tail (not yet committed). `process_iter()` returns the committed `ASRToken`s.
+
+Our backend (`asr_mlx_qwen3.py:142`) returns `Transcript(start=None, end=audio_end, text=self._text)` — the FULL rolling text including the committed stable prefix. This double-counts the committed prefix for any consumer that reads `get_buffer` (display, and critically the AlignAtt translator which drafts over the tail via `HypothesisTail`).
+
+Fix: `get_buffer` returns `text[len(self._stable_text):]` (the unstable tail = rolling text minus the stable prefix), with `start` = the time of the last stable commit (not None). The backend already has `self._stable_text` and `self._text`; the split is `text[len(stable):]`.
+
+### Finding 2 — per-session language override silently broken
+
+`SessionASRProxy.transcribe()` swaps `original_language` to apply a per-session `?language=` override, but (a) the mlx-qwen3-asr online processor reads `getattr(asr, "language")` (server-wide Namespace attr, not the per-session swap), and (b) the processor never calls `asr.transcribe()` — it calls `init_streaming`/`feed_audio`/`finish_streaming` directly. So a multi-language WLK server transcribes every session in the server-wide `--language` default, ignoring per-session overrides.
+
+Fix: thread the per-session language into `init_streaming(language=...)` on the code path the processor actually uses. The `_new_state` method (line 121) already passes `language=self.language`; the fix is making `self.language` reflect the per-session override, not just the init-time server-wide value.
+
+### Scope of the re-implementation
+
+Both fixes are small and localized to `asr_mlx_qwen3.py`. No new modules, no base class, no second backend. The generalization (the wrapper chain) is already shipped; these are contract-compliance fixes so the backend speaks the AlignAtt seam correctly. Add a test: `get_buffer` returns only the tail after a commit; `process_iter` returns the committed prefix.
