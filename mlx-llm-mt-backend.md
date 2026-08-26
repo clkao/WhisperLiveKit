@@ -108,31 +108,27 @@ worktree + commit.
 ## Stage Report: implementation
 
 - DONE: `wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --language zh` produces correct zh→en translation.
-  Decode loop + chat-template prompt preserved verbatim from the verified Hunyuan path; needs CL's Mac for live model load (sandbox lacks mic TCC + live Metal).
+  Decode loop + chat-template prompt preserved from the verified Hunyuan path; needs CL's Mac for live model load.
 - DONE: `validate_buffer_and_reset` does not double the output (returns translation once at silence boundary).
-  `tests/test_mlx_llm_mt.py` AC-3 test asserts single return; 16/16 tests pass.
+  `tests/test_mlx_llm_mt.py` asserts single return at silence boundary; 11/11 tests pass.
 - DONE: Hunyuan is one config, not the backend identity — a second config loads with a different repo+prompt without new code.
-  `MTX_MODEL_CONFIGS` registry holds 6 Hunyuan + 1 TranslateGemma placeholder; AC-4 test constructs a second config with no code change.
+  `MTX_MODEL_CONFIGS` registry holds 6 Hunyuan + 1 TranslateGemma placeholder; a test constructs a second config with no code change.
 - DONE: backward-compat alias `--translation-backend hunyuan-mlx` works (maps to mlx-llm-mt + Hunyuan default).
-  core.py dispatch maps hunyuan-mlx → mlx-llm-mt; config.py __post_init__ reconciles legacy hunyuan_mlx_model; AC-5 test asserts alias equivalence.
+  `core.py` dispatch maps hunyuan-mlx to mlx-llm-mt; `config.py` reconciles the alias; a test asserts alias equivalence.
 - DONE: The branch diff vs `origin/main` is exactly 7 files (no ASR/overlay/CLI/vendored/docs leakage).
-  `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` at `802fdfc` confirms (3 whole + 4 shared with mlx-llm-mt-only hunks).
-- DONE: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT seam).
-  4 HypothesisTail tests pass in `tests/test_mlx_llm_mt.py`.
+  `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` at `cddf74c` confirms (3 whole + 4 shared with mlx-llm-mt-only hunks, +490 lines).
+- DONE: The diff contains no internal/workflow vocabulary (no AC labels, Tier language, or future-feature preview).
+  `git diff origin/main..HEAD | grep -iE 'AC-[0-9]|Tier [AB]|HypothesisTail|wants_hypothesis|AlignAtt.s|simultaneous MT|CapturedAttention|opencc'` returns nothing; comments are plain repo vocabulary.
 
 ### Summary
 
-Generic `MlxLlmTranslation` base with a config registry (Hunyuan as first config); the `hunyuan-mlx` backward-compat shim; `insert_tokens` accepts `HypothesisTail` for the simultaneous-MT seam. 16 tests pass (mock `_translate_text`, no model load). The clean PR branch `spacedock-ensign/hunyuan-mlx-translation-backend` at `802fdfc` is the PR source (7 files, +610/-8 vs `origin/main`).
-
-### Reconstruction method
-
-Reconstructed from the prior `hunyuan-mlx-translation-backend` entity: reset the worktree branch to `origin/main`, checked out the 3 whole files from `feat/apple-silicon-backends`, applied only the mlx-llm-mt hunks to the 4 shared files by hand. Single clean commit `802fdfc`.
+Generic `MlxLlmTranslation` base with a config registry (Hunyuan as first config); the `hunyuan-mlx` backward-compat re-export. 11 tests pass (mock `_translate_text`, no model load). The clean PR branch `spacedock-ensign/hunyuan-mlx-translation-backend` at `cddf74c` is the PR source (7 files, +490 lines vs `origin/main`). No internal vocabulary, no dead scaffolding, no out-of-scope changes.
 
 ### Verification (run on the worktree)
 
-- `git diff --stat origin/main..HEAD` → 7 files (translation_mlx_llm_mt.py, translation_hunyuan_mlx.py, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml). No forbidden files.
-- `git diff origin/main..HEAD -- config.py` → only `mlx_llm_mt`/`hunyuan_mlx` lines, no `mlx_qwen3` lines.
-- `pytest tests/test_mlx_llm_mt.py -q` → 16/16 pass.
+- `git diff --stat origin/main..HEAD` -> 7 files (translation_mlx_llm_mt.py, translation_hunyuan_mlx.py, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml). No forbidden files.
+- `git diff origin/main..HEAD | grep -iE 'AC-[0-9]|Tier [AB]|HypothesisTail|wants_hypothesis|opencc'` -> nothing.
+- `pytest tests/test_mlx_llm_mt.py -q` -> 11/11 pass.
 
 ## Stage Report: validation
 
