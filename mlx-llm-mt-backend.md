@@ -84,12 +84,18 @@ worktree + commit.
 
 ## Stage Report: implementation
 
-- DONE: `wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --language zh` produces correct zh→en translation (decode loop + chat-template prompt preserved verbatim from the verified Hunyuan path; needs CL's Mac for live model load).
-- DONE: `validate_buffer_and_reset` does not double the output (returns translation once at silence boundary). `tests/test_mlx_llm_mt.py` AC-3 test asserts single return; 16/16 tests pass.
-- DONE: Hunyuan is one config, not the backend identity — `MTX_MODEL_CONFIGS` registry holds 6 Hunyuan + 1 TranslateGemma placeholder; AC-4 test constructs a second config with no code change.
-- DONE: backward-compat alias `--translation-backend hunyuan-mlx` works (maps to mlx-llm-mt + Hunyuan default). AC-5 test asserts alias equivalence.
-- DONE: The branch diff vs `origin/main` is exactly 7 files (3 whole + 4 shared with mlx-llm-mt-only hunks) — no ASR, overlay, CLI, vendored fork, or local docs. `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` at `802fdfc` confirms.
-- DONE: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT seam). 4 HypothesisTail tests pass in `tests/test_mlx_llm_mt.py`.
+- DONE: `wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --language zh` produces correct zh→en translation.
+  Decode loop + chat-template prompt preserved verbatim from the verified Hunyuan path; needs CL's Mac for live model load (sandbox lacks mic TCC + live Metal).
+- DONE: `validate_buffer_and_reset` does not double the output (returns translation once at silence boundary).
+  `tests/test_mlx_llm_mt.py` AC-3 test asserts single return; 16/16 tests pass.
+- DONE: Hunyuan is one config, not the backend identity — a second config loads with a different repo+prompt without new code.
+  `MTX_MODEL_CONFIGS` registry holds 6 Hunyuan + 1 TranslateGemma placeholder; AC-4 test constructs a second config with no code change.
+- DONE: backward-compat alias `--translation-backend hunyuan-mlx` works (maps to mlx-llm-mt + Hunyuan default).
+  core.py dispatch maps hunyuan-mlx → mlx-llm-mt; config.py __post_init__ reconciles legacy hunyuan_mlx_model; AC-5 test asserts alias equivalence.
+- DONE: The branch diff vs `origin/main` is exactly 7 files (no ASR/overlay/CLI/vendored/docs leakage).
+  `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` at `802fdfc` confirms (3 whole + 4 shared with mlx-llm-mt-only hunks).
+- DONE: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT seam).
+  4 HypothesisTail tests pass in `tests/test_mlx_llm_mt.py`.
 
 ### Summary
 
