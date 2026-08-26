@@ -159,7 +159,9 @@ The existing `translation_hunyuan_mlx.py` is the starting point — refactor
 it, don't rewrite from scratch. The two-pass re-decode, the sampling params,
 and the warmup are all correct and stay.
 
-## Stage Report: implementation (reconstruction — clean branch off origin/main)
+## Stage Report: implementation
+
+_Reconstruction — clean branch off origin/main._
 
 - DONE: Rebuilt the mlx-llm-mt deliverable as a clean PR branch off `origin/main` — reset the worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` to `origin/main` and applied only the 7 mlx-llm-mt files as one clean commit `802fdfc`.
 - DONE: The branch diff vs `origin/main` shows ONLY the 7 files (3 whole: `translation_mlx_llm_mt.py`, `translation_hunyuan_mlx.py`, `test_mlx_llm_mt.py`; 4 shared with only mlx-llm-mt hunks: `config.py`, `core.py`, `parse_args.py`, `pyproject.toml`) — no ASR, overlay, CLI, vendored fork, or local docs.
