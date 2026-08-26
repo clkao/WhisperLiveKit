@@ -40,18 +40,19 @@ _mt_base.MlxLlmTranslation._translate_text = _counting_translate_text
 
 
 async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
-    """Run the full pipeline on one wav, return timing + call-count metrics."""
+    """Run the full pipeline on one wav, return timing + call-count + RTF metrics."""
     from whisperlivekit.test_harness import TestHarness
+    import os
 
     _mt_calls["count"] = 0
     first_translation_at: list[float] = []
     first_provisional_at: list[float] = []
     lines_seen = 0
+    committed_text_parts: list[str] = []
     t0 = time.monotonic()
 
     def on_update(state: Any) -> None:
         nonlocal lines_seen
-        # A "line" with a translation is a finalized EN caption.
         for line in state.lines:
             tr = (line.get("translation") or "").strip()
             txt = (line.get("text") or "").strip()
@@ -59,7 +60,7 @@ async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
                 first_translation_at.append(time.monotonic() - t0)
             if txt:
                 lines_seen += 1
-        # buffer_translation is the live provisional (Tier B drafts over the tail).
+                committed_text_parts.append(txt)
         bt = (getattr(state, "buffer_translation", "") or "").strip()
         if bt and not first_provisional_at:
             first_provisional_at.append(time.monotonic() - t0)
@@ -75,15 +76,26 @@ async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
         "mlx_llm_mt_simultaneous": simultaneous,
         "diarization": False,
     }
+    wall_start = time.perf_counter()
     async with TestHarness(**kwargs) as h:
         h.on_update(on_update)
         await h.feed(audio_path, speed=0, chunk_duration=0.5)
         await h.drain(8.0)
         await h.finish(timeout=180)
+    wall_elapsed = time.perf_counter() - wall_start
+
+    # RTF = processing wall time / audio duration. speed=0 feeds as fast as the
+    # pipeline accepts, so wall_elapsed is the true processing cost (not bound by
+    # real-time playback).
+    import soundfile as sf
+    info = sf.info(audio_path)
+    audio_duration = info.duration if info.duration > 0 else 1.0
+    rtf = wall_elapsed / audio_duration
 
     return {
         "variant": "Tier B (simul)" if simultaneous else "Tier A (serial)",
         "lines": lines_seen,
+        "committed_text": " ".join(committed_text_parts),
         "first_translation_s": first_translation_at[0] if first_translation_at else None,
         "first_provisional_s": first_provisional_at[0] if first_provisional_at else None,
         "mt_calls": _mt_calls["count"],
@@ -91,6 +103,9 @@ async def run_one(audio_path: str, simultaneous: bool, model_id: str) -> dict:
             bool(first_provisional_at and first_translation_at
                  and first_provisional_at[0] < first_translation_at[0])
         ),
+        "rtf": rtf,
+        "wall_s": wall_elapsed,
+        "audio_s": audio_duration,
     }
 
 
@@ -98,10 +113,13 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Simultaneous-MT A/B benchmark (Tier A vs Tier B)")
     p.add_argument("audio", nargs="?", default="/Users/clkao/git/asr/_work/zh_long.wav")
     p.add_argument("--model", default="hy-mt2-1.8b-8bit")
+    p.add_argument("--reference", default=None, help="reference transcript for WER (one line of text). Omit to skip WER.")
     args = p.parse_args()
 
     print(f"Audio: {args.audio}")
     print(f"MT model: {args.model}")
+    if args.reference:
+        print(f"Reference: {args.reference}")
     print("-" * 64)
 
     results = []
@@ -109,12 +127,21 @@ def main() -> None:
         label = "Tier B (simul)" if simul else "Tier A (serial)"
         print(f"\nRunning {label} ...")
         r = asyncio.run(run_one(args.audio, simultaneous=simul, model_id=args.model))
+        # WER against the reference (ASR quality; same for both variants since the
+        # ASR backend is identical — the simul flag only changes the MT path).
+        if args.reference:
+            from whisperlivekit.metrics import compute_wer
+            wer = compute_wer(args.reference, r["committed_text"])["wer"]
+            r["wer"] = wer
         results.append(r)
         print(f"  lines:               {r['lines']}")
         print(f"  first translation:   {r['first_translation_s']:.2f}s" if r['first_translation_s'] else "  first translation:   (none)")
         print(f"  first provisional:   {r['first_provisional_s']:.2f}s" if r['first_provisional_s'] else "  first provisional:   (none)")
         print(f"  MT calls:            {r['mt_calls']}")
         print(f"  provisional<final:   {r['provisional_before_final']}")
+        print(f"  RTF:                 {r['rtf']:.2f}  (wall {r['wall_s']:.1f}s / audio {r['audio_s']:.1f}s)")
+        if "wer" in r:
+            print(f"  WER (ASR):           {r['wer']*100:.1f}%")
 
     print("\n" + "=" * 64)
     print("COMPARISON")
@@ -126,6 +153,9 @@ def main() -> None:
     if a["mt_calls"] and b["mt_calls"]:
         print(f"  MT calls:            A={a['mt_calls']}  B={b['mt_calls']}  (B is {b['mt_calls'] - a['mt_calls']:+d} vs A)")
     print(f"  provisional-before-final: A={a['provisional_before_final']}  B={b['provisional_before_final']}")
+    print(f"  RTF:                 A={a['rtf']:.2f}  B={b['rtf']:.2f}")
+    if "wer" in a and "wer" in b:
+        print(f"  WER (ASR):           A={a['wer']*100:.1f}%  B={b['wer']*100:.1f}%  (same ASR; must match)")
 
 
 if __name__ == "__main__":
