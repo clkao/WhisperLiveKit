@@ -161,63 +161,21 @@ and the warmup are all correct and stay.
 
 ## Stage Report: implementation
 
-_Reconstruction — clean branch off origin/main._
+_Generic in-process MLX translation backend, Hunyuan-MT as first config._
 
-- DONE: Rebuilt the mlx-llm-mt deliverable as a clean PR branch off `origin/main` — reset the worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` to `origin/main` and applied only the 7 mlx-llm-mt files as one clean commit `802fdfc`.
-- DONE: The branch diff vs `origin/main` shows ONLY the 7 files (3 whole: `translation_mlx_llm_mt.py`, `translation_hunyuan_mlx.py`, `test_mlx_llm_mt.py`; 4 shared with only mlx-llm-mt hunks: `config.py`, `core.py`, `parse_args.py`, `pyproject.toml`) — no ASR, overlay, CLI, vendored fork, or local docs.
-- DONE: The 16 tests in `tests/test_mlx_llm_mt.py` pass on the clean branch (`pytest tests/test_mlx_llm_mt.py -q` → 16/16).
-- DONE: The worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` is the PR source; the integration branch `feat/apple-silicon-backends` stays untouched.
+- DONE: Implemented the generic decoder-LLM translation backend (`MlxLlmTranslation` in `translation_mlx_llm_mt.py`) with a config-driven model registry (`MTX_MODEL_CONFIGS`) where each entry declares repo, prompt template, EOS token, and sampling params — adding a model is a config-dict entry, not a subclass.
+  Verified: `translation_mlx_llm_mt.py` lines 64-86 define `_HY` config dict and six Hunyuan-MT model entries; lines 88-97 define a second TranslateGemma family entry; `test_registry_has_multiple_config_families` and `test_second_config_constructs_without_new_code` pass.
+- DONE: Wired the backend into the pipeline — `core.py` dispatches `mlx-llm-mt` and `hunyuan-mlx` to `MlxLlmTranslation` in `online_translation_factory`, removed the stale qwen3+NLLB guard; `config.py` adds `mlx_llm_mt_model` knob with `hunyuan_mlx_model` deprecated alias and `__post_init__` reconciliation; `parse_args.py` adds `--translation-backend mlx-llm-mt` and `--mlx-llm-mt-model` flags; `pyproject.toml` adds the `mlx-lm-mt` extra.
+  Verified: `git diff --name-only main..HEAD` lists exactly 7 files (translation_mlx_llm_mt.py, translation_hunyuan_mlx.py, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml) with 478 insertions, 3 deletions across two commits (cddf74c, f0dd96a).
+- DONE: Inlined the Hunyuan prompt template into the `_HY` config dict (no model-specific name at module scope) and added an `_mt_call_count` counter to the base backend so the benchmark report shows the translation table.
+  Verified: `grep -n '_HY\|_mt_call_count' translation_mlx_llm_mt.py` shows `_HY = dict(...)` at line 64, `self._mt_call_count = 0` at line 130, `self._mt_call_count += 1` at line 158; commit f0dd96a message confirms both changes.
+- DONE: The 11 tests in `tests/test_mlx_llm_mt.py` pass, covering the config registry (multi-family, data-not-code, unknown-model error), `validate_buffer_and_reset` (no double output, flush-once, empty-when-nothing-buffered), `process` (emits-on-closed-segment, returns-none-when-no-closed), `insert_silence` noop, and the backward-compat re-export.
+  Verified: `.venv/bin/python -m pytest tests/test_mlx_llm_mt.py -v` → 11 passed in 1.24s (all 11 test names listed in verbose output).
+- DONE: No simultaneous-MT or AlignAtt scaffolding leaked into this diff — the diff contains no `wants_hypothesis_tail`, `HypothesisTail`, `self._tail`, `simultaneous`, `simul_mt`, `CapturedAttention`, or `calibrated` references.
+  Verified: `git diff main..HEAD | grep -iE 'wants_hypothesis_tail|HypothesisTail|self._tail|simultaneous|simul_mt|CapturedAttention|calibrated'` returns empty (exit code 1).
+- DONE: Benchmark evidence shows the backend translates correctly in-process on Apple Silicon — MT-RTF 0.24x (7.6s compute for 31.6s audio), 13 MT calls, first-translation latency ~7.6s, correct EN output ("Today, we will discuss the applications of laser in medicine...").
+  Verified: benchmark report shows MT-RTF 0.240x, MT calls 13, MT-time 7.59s, overall RTF 0.672x; EN output is correct readable translation of the Mandarin input.
 
 ### Summary
 
-The reconstruction reset the worktree branch to `origin/main` and applied only the 7 mlx-llm-mt files (3 whole + 4 shared with mlx-llm-mt-only hunks) as a single clean commit `802fdfc`. The branch diff is exactly 7 files with no ASR/overlay/CLI/vendored leakage, and the 16 backend tests pass on the clean branch. The integration branch `feat/apple-silicon-backends` was not modified.
-
-### Reconstruction method
-
-1. `git reset --hard origin/main` on the worktree branch.
-2. Checked out the 3 whole files (self-contained, no ASR dependency) from
-   `feat/apple-silicon-backends`:
-   - `whisperlivekit/translation_mlx_llm_mt.py` (300 lines)
-   - `whisperlivekit/translation_hunyuan_mlx.py` (20 lines, backward-compat shim)
-   - `tests/test_mlx_llm_mt.py` (226 lines, 16 tests)
-3. For the 4 shared files, applied ONLY the mlx-llm-mt hunks by hand (did NOT
-   `git checkout feat/apple-silicon-backends -- <file>` — that brings ASR hunks):
-   - `config.py`: translation_backend doc comment mentioning
-     mlx-llm-mt/hunyuan-mlx; `mlx_llm_mt_model` field (default
-     `hy-mt2-1.8b-8bit`); `hunyuan_mlx_model` alias field; `__post_init__`
-     reconciliation mapping legacy `--hunyuan-mlx-model` into `mlx_llm_mt_model`.
-     No `mlx_qwen3_asr_*` fields.
-   - `core.py`: the `elif getattr(config, "translation_backend", "nllb") in
-     ("mlx-llm-mt", "hunyuan-mlx"):` branch importing `MlxLlmTranslation`;
-     removal of the stale qwen3+NLLB guard (replaced with a comment); the
-     `MlxLlmTranslation` early-return in `online_translation_factory`. No
-     `mlx-qwen3-asr`/`qwen3-vllm` backend branches, no `asr_wrapper` re-export.
-     `_to_wlk_token` and `_ASRTokenNormalizer` stay in core.py (the
-     asr_wrapper move is the ASR PR, not this one).
-   - `parse_args.py`: added `mlx-llm-mt` and `hunyuan-mlx` to
-     `--translation-backend` choices; `--mlx-llm-mt-model` arg (default
-     `hy-mt2-1.8b-8bit`); `--hunyuan-mlx-model` deprecated alias. No
-     `--mlx-qwen3-asr-*` args.
-   - `pyproject.toml`: the `mlx-llm-mt` extra (`mlx-lm>=0.31.1`). No
-     `mlx-qwen3-asr` extra, no `qwen-asr` uv source.
-4. Single clean commit `802fdfc` on `spacedock-ensign/hunyuan-mlx-translation-backend`.
-5. Did NOT push or open a PR.
-
-### Verification (run by the worker)
-
-- `git diff --stat origin/main..HEAD` shows ONLY the 7 files (3 new + 4
-  shared): translation_mlx_llm_mt.py, translation_hunyuan_mlx.py,
-  test_mlx_llm_mt.py, config.py, core.py, parse_args.py, pyproject.toml. No
-  cli.py, backend_support.py, overlay.py, asr_*.py, third_party/, uv.lock,
-  or docs.
-- `git diff origin/main..HEAD -- config.py` contains only `mlx_llm_mt`/
-  `hunyuan_mlx` lines — no `mlx_qwen3` lines.
-- `git diff origin/main..HEAD -- core.py` contains only the
-  `("mlx-llm-mt", "hunyuan-mlx")` branch + qwen3+NLLB guard removal +
-  online_translation_factory early-return — no ASR backend branches, no
-  asr_wrapper re-export.
-- `pytest tests/test_mlx_llm_mt.py -q` → 16/16 pass (mock _translate_text,
-  no model load).
-- Broader non-async suite: 209 passed, 12 skipped, 1 error
-  (test_asr_coalescing_pipeline test-data download failure — pre-existing on
-  origin/main, unrelated to this change).
+The implementation adds a generic in-process MLX translation backend to WhisperLiveKit that runs decoder-LLM MT models via mlx-lm on Apple Silicon with no vLLM, no CUDA, and no external sidecar. The backend is config-driven: each model is a registry entry declaring repo, prompt template, EOS token, and sampling params, so adding a new model family (e.g., TranslateGemma) requires only a config-dict change, not new code. Hunyuan-MT ships as the first config with six model entries (1.8B/7B, 4bit/8bit). The Hunyuan prompt is inlined into the config dict, and an MT-call counter was added to the base backend for benchmark visibility. A backward-compat alias (`--translation-backend hunyuan-mlx`) keeps existing invocations working. The diff is exactly 7 files across two clean commits on top of main, with no simultaneous-MT or attention-capture scaffolding included. All 11 tests pass, and a live benchmark confirms correct zh-to-en translation at 0.24x MT-RTF.
