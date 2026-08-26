@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from whisperlivekit.timed_objects import ASRToken, TimedText, Translation
+from whisperlivekit.timed_objects import ASRToken, HypothesisTail, TimedText, Translation
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,13 @@ class MlxLlmTranslation:
         self._buffer_start: Optional[float] = None
         self._pending_finals: List[Tuple[str, float, float]] = []  # (text, start, end)
         self._last_buffer = TimedText()
+        # The unstable ASR tail (HypothesisTail) — accepted (not dropped) when
+        # ``wants_hypothesis_tail`` is True. Tier A (this base) does not draft
+        # over it; a Tier B subclass (simultaneous MT) reads ``self._tail.text``
+        # to draft ahead and commits only against the committed prefix.
+        # Forward-compatible: a Tier B subclass overrides ``process`` to use it;
+        # this base stores it so the pipeline contract holds either way.
+        self._tail: Optional[HypothesisTail] = None
         self._eos_token = config.eos_token  # may be None → resolved at load
         if warmup:
             self._warmup()
@@ -221,6 +228,13 @@ class MlxLlmTranslation:
 
     def insert_tokens(self, items: List[Any]) -> None:
         for item in items:
+            # Accept the unstable ASR tail (HypothesisTail). Tier A does not
+            # draft over it, but must not drop it — the pipeline sends it when
+            # ``wants_hypothesis_tail`` is True, and dropping it breaks the
+            # contract. A Tier B subclass reads ``self._tail`` in ``process``.
+            if isinstance(item, HypothesisTail):
+                self._tail = item
+                continue
             if not isinstance(item, ASRToken):
                 continue
             if not item.text or not item.text.strip():
@@ -234,6 +248,7 @@ class MlxLlmTranslation:
                 self._pending_finals.append((text, self._buffer_start, item.end))
                 self._buffer_tokens = []
                 self._buffer_start = None
+                self._tail = None
 
     def process(self) -> Tuple[Optional[Translation], TimedText]:
         # Translate any closed (punctuated) segments; emit the first.
