@@ -115,8 +115,9 @@ class MlxQwen3AsrOnlineProcessor:
             with _MLX_LOCK:
                 state = feed_audio(silence, state, model=self._model_obj)
                 finish_streaming(state, model=self._model_obj)
+            logger.info("mlx-qwen3-asr warmup OK (model=%s)", self.model_id)
         except Exception as exc:  # warmup is non-fatal
-            logger.debug("mlx-qwen3-asr warmup failed (non-fatal): %s", exc)
+            logger.warning("mlx-qwen3-asr warmup FAILED: %s", exc)
 
     def _new_state(self):
         from mlx_qwen3_asr.streaming import init_streaming
@@ -133,10 +134,16 @@ class MlxQwen3AsrOnlineProcessor:
 
     def _feed(self, audio: np.ndarray):
         from mlx_qwen3_asr.streaming import feed_audio
-        with _MLX_LOCK:
-            self._state = feed_audio(audio, self._state, model=self._model_obj)
-        self._text = (getattr(self._state, "text", "") or "").strip()
-        self._stable_text = (getattr(self._state, "stable_text", "") or "").strip()
+        try:
+            with _MLX_LOCK:
+                self._state = feed_audio(audio, self._state, model=self._model_obj)
+            self._text = (getattr(self._state, "text", "") or "").strip()
+            self._stable_text = (getattr(self._state, "stable_text", "") or "").strip()
+            if self._text:
+                logger.debug("mlx-qwen3-asr _feed: audio=%d samples text=%r", len(audio), self._text[:80])
+        except Exception as exc:
+            logger.warning("mlx-qwen3-asr _feed FAILED (audio=%d samples): %s", len(audio), exc)
+            raise
 
     def insert_audio_chunk(self, audio: np.ndarray, audio_stream_end_time: float):
         if not self._started:

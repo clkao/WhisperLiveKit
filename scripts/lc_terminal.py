@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 import threading
 import time
@@ -369,6 +370,7 @@ async def run_mic(args, sink, ocr_loop=None):
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     p = argparse.ArgumentParser(description="livecaption-equivalent on WLK (in-process)")
     p.add_argument("--audio", help="audio file path (file mode)")
     p.add_argument("--source", choices=["mic", "file"], default="file")
@@ -491,10 +493,14 @@ def main() -> None:
     with renderer:  # creates the NSWindow on the main thread
         t = threading.Thread(target=worker, daemon=True, name="wlk-asr")
         t.start()
+        import signal
+        def _on_sigint(signum, frame):
+            stop_event.set()
+        _prev = signal.signal(signal.SIGINT, _on_sigint)
         try:
             renderer.run_until(stop_event)  # blocks on the main thread
-        except KeyboardInterrupt:
-            stop_event.set()
+        finally:
+            signal.signal(signal.SIGINT, _prev)
         t.join(timeout=5)
     if worker_error:
         raise worker_error[0]
