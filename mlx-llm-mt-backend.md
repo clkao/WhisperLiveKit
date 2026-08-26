@@ -150,3 +150,24 @@ Validation passed: the clean PR branch `802fdfc` (7 files, +610/-8) contains onl
 ### Residual flag for the reviewer
 
 The `core.py` diff removes a guard in the NLLB `else` branch (enables qwen3 ASR + NLLB MT). This is scope-adjacent to the mlx-llm-mt task (it's a 5-line defensible change that unblocks a qwen3+NLLB combo) but outside the stated "mlx-llm-mt only" scope. The ensign judged it not a blocker; the captain decides whether to accept the scope creep or ask the worker to revert those 5 lines.
+
+## Stage Report: validation (cycle 2)
+
+- DONE: The branch diff vs `origin/main` is exactly 7 files (+481/-3), no ASR/overlay/CLI/vendored/docs leakage.
+  `git diff --stat origin/main..HEAD` on `spacedock-ensign/hunyuan-mlx-translation-backend` @ `cddf74c`: pyproject.toml, test_mlx_llm_mt.py, config.py, core.py, parse_args.py, translation_hunyuan_mlx.py, translation_mlx_llm_mt.py. No forbidden files.
+- DONE: 11/11 tests pass (`tests/test_mlx_llm_mt.py`).
+  `pytest tests/test_mlx_llm_mt.py -v` → 11 passed: 4 config-registry (distinct repos/prompts, second-config construction, unknown-model ValueError, dataclass-not-subclass), 5 buffer/commit (closed-segment emit, silence flush, no-double-after-process, empty-on-fresh, no-closure-returns-None), 1 insert_silence noop, 1 backward-compat shim identity.
+- DONE: No new failures vs `origin/main` baseline (baseline parity).
+  origin/main: 5 failed / 283 passed / 15 skipped / 17 errors; branch: 5 failed / 294 passed / 15 skipped / 17 errors. +11 passing = the new tests; the 5 failures (test_qwen3_backend_shims, test_asr_coalescing_pipeline) and 17 errors (PermissionError from sandbox) are identical pre-existing.
+- DONE: No internal/workflow vocabulary in the diff.
+  `git diff origin/main..HEAD | grep -iE 'AC-[0-9]|Tier [AB]|ensign|spacedock|captain|worktree|gate|briefing|dispatch|stage.report|completion.guard|fast.track'` → no matches (only "attention-gated" in pre-existing alignatt help text, legitimate technical term). "placeholders" appears once referring to `{target_lang}`/`{text}` format-string slots in a docstring — legitimate code vocabulary.
+- DONE: `core.py` diff is in-scope (no unrelated guard removals).
+  The diff adds only the `("mlx-llm-mt", "hunyuan-mlx")` dispatch branch (9 lines) and the `online_translation_factory` per-session return (4 lines). No guard removals, no ASR branches, no NLLB changes. The prior cycle's residual flag (core.py guard removal at 802fdfc) is resolved — the current commit `cddf74c` is clean.
+- SKIPPED: AC-1 live zh→en decode (needs CL's Mac for live model load).
+  Sandbox lacks mic TCC + live Metal; the decode loop + chat-template prompt are preserved verbatim from the verified Hunyuan path.
+
+### Summary
+
+Validation PASSED (cycle 2): the clean PR branch `cddf74c` (7 files, +481/-3) contains only the mlx-llm-mt deliverable, 11/11 tests pass, baseline parity confirmed (0 new failures), no internal/workflow vocabulary, and the `core.py` diff is strictly in-scope (no guard removals — the prior cycle's residual flag is resolved). Recommend gate-approval to `done`.
+
+### Recommendation: PASSED
