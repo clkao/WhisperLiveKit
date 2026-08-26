@@ -170,3 +170,37 @@ legitimate method/contract names the PR describes.
 After cleanup: run the tests, confirm 44 pass, confirm the live A/B
 benchmark (`scripts/bench_simul_ab.py`) shows
 `provisional-before-final: B=True`. Then advance to validation.
+
+## Rework (2026-08-26) addendum: use the upstream benchmark; compare causal vs ours
+
+The validation evidence must use the upstream `whisperlivekit/benchmark/` suite,
+not only the custom `scripts/bench_simul_ab.py`. The upstream suite currently
+gaps:
+
+1. **compat.py does not know our backends.** `BACKEND_LANGUAGES` and
+   `detect_available_backends()` list only whisper/faster-whisper/mlx-whisper/
+   voxtral-mlx/voxtral/qwen3-streaming. Add `mlx-qwen3-asr` (multilingual,
+   our windowed standard backend) and `qwen3-vllm-metal` (the causal backend,
+   English-only per the LibriSpeech tower checkpoint).
+
+2. **The runner measures ASR latency only.** It reports WER, RTF,
+   avg/p95 ASR latency. It does not measure translation metrics
+   (first-translation-time, provisional-before-final, MT-call-count). Add a
+   translation-metrics path so the simul variant's latency win is visible in
+   the same report. Read `state.buffer_translation` for the provisional;
+   count MT calls via the backend's `_mt_call_count` (or a callback).
+
+3. **No zh samples in BENCHMARK_CATALOG.** Add a zh sample (use
+   `/Users/clkao/git/asr/_work/zh_long.wav` with a reference transcript) so
+   the zh→en path is benchmarked, not only en/fr/es.
+
+The comparison the validator must show:
+  - **Causal (qwen3-vllm-metal, --qwen3-vllm-metal-audio-backend causal) vs
+    standard (mlx-qwen3-asr)** — same ASR quality/RTF comparison the upstream
+    bench already does, now with both our backends.
+  - **Tier A (base mlx-llm-mt) vs Tier B (simul)** — the simul translation
+    latency win (first-translation earlier, provisional-before-final=True),
+    on top of the same ASR metrics.
+
+Run on CL's Mac (model cache + Metal). The validator shows the report
+output as evidence for each branch.
