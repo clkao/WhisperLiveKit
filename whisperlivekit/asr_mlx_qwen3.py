@@ -186,7 +186,14 @@ class MlxQwen3AsrOnlineProcessor:
         from whisperlivekit.timed_objects import ASRToken
         final_text = self._text
         utt_audio_s = sum(len(a) for a in self._utt_audio) / self.SAMPLING_RATE if self._utt_audio else 0.0
-        if self._utt_audio and self.second_pass:
+        # The streaming decode needs ~chunk_size_sec of audio to fill its buffer
+        # before it produces text. Short utterances (< 2s) or frequent VAD resets
+        # can leave self._text empty. In that case, fall back to the whole-utterance
+        # re-decode even when --no-second-pass is set: there is no streaming text
+        # to emit, so the re-decode is the only path to a result. The flag only
+        # skips the re-decode when we already have streaming text (the latency win).
+        needs_redecode = self._utt_audio and (self.second_pass or not final_text.strip())
+        if needs_redecode:
             try:
                 from mlx_qwen3_asr import transcribe
                 audio = np.concatenate(self._utt_audio)
