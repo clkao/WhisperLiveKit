@@ -139,8 +139,10 @@ class MlxQwen3AsrOnlineProcessor:
                 self._state = feed_audio(audio, self._state, model=self._model_obj)
             self._text = (getattr(self._state, "text", "") or "").strip()
             self._stable_text = (getattr(self._state, "stable_text", "") or "").strip()
-            if self._text:
-                logger.info("mlx-qwen3-asr _feed: audio=%d samples text=%r", len(audio), self._text[:80])
+            logger.info(
+                "mlx-qwen3-asr _feed: audio=%d samples text=%r stable=%r",
+                len(audio), self._text[:80], self._stable_text[:80],
+            )
         except Exception as exc:
             logger.warning("mlx-qwen3-asr _feed FAILED (audio=%d samples): %s", len(audio), exc)
             raise
@@ -149,6 +151,7 @@ class MlxQwen3AsrOnlineProcessor:
         if not self._started:
             self._state = self._new_state()
             self._started = True
+            logger.info("mlx-qwen3-asr insert_audio_chunk: FIRST chunk, state created")
         self._audio_end_time = audio_stream_end_time
         self._utt_audio.append(np.asarray(audio, dtype=np.float32))  # retain for two-pass
         self._feed(np.asarray(audio, dtype=np.float32))
