@@ -1,6 +1,6 @@
 ---
 title: "mlx-llm-mt Tier B: simultaneous MT via AlignAtt commit policy (in-process, no sidecar)"
-status: implementation
+status: validation
 source: prototype — port livecaption's simultaneous MT into mlx-llm-mt as the stable test path
 score: 0.8
 id: ksxw8mezhk10fzx2yw7mfvj7
