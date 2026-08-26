@@ -152,3 +152,37 @@ The simul MT `process()` returns `(None, buffer)` for provisional drafts; the `a
 
 ### The TUI (wired this session)
 `whisperlivekit/tui.py` (TuiRenderer + MultiRenderer, ported from livecaption) wired into `scripts/lc_terminal.py` (commit `45a34e4`). Three-region layout: scrolling captions / OCR line / status line. MultiRenderer fans out to TUI + overlay so both run together.
+
+## Defect (2026-08-26): `skill="ensign"` does not load the ensign skill into Pi workers
+
+Confirmed by session-transcript grep: the worker session has ZERO matches for
+`ensign-shared-core` / `Stage Report Protocol` / `SKILL.md`. The `subagent(skill="ensign")`
+parameter is not loading the skill content into the worker — the worker sees only
+the dispatch artifact (which embeds a prose summary) + the checklist.
+
+This is why the DONE formatting keeps breaking: the canonical format
+(`ensign-shared-core.md:66-88`: `## Stage Report: {stage}`, `- DONE: {item}`
++ one-line evidence beneath, the cycle-N rule, the falsifiability guidance)
+lives in the skill, which never reaches the worker. Workers that write correct
+reports do so only because the checklist repeated the format spec.
+
+Two precedents this session:
+- First ensign (run 95f75135, the PR1 coherence work): wrote NO stage report
+  at all (the stale `802fdfc` report was from a prior session). Followed the
+  checklist, which didn't ask for a report.
+- Second ensign (run 4569d672, the report fix): wrote a correct report only
+  because the checklist spelled out the format + the completion guard.
+
+Likely cause: the `ensign` skill name doesn't resolve under Pi's skill loader
+(the available-skills list shows `ensign` at
+`/Users/clkao/git/spacedock-research/spacedock-v1/skills/ensign/`, but the
+Pi subagent `skill` param may need a different resolution path or the
+spacedock-pi extension is the broken one noted in AGENTS.md — "the
+`subspace-pi.ts` extension is broken and blocks builtin subagents";
+`pi -ne` was the workaround).
+
+Fix direction for the restart: either (a) the spacedock-pi extension must
+inject the ensign skill content into the worker's context, or (b) the FO must
+embed the full `ensign-shared-core.md` stage-report format in every checklist
+(the current workaround — reliable but verbose). Do NOT rely on `skill="ensign"`
+alone until verified.
