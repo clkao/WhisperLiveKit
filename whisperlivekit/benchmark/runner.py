@@ -37,6 +37,8 @@ class BenchmarkRunner:
         speed: float = 0,
         translation_backend: Optional[str] = None,
         target_language: Optional[str] = None,
+        simultaneous: bool = False,
+        reference_translation: Optional[str] = None,
         on_progress: Optional[Callable] = None,
     ):
         self.backend = resolve_backend(backend)
@@ -47,6 +49,8 @@ class BenchmarkRunner:
         self.speed = speed
         self.translation_backend = translation_backend
         self.target_language = target_language
+        self.simultaneous = simultaneous
+        self.reference_translation = reference_translation
         self.on_progress = on_progress
 
     async def run(self) -> BenchmarkReport:
@@ -90,11 +94,16 @@ class BenchmarkRunner:
             harness_kwargs["translation_backend"] = self.translation_backend
         if self.target_language:
             harness_kwargs["target_language"] = self.target_language
+        if self.simultaneous:
+            harness_kwargs["mlx_llm_mt_simultaneous"] = True
 
         report = BenchmarkReport(
             backend=self.backend,
             model_size=self.model_size,
             system_info=get_system_info(),
+            translation_backend=self.translation_backend,
+            target_language=self.target_language,
+            simultaneous=self.simultaneous,
         )
 
         for i, sample in enumerate(samples):
@@ -163,12 +172,15 @@ class BenchmarkRunner:
             # Extract metrics from the pipeline
             metrics = h.metrics
 
-            # Read MT-call count from the translation backend if available.
+            # Read MT-call count and translation wall-time from the translation
+            # backend if available (instrumented in the backend).
             mt_call_count = None
+            mt_total_time_s = None
             if self.translation_backend and h._processor:
                 translation = getattr(h._processor, "translation", None)
                 if translation is not None:
                     mt_call_count = getattr(translation, "_mt_call_count", None)
+                    mt_total_time_s = getattr(translation, "_mt_total_time_s", None)
 
         t_elapsed = time.perf_counter() - t_start
 
@@ -200,6 +212,33 @@ class BenchmarkRunner:
         n_calls = metrics.n_transcription_calls if metrics else 0
         n_tokens = metrics.n_tokens_produced if metrics else 0
 
+        # Translation accuracy (only when a reference translation is available).
+        translation_accuracy = None
+        translation_metric_name = None
+        hyp_translation = ""
+        if self.translation_backend:
+            # Concatenate committed line translations (silence/empty lines have
+            # no translation field and are naturally excluded).
+            parts = [
+                line.get("translation", "")
+                for line in state.lines
+                if line.get("translation")
+            ]
+            # Fall back to the live buffer translation if no committed lines.
+            if not parts and state.buffer_translation:
+                parts = [state.buffer_translation]
+            hyp_translation = " ".join(p.strip() for p in parts if p and p.strip())
+            if self.reference_translation:
+                from whisperlivekit.benchmark.metrics import compute_translation_accuracy
+                translation_accuracy, translation_metric_name = compute_translation_accuracy(
+                    hyp_translation, self.reference_translation
+                )
+        translation_rtf = (
+            mt_total_time_s / sample.duration
+            if mt_total_time_s is not None and sample.duration > 0
+            else None
+        )
+
         return SampleResult(
             sample_name=sample.name,
             language=sample.language,
@@ -226,6 +265,12 @@ class BenchmarkRunner:
             first_translation_time_s=round(first_translation_time, 3) if first_translation_time is not None else None,
             provisional_before_final=provisional_before_final,
             mt_call_count=mt_call_count,
+            translation_time_s=round(mt_total_time_s, 3) if mt_total_time_s is not None else None,
+            translation_rtf=round(translation_rtf, 3) if translation_rtf is not None else None,
+            translation_accuracy=round(translation_accuracy, 2) if translation_accuracy is not None else None,
+            translation_metric_name=translation_metric_name,
+            reference_translation=self.reference_translation or "",
+            hypothesis_translation=hyp_translation,
             hypothesis=hypothesis,
             reference=sample.reference,
             source=sample.source,

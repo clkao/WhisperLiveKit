@@ -22,6 +22,7 @@ Duck-typed contract (same shape as ``MlxLlmTranslation``):
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, List, Optional, Tuple
 
 from whisperlivekit.simul_mt_capture import (
@@ -67,6 +68,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         # Stable, append-only provisional target emitted so far this utterance.
         self._emitted_partial: str = ""
         self._mt_call_count: int = 0
+        self._mt_total_time_s: float = 0.0
         self._capture: Optional[dict] = None
         self._capture_installed = False
         logger.info(
@@ -276,11 +278,14 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         # 1. Finals first (punctuation-closed segments): full base-class translation.
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
+            _t0 = time.perf_counter()
             try:
                 mt = self._translate_text(text)
             except Exception as exc:
                 logger.warning("mlx-llm-mt-simul translate failed: %s", exc)
                 return None, self._buffer()
+            finally:
+                self._mt_total_time_s += time.perf_counter() - _t0
             self._reset_simul_draft()
             tr = Translation(start=start, end=end, text=mt)
             self._last_buffer = TimedText(start=start, end=end, text=mt)
@@ -308,11 +313,14 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         else:
             # New or changed source: fresh MT call with capture.
             self._mt_call_count += 1
+            _t0 = time.perf_counter()
             try:
                 committed_out = self._translate_simul(source, committed)
             except Exception as exc:
                 logger.warning("mlx-llm-mt-simul simul draft failed: %s", exc)
                 return None, self._buffer()
+            finally:
+                self._mt_total_time_s += time.perf_counter() - _t0
             self._last_source_text = source
             self._emitted_partial = committed_out
         return None, self._buffer()

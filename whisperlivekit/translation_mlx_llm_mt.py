@@ -31,6 +31,7 @@ preserved — only the model-specific values are extracted into config.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -160,6 +161,9 @@ class MlxLlmTranslation:
         # this base stores it so the pipeline contract holds either way.
         self._tail: Optional[HypothesisTail] = None
         self._eos_token = config.eos_token  # may be None → resolved at load
+        # Benchmark instrumentation: cumulative wall-time spent generating MT
+        # output (excludes warmup, model load, and ASR).
+        self._mt_total_time_s = 0.0
         if warmup:
             self._warmup()
 
@@ -256,11 +260,14 @@ class MlxLlmTranslation:
         # Translate any closed (punctuated) segments; emit the first.
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
+            _t0 = time.perf_counter()
             try:
                 mt = self._translate_text(text)
             except Exception as exc:
                 logger.warning("mlx-llm-mt translate failed: %s", exc)
                 return None, self._last_buffer
+            finally:
+                self._mt_total_time_s += time.perf_counter() - _t0
             tr = Translation(start=start, end=end, text=mt)
             self._last_buffer = TimedText(start=start, end=end, text=mt)
             return tr, self._last_buffer
@@ -285,11 +292,14 @@ class MlxLlmTranslation:
         self._tail = None
         if self._pending_finals:
             text, start, end = self._pending_finals.pop(0)
+            _t0 = time.perf_counter()
             try:
                 mt = self._translate_text(text)
             except Exception as exc:
                 logger.warning("mlx-llm-mt validate translate failed: %s", exc)
                 mt = ""
+            finally:
+                self._mt_total_time_s += time.perf_counter() - _t0
             tr = Translation(start=start, end=end, text=mt)
             self._last_buffer = TimedText(start=start, end=end, text=mt)
             return tr, self._last_buffer
