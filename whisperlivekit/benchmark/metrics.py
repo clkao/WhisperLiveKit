@@ -40,6 +40,11 @@ class SampleResult:
     # Memory
     peak_memory_mb: Optional[float] = None
 
+    # Translation metrics (populated when a translation backend is configured)
+    first_translation_time_s: Optional[float] = None
+    provisional_before_final: bool = False
+    mt_call_count: Optional[int] = None
+
     # Texts
     hypothesis: str = ""
     reference: str = ""
@@ -66,6 +71,9 @@ class SampleResult:
             "timing_valid": self.timing_valid,
             "timing_monotonic": self.timing_monotonic,
             "peak_memory_mb": round(self.peak_memory_mb, 1) if self.peak_memory_mb else None,
+            "first_translation_time_s": round(self.first_translation_time_s, 3) if self.first_translation_time_s is not None else None,
+            "provisional_before_final": self.provisional_before_final,
+            "mt_call_count": self.mt_call_count,
             "hypothesis": self.hypothesis,
             "reference": self.reference,
             "source": self.source,

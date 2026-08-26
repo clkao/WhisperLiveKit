@@ -205,6 +205,24 @@ BENCHMARK_CATALOG = {
         "tags": {"multi_speaker", "long"},
         "max_duration": 60.0,
     },
+    # Mandarin zh→en benchmark (local file, no download)
+    # Reference transcript written from the known ASR/MT output of this
+    # clip (two multi-sentence utterances about laser/鐳射 and its
+    # applications in medicine). Verify against the audio when running.
+    "zh_long": {
+        "dataset": "local",
+        "language": "zh",
+        "category": "multilingual",
+        "n_samples": 1,
+        "skip": 0,
+        "tags": {"long", "zh_en"},
+        "path": "/Users/clkao/git/asr/_work/zh_long.wav",
+        "reference": (
+            "我們今天來討論鐳射。這個網路上的資訊很重要。"
+            "鐳射在醫學上的應用也很重要。"
+        ),
+        "duration": 31.6,
+    },
 }
 
 # Quick mode: subset of samples for fast smoke tests
@@ -442,6 +460,27 @@ def _download_ami(max_duration: float = 60.0) -> List[Dict]:
 # Dispatcher — routes catalog entries to download functions
 # ---------------------------------------------------------------------------
 
+def _local_sample(name: str, spec: Dict) -> List[Dict]:
+    """Return metadata for a local audio file (no download).
+
+    The file path is stored as an absolute path in the ``file`` field so
+    ``get_benchmark_samples`` can resolve it without the cache directory.
+    """
+    path = spec.get("path")
+    if not path or not Path(path).exists():
+        logger.warning("Local sample %s: file not found at %s", name, path)
+        return []
+    return [{
+        "file": str(path),
+        "reference": spec.get("reference", ""),
+        "duration": spec.get("duration", 0.0),
+        "sample_rate": 16000,
+        "language": spec["language"],
+        "category": spec["category"],
+        "n_speakers": 1,
+        "source": f"local ({name})",
+    }]
+
 def _download_catalog_entry(name: str, spec: Dict) -> List[Dict]:
     """Download a single catalog entry and return metadata dicts."""
     dataset = spec["dataset"]
@@ -468,6 +507,8 @@ def _download_catalog_entry(name: str, spec: Dict) -> List[Dict]:
         )
     elif dataset == "edinburghcstr/ami":
         return _download_ami(max_duration=spec.get("max_duration", 60.0))
+    elif dataset == "local":
+        return _local_sample(name, spec)
     else:
         logger.warning("Unknown dataset: %s", dataset)
         return []
@@ -518,6 +559,16 @@ def get_benchmark_samples(
     # Download missing entries
     all_meta = cached.get("samples", {})
     for name, spec in entries.items():
+        # Local files: always re-resolve (no cache check needed).
+        if spec.get("dataset") == "local":
+            try:
+                resolved = _download_catalog_entry(name, spec)
+                if resolved:
+                    all_meta[name] = resolved
+            except Exception as e:
+                logger.warning("Failed to load local sample %s: %s", name, e)
+            continue
+
         if name in all_meta and not force:
             # Check file exists
             file_path = CACHE_DIR / all_meta[name][0]["file"]
@@ -541,7 +592,10 @@ def get_benchmark_samples(
         if name not in all_meta:
             continue
         for meta in all_meta[name]:
-            file_path = CACHE_DIR / meta["file"]
+            file_field = meta["file"]
+            # Local files store an absolute path; cached files are relative
+            # to CACHE_DIR.
+            file_path = Path(file_field) if Path(file_field).is_absolute() else CACHE_DIR / file_field
             if not file_path.exists():
                 continue
             catalog_entry = BENCHMARK_CATALOG.get(name, {})
