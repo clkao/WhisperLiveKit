@@ -35,6 +35,17 @@ gates:
                 digest: sha256:0769ce1c1e72ba17c7ae35b0f99a6cc9dc8f77a8fc74de4e670aba3d2804ad69
                 request-digest: sha256:ba74cbfb12684f889d00029cc598ad1fed7a090873f3cf4263f72b5742220da1
                 room-ref: ./simulst-eval-harness/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:ideation:1
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-27T21:30:00.799924Z"
+                decision: approve
+                reason: Captain approval. Concrete plan (3 scripts, no lib changes), two-stage TimestampSource abstraction is the broadly-useful artifact, 4 sharpened ACs, en->zh heads resolved. Advance to implementation.
+              application:
+                target-stage: implementation
+                state: pending
 started: 2026-08-27T19:46:38Z
 ---
 
