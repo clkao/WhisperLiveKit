@@ -4,6 +4,18 @@ source: PR3 research — _work/nemotron_transducer_alignatt_research.md
 score: 0.8
 id: n5g2sjy16zzy9rhdk8d1zn1p
 status: backlog
+gates:
+    version: 1
+    records:
+        - id: gate:n5g2sjy16zzy9rhdk8d1zn1p:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-backlog-1
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:backlog:attempt-1:revision-1
+                digest: sha256:6c35c01023fdc2b61f3fea41a241a74c7103313d2b6285bd3d417a585a7a2a69
+                request-digest: sha256:a870d5ef7b2bb1b44305abeb7483f3ac9387778e297fef6b7d9d051bb7ac219e
+                room-ref: ./nemotron-mlx-asr-backend/review/backlog/briefing-1
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)

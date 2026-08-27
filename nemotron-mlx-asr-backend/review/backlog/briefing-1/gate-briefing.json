@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:backlog:attempt-1:revision-1",
+  "question": "Backlog gate: advance nemotron-mlx ASR backend to ideation? Design is complete in the body (port livecaption/asr.py; skip the wrapper — transducer has native timestamps).",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/8c27ad6931e72ec4dcb118f250454ee52ec28f98/nemotron-mlx-asr-backend.md",
+      "rev": "sha256:643d903dc4367e57156b2982d2f171fe6f2706ccf92d6de62f6de2afcd5a299a",
+      "mediaType": "text/markdown",
+      "summary": "nemotron-mlx ASR backend (transducer; AlignAtt time-based frontier). Design complete in body: port livecaption/asr.py _StreamingEncoder + _decode_chunk (cache-aware FastConformer-RNNT, AlignedToken per non-blank token). Skip the wrapper (transducer monotonic + native timestamps). Research brief _work/nemotron_transducer_alignatt_research.md. zh-tw caveat: zh-CN, weaker than qwen3 — research use. Recommend advance to ideation."
+    }
+  ]
+}
