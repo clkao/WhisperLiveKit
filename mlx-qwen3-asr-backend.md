@@ -340,3 +340,34 @@ AC-3 text duplication fixed with a two-part change: StableCommitTransform now tr
 ### Summary
 
 The cycle-2 text-duplication blocker is behaviorally fixed: cumulative streaming commits are tracked on `_emitted_stable`, and finalization emits only the matching uncommitted suffix; all 46 focused tests pass and an independent actual-processor reproduction confirms the result. The ASR-only carve and prior contract fixes remain intact, but validation found internal acceptance-contract vocabulary in the shipped test file that should be removed before approval.
+
+## Stage Report: validation (cycle 4)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --language zh` transcribes Mandarin in-process, no torch/transformers/WebSocket sidecar.
+  Live Mandarin/microphone execution was unavailable; `core.py` wires `_do_init` and `online_factory` in-process, and installed 0.3.5 metadata has no torch or transformers dependency.
+- DONE: AC-2: The dependency set coexists with mlx-lm + hunyuan-mlx on transformers 5.x.
+  `pyproject.toml` pins `mlx-qwen3-asr>=0.3.5,<0.4` without a transformers pin; installed metadata lists MLX/numpy/regex/huggingface-hub and no torch/transformers requirement.
+- DONE: AC-3: Two-pass re-decode gives clean per-utterance text with no rolling repetition.
+  An actual-processor reproduction emitted streaming `alpha beta` then final delta `gamma delta`; reverting finalization to emit the full re-decode would produce a duplicated prefix.
+- DONE: AC-4: Warmup runs at init; the first real decode does not absorb initialization work.
+  `MlxQwen3AsrOnlineProcessor.__init__` calls `_warmup()`, which initializes state and feeds/finishes 0.5 seconds of silence; removing that call would fail this check.
+- SKIPPED: AC-5: A second provider uses shared `asr_commit` or `asr_timestamps` without output changes.
+  Voxtral conversion is outside the 11-file PR3 carve; all three shared modules import independently and `AsrWrapper` accepts a transform list.
+- DONE: AC-6: The wrapper layer is composable and `online_factory` builds the chain.
+  `AsrWrapper` applies ordered transforms; `online_factory` supplies `StableCommitTransform` for `mlx-qwen3-asr` and normalization-only wrappers for other Qwen3 backends.
+- DONE: Finding 1: `get_buffer` returns the unstable tail while the transform reads the full hypothesis.
+  A constructor-free exercise observed tail `" gamma"`, full-hypothesis `"alpha beta gamma"`, and full-text fallback on prefix mismatch; using full text in `get_buffer` would fail it.
+- DONE: Finding 2: The per-session language override wins over the server-wide language.
+  Mocked construction with server language `English` and `_session_language='zh'` resolved to `Chinese`; preferring the delegated server attribute would fail it.
+- DONE: Run the prescribed wrapper test command and confirm 46 tests pass.
+  `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` passed 46/46 in 0.67 seconds.
+- DONE: Check the 11-file carve for scope leakage.
+  `git diff --stat origin/main..e24b2b3` reports exactly the expected 11 ASR files (1820 insertions, 64 deletions), with no hunyuan/translation_hunyuan/mlx-llm-mt matches.
+- DONE: Check for internal/workflow vocabulary.
+  Case-insensitive grep of the full diff found no AC labels, Tier, spacedock, ensign, or captain vocabulary; reintroducing either removed `AC-3` reference would fail it.
+- DONE: Preserve a clean code worktree with no staged files.
+  Final pre-report `git status --porcelain` and `git diff --cached --name-only` were empty; validation made no code edits or commits.
+
+### Summary
+
+Cycle 4 independently confirms the cycle-3 vocabulary leak is removed while all prior fixes remain intact at `e24b2b3`: the full-hypothesis seam, session-language precedence, finalization deduplication, and ASR-only carve all validate. All 46 focused tests pass and no blocking findings remain; live Mandarin/microphone behavior and the out-of-carve second-provider conversion remain intentionally skipped.
