@@ -3,7 +3,7 @@ title: "nemotron-mlx ASR backend (transducer; AlignAtt time-based frontier)"
 source: PR3 research — _work/nemotron_transducer_alignatt_research.md
 score: 0.8
 id: n5g2sjy16zzy9rhdk8d1zn1p
-status: ideation
+status: implementation
 gates:
     version: 1
     records:
@@ -46,7 +46,7 @@ gates:
                 reason: 'Captain approval. Ideation complete: concrete plan (asr_nemotron_mlx.py porting _StreamingEncoder + _decode_chunk + _finalize + VAD), skip wrapper (transducer monotonic + native timestamps), 4 ACs with Verified-by, zh-tw=zh-CN documented. Advance to implementation.'
               application:
                 target-stage: implementation
-                state: pending
+                state: consumed
 started: 2026-08-27T08:42:04Z
 worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
 ---
