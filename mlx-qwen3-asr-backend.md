@@ -249,3 +249,34 @@ Validation found two blockers despite both requested finding fixes working in is
 ### Summary
 
 Resolved both cycle-1 blockers. The get_buffer contract conflict is fixed by adding get_hypothesis() (full rolling text) as the seam StableCommitTransform reads; get_buffer stays the unstable tail (WLK contract). The new test is falsifiable — it fails when the transform reads get_buffer and passes with get_hypothesis. The hunyuan-mlx translation wiring is fully excised from config.py, core.py, and parse_args.py (including restoring the qwen3+NLLB guard and the original translation-backend choices), so the PR3 diff is ASR-only. Code committed as 6c1a53d on branch spacedock-ensign/mlx-qwen3-asr-pr; worktree is clean with no staged files.
+
+## Stage Report: validation (cycle 2)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --language zh` transcribes Mandarin in-process, no torch/transformers/WebSocket sidecar.
+  Live Mandarin/microphone execution was unavailable; static wiring is present in `core.py` `_do_init` and `online_factory`, and package metadata shows `mlx-qwen3-asr` has no torch or transformers dependency.
+- DONE: AC-2: The dependency set coexists with mlx-lm + hunyuan-mlx on transformers 5.x.
+  `pyproject.toml` pins `mlx-qwen3-asr>=0.3.5,<0.4` without a transformers pin; installed 0.3.5 metadata lists MLX/numpy/regex/huggingface-hub but no torch/transformers requirement.
+- FAILED: AC-3: Two-pass re-decode gives clean per-utterance text with no rolling repetition.
+  `_finalize_utterance` offline re-decodes, but the wrapper emits stable prefixes during `process_iter` and then emits the entire utterance again at `start_silence`; a concrete wrapper reproduction emitted `alpha beta gamma` twice and AudioProcessor appends both tokens.
+- DONE: AC-4: Warmup runs at init; the first real decode does not absorb initialization work.
+  `MlxQwen3AsrOnlineProcessor.__init__` calls `_warmup()`, which initializes streaming state and runs `feed_audio` plus `finish_streaming` on 0.5 seconds of silence; removing that call defeats the assertion.
+- SKIPPED: AC-5: A second provider uses shared `asr_commit` or `asr_timestamps` without output changes.
+  Voxtral conversion is outside this 11-file PR3 carve; `asr_commit`, `asr_timestamps`, and `asr_wrapper` import independently and `AsrWrapper` accepts a transform list, but no second provider is changed here.
+- DONE: AC-6: The wrapper layer is composable and `online_factory` builds the chain.
+  `AsrWrapper` applies an ordered transform list; `online_factory` supplies `[StableCommitTransform(...)]` only for `mlx-qwen3-asr` and retains empty normalization-only wrappers for the other Qwen3 backends.
+- DONE: Finding 1: `get_buffer` remains the unstable tail and StableCommitTransform reads the full-hypothesis seam.
+  A constructor-isolated check returned hypothesis `alpha beta gamma`, tail ` gamma`, and full-text fallback on prefix mismatch; the 39-test suite includes a seam test that fails if the transform reads `get_buffer`.
+- DONE: Finding 2: The per-session language override wins over the server-wide language.
+  Mocked construction with server language `English` and `_session_language='zh'` resolved the processor language to `Chinese`; choosing the delegated server attribute would produce `English`.
+- DONE: Run the prescribed wrapper test command and confirm 39 tests pass.
+  `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` passed 39/39 in 0.66 seconds.
+- DONE: Check the 11-file carve for scope leakage.
+  `git diff --stat origin/main..6c1a53d` reports exactly the 11 expected ASR files (1575 insertions, 64 deletions), and the full diff contains no hunyuan/translation_hunyuan/mlx-llm-mt lines.
+- DONE: Check for internal/workflow vocabulary.
+  Case-insensitive grep of the full diff found no AC labels, Tier, spacedock, ensign, or captain vocabulary.
+- DONE: Preserve a clean code worktree with no staged files.
+  Final pre-report `git status --porcelain` and `git diff --cached --name-only` were empty; validation made no code edits or commits.
+
+### Summary
+
+Both cycle-1 blockers are fixed: the transform now reads `get_hypothesis()` while `get_buffer()` remains the unstable tail, and the carve is ASR-only. Validation found a separate blocking repetition path: a stable prefix emitted during streaming is followed by the complete offline re-decode at the utterance boundary, so long utterances can be appended twice despite all 39 wrapper tests passing.
