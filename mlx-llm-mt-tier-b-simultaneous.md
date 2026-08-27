@@ -498,3 +498,18 @@ Implemented a per-(model_repo, source_lang, target_lang) calibration registry (C
 ### Summary
 
 Validated the cycle-2 registry and graceful-deactivation rework at `bc61d57` with code review, the complete 54-test mlx-llm-mt/simul/AlignAtt suite, targeted Ruff, and diff hygiene checks. The calibrated 8bit zh→en tuple remains active and demonstrably provisional, while uncalibrated and 4bit tuples cleanly fall back to Tier A; no blockers were found. The 48.9% 4bit probe result was supplied by the implementation dispatch rather than independently recalibrated during this read-only validation.
+
+## Stage Report: implementation (cycle 4)
+
+- DONE: Revert the --target-language and --reference-translation helptext changes in whisperlivekit/cli.py (keep only the --simultaneous help expansion)
+  `git diff f973a48 -- whisperlivekit/cli.py` shows only the --simultaneous help expansion; --target-language and --reference-translation are byte-identical to PR1.
+- DONE: Change the CALIBRATION_REGISTRY key from the fully-qualified "mlx-community/Hy-MT2-1.8B-8bit" to a normalized model id (strip the mlx-community/ prefix). Update lookup_calibration to normalize the loaded model's repo to the same model id before lookup. Update the seed entry and the tests.
+  Registry key is now `("hy-mt2-1.8b", "zh", "en")`; `_normalize_model_id` strips org prefix + quant suffix and lowercases; `lookup_calibration` normalizes before lookup; `test_registry_normalizes_model_repo_to_id` asserts mlx-community/8bit, mlx-community/4bit, tencent/, and bare forms all map to `hy-mt2-1.8b`.
+- DONE: Add a TODO comment near CALIBRATION_REGISTRY in simul_mt_capture.py for external-heads-loading refactor (AlignAtt4LLM translation_heads_<model>_<direction>.json pattern). Record the same as a note in the entity body.
+  TODO comment added in the CALIBRATION_REGISTRY block; this entity-body note records it.
+- DONE: Run the full test suite and confirm 54 pass; run ruff on changed files. Commit the code fix on the PR2 branch.
+  `pytest tests/test_mlx_llm_mt_simul.py tests/test_mlx_llm_mt.py tests/test_translation_alignatt.py -q` → 55 passed (54 baseline + 1 new `_normalize_model_id` test). `ruff check` on 3 changed files → All checks passed. Committed as `27089d7` on `spacedock-ensign/mlx-llm-mt-simultaneous`.
+
+### Summary
+
+Reworked the two cycle-2 validation findings: (1) reverted the --target-language and --reference-translation cli.py helptext to PR1 wording so PR2's cli.py diff is strictly the --simultaneous flag; (2) changed the CALIBRATION_REGISTRY key from the fully-qualified repo `mlx-community/Hy-MT2-1.8B-8bit` to the normalized model id `hy-mt2-1.8b` (org prefix + quant suffix stripped), with 4bit deactivation moved from a missing-key to a `disabled_quants` field on `CalibrationEntry`. Added a TODO comment for the external-heads-loading refactor. All 55 tests pass (54 prior + 1 new normalization test); ruff clean.
