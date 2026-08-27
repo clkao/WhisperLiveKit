@@ -1,6 +1,6 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: ideation
+status: implementation
 worktree: ""
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
@@ -45,7 +45,7 @@ gates:
                 reason: Captain approval. Concrete plan (3 scripts, no lib changes), two-stage TimestampSource abstraction is the broadly-useful artifact, 4 sharpened ACs, en->zh heads resolved. Advance to implementation.
               application:
                 target-stage: implementation
-                state: pending
+                state: consumed
 started: 2026-08-27T19:46:38Z
 ---
 
