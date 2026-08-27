@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-2:revision-1",
+  "question": "Validation gate (cycle 2): is the reworked PR2 simultaneous-MT (per-(model,src,tgt) head registry + silent deactivation, tip bc61d57) ready to merge? Codex validator PASSED with no blockers.",
+  "artifacts": [
+    {
+      "id": "artifact:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/578f3352f0a991c53fcdd9b8e3d2ee53fdbb2c0d/mlx-llm-mt-tier-b-simultaneous.md",
+      "rev": "sha256:c65b53cc0ba233403c338642f3a5de6785579053a5f068eff286f1c17a8f4678",
+      "mediaType": "text/markdown",
+      "summary": "Cycle-2 codex validator (gpt-5.6-sol) PASSED PR2 tip bc61d57: 54/54 tests (11 mlx-llm-mt + 31 simul + 12 alignatt), ruff clean, no vocab/scope leakage (3 simul-layer files only). Registry keyed by (model_repo, src, tgt), seeded with 8bit zh→en; uncalibrated tuples + 4bit silently deactivate to base (translation still works). 4bit probe 48.9% argmax match vs 8bit → left out (formal promotion gate couldn't run: AlignAtt4LLM needs PyTorch, can't load MLX repos — conservative, honest-by-construction). AC-1 live E2E SKIPPED (needs mlx-qwen3-asr on separate branch + mic). Recommend gate-approval to done."
+    }
+  ]
+}
