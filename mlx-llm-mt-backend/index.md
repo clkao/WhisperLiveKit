@@ -17,7 +17,7 @@ gates:
                 id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-1:revision-1
                 digest: sha256:21b32644c9410811b7a44f71b6ddbd07140b1d55c47acb91a945c53847d9587a
                 request-digest: sha256:1225fcf0e869da48adc53a771d3e9282e9c25ea5fe5e05ed99943aa90a32e570
-                room-ref: ./mlx-llm-mt-backend/review/validation/briefing-1
+                room-ref: ./review/validation/briefing-1
               resolution:
                 type: Resolution
                 id: resolution:spacedock:5c87da2jhj60dtxmybb72v6p:validation:1
@@ -34,7 +34,7 @@ gates:
                 id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-2:revision-1
                 digest: sha256:364fa199ee97fdc18006658cc059335016dcd3685fa0746b6581d110c4a63e70
                 request-digest: sha256:a8ca2758c3e2ebf032066b99dee2a6a744a71ff434ee1321f8bf1026d5717faf
-                room-ref: ./mlx-llm-mt-backend/review/validation/briefing-2
+                room-ref: ./review/validation/briefing-2
               resolution:
                 type: Resolution
                 id: resolution:spacedock:5c87da2jhj60dtxmybb72v6p:validation:2
@@ -113,6 +113,10 @@ The worktree branch `spacedock-ensign/hunyuan-mlx-translation-backend` at
 `802fdfc` is the PR source. The prior entity's stage report (on
 `origin/dev-state`) documents the reconstruction; this task re-uses that
 worktree + commit.
+
+### Feedback Cycles
+
+- Cycle 1: validation gate (attempt 2) rejected → implementation. Findings: codex/gpt-5.6-sol cycle-3 validator FAILED AC-4 (hunyuan-mlx alias removed at tip f973a48), AC-5 (13-file diff), AC-6 (HypothesisTail seam absent). Captain disposition: restore AC-4; drop AC-5 (brittle file-count proxy) and AC-6 (redundant — PR2 owns tail handling). Correction delivered to implementation; rework commit `39a23d6` restored the alias + amended ACs.
 
 ## Stage Report: implementation
 
