@@ -43,6 +43,14 @@ gates:
                 at: "2026-08-27T04:28:24.29063Z"
                 decision: revise
                 reason: 'Reject to implementation. Captain direction: (1) drop AC-5 — the exact-7-file-count criterion is a brittle proxy; keep the real leakage check (no ASR/overlay/vendored/docs); the 13-file tip''s extras (benchmark wiring, translation_profiles.py) are in-scope for a generic MT backend. (2) drop AC-6 — the HypothesisTail base seam is redundant; PR2''s MlxLlmTranslationSimul overrides insert_tokens and owns its own tail handling, so the base does not need self._tail storage. (3) restore AC-4 — the hunyuan-mlx backward-compat alias is a real regression at tip f973a48 (removed from core.py/parse_args.py, shim file translation_hunyuan_mlx.py deleted, alias test removed); restore it. AC-1 live decode stays SKIPPED (needs CL''s Mac). Re-validator: codex/gpt-5.6-sol cycle 3 found AC-4/AC-5/AC-6 failures; AC-2/AC-3 pass; 0 new baseline failures; 0 vocab leakage.'
+review-round:
+    id: round:5c87da2jhj60dtxmybb72v6p:validation:2
+    stage: validation
+    cycle: 2
+    briefing:
+        id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-2:revision-1
+        digest: sha256:364fa199ee97fdc18006658cc059335016dcd3685fa0746b6581d110c4a63e70
+        room-ref: ./review/validation/round-2
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the

@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-2:revision-1",
+  "question": "Validation gate (cycle 3): is the mlx-llm-mt PR1 branch tip f973a48 ready to merge, given the cycle-3 validator FAILED AC-4/AC-5/AC-6 (13-file scope, missing hunyuan-mlx alias, missing HypothesisTail seam+tests) while the 7-file cddf74c was previously approved?",
+  "artifacts": [
+    {
+      "id": "artifact:5c87da2jhj60dtxmybb72v6p:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/89f075f2a94c6aab7253ef39853adec4d1e1dd20/mlx-llm-mt-backend.md",
+      "rev": "sha256:7c00cc3a5927036977242fa50111239d02b0ac5eaf1053bb45d11a25e0c4d34a",
+      "mediaType": "text/markdown",
+      "summary": "Cycle-3 validator (codex/gpt-5.6-sol) FAILED PR1 tip f973a48: 11/11 targeted tests pass, 0 new baseline failures, 0 internal-vocab matches, but AC-4 (hunyuan-mlx alias — REMOVED), AC-5 (7-file diff — now 13 files w/ CLI+benchmark leakage), AC-6 (HypothesisTail seam+tests — REMOVED) all fail. AC-1 live decode SKIPPED (needs CL's Mac). Validator recommends rejecting the gate and restoring the clean 7-file PR1 with alias + HypothesisTail coverage."
+    }
+  ]
+}
