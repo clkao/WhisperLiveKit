@@ -26,6 +26,7 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+started: 2026-08-27T19:46:38Z
 ---
 
 A SimulST evaluation harness that runs our MLX ASR+MT cascade over the
