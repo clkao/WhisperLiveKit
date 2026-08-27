@@ -513,3 +513,34 @@ Validated the cycle-2 registry and graceful-deactivation rework at `bc61d57` wit
 ### Summary
 
 Reworked the two cycle-2 validation findings: (1) reverted the --target-language and --reference-translation cli.py helptext to PR1 wording so PR2's cli.py diff is strictly the --simultaneous flag; (2) changed the CALIBRATION_REGISTRY key from the fully-qualified repo `mlx-community/Hy-MT2-1.8B-8bit` to the normalized model id `hy-mt2-1.8b` (org prefix + quant suffix stripped), with 4bit deactivation moved from a missing-key to a `disabled_quants` field on `CalibrationEntry`. Added a TODO comment for the external-heads-loading refactor. All 55 tests pass (54 prior + 1 new normalization test); ruff clean.
+
+## Stage Report: validation (cycle 3)
+
+- DONE: Revert the --target-language and --reference-translation helptext changes in whisperlivekit/cli.py (keep only the --simultaneous help expansion)
+  `git diff f973a48..27089d7 -- whisperlivekit/cli.py` contains only the expanded `--simultaneous` help; either unrelated helptext change would reappear in this named-base diff.
+- DONE: Implement a per-(mt-model, src, target) head registry in the simul layer, with silent deactivation when the desired tuple isn't calibrated
+  The 55-test suite and direct lookup matrix pass; removing the normalized seed, changing its direction, or permitting an unknown tuple would fail registry and activation/deactivation assertions.
+- DONE: Normalize the CALIBRATION_REGISTRY key to model id "hy-mt2-1.8b" (org prefix + quant suffix stripped)
+  `test_registry_normalizes_model_repo_to_id` plus the direct tencent/MLX lookup matrix prove repo and quant spellings converge on the single `("hy-mt2-1.8b", "zh", "en")` key; retaining a fully-qualified key would fail them.
+- DONE: Seed the calibrated zh→en entry with the 8 calibrated heads, TS scores, and top head (9,5)
+  `test_registry_has_8bit_zh_en_entry` and the direct registry assertions verify eight heads and top `(9,5)`; deleting or altering the seed would fail.
+- DONE: Move 4bit deactivation to CalibrationEntry.disabled_quants
+  The direct matrix verifies the shared normalized model id activates 8bit/base but returns no calibration for 4bit, and `test_4bit_zh_en_deactivates_without_calibration` proves base translation fallback; removing `disabled_quants={"4bit"}` would fail.
+- DONE: MlxLlmTranslationSimul looks up its tuple at init; calibrated activates capture, uncalibrated silently deactivates with base behavior and a warning naming the tuple
+  The 3-tuple tests assert activation/tail opt-in/provisional output for 8bit and no provisional/tail opt-out/warning/base translation for missing model or direction; breaking either branch would fail the matrix.
+- DONE: Do NOT raise on missing heads (WLK degrades gracefully)
+  Uncalibrated TranslateGemma, en→it, and disabled 4bit construction and fallback tests pass; introducing an exception would fail before their behavior assertions.
+- DONE: Run the 4bit calibration check and leave 4bit deactivated because it did not pass
+  The accepted cycle-2 result remains recorded as 116/237 (48.9%) top-head agreement; this rework preserves that decision explicitly in `disabled_quants`, and its fallback test would fail on accidental activation.
+- DONE: Verify with a 3-tuple test matrix and require provisional output for activated tuples
+  `test_calibrated_tuple_activates_simul` requires `Hello` during an open utterance, while uncalibrated and 4bit tests require no provisional and correct close-time translation; silent loss of Tier B or unsafe activation would fail.
+- DONE: Add a TODO comment for external-heads-loading using the AlignAtt4LLM translation_heads_<model>_<direction>.json pattern
+  The comment is adjacent to `CALIBRATION_REGISTRY` and this entity records the refactor note; removing either artifact would make the requested follow-up undiscoverable.
+- DONE: Run the full tests and targeted lint with the required MLX overlays
+  `uv run --no-sync --with 'mlx>=0.11.0' --with 'mlx-lm>=0.31.1' pytest ... -q` reports 55 passed; targeted Ruff reports all checks passed.
+- DONE: Do NOT rebase onto PR1, push, or open a PR; do NOT address the cycle-1 validator wording/base artifacts
+  Validation was read-only at `27089d7`; code status and cached diff are empty, and cycle-4 scope is exactly the three expected files.
+
+### Summary
+
+Validated cycle-4 rework at `27089d7`: CLI scope is limited to `--simultaneous`, calibration keys normalize to implementation-neutral model id `hy-mt2-1.8b`, and the failed 4bit transfer remains safely disabled through `CalibrationEntry.disabled_quants`. All 55 targeted tests and Ruff pass with the required MLX overlays; no blockers were found and the code worktree remains clean.
