@@ -74,6 +74,14 @@ gates:
                 digest: sha256:30af00df07d4d16a748559315fc3e0caa24d6fb45633291de045e88dcc4206af
                 request-digest: sha256:5cd6b3adb197f3967510f6252ed1de233b04eda91083b3372405c76097e823ff
                 room-ref: ./mlx-qwen3-asr-backend/review/validation/briefing-2
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:validation:2
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-2:revision-1
+                by: person:captain
+                at: "2026-08-27T09:09:20.596778Z"
+                decision: revise
+                reason: 'Reject to implementation. AC-3 fails: text duplication. StableCommitTransform emits stable prefixes during process_iter (streaming commits), then _finalize_utterance (asr_mlx_qwen3.py:171) emits the FULL re-decoded utterance text at the start_silence boundary — the committed prefix appears twice (validator reproduced ''alpha beta gamma'' twice). Fix: _finalize_utterance must emit only the uncommitted/corrective portion — subtract _emitted_stable from final_text and emit only the delta, or emit the full text only when no stable prefix was committed. Add an integration test covering streaming commits then silence finalization asserting no duplication. The 39 wrapper tests pass; both cycle-1 blockers fixed (get_hypothesis seam, hunyuan-mlx scope excised) — this is a third separate blocker.'
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
