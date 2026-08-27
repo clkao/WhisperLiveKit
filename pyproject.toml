@@ -71,6 +71,16 @@ mlx-qwen3-asr = [
     'mlx>=0.11.0; sys_platform == "darwin" and platform_machine == "arm64"',
     'mlx-qwen3-asr>=0.3.5,<0.4; sys_platform == "darwin" and platform_machine == "arm64"',
 ]
+overlay = [
+    'pyobjc-core>=11.0; sys_platform == "darwin"',
+    'pyobjc-framework-Cocoa>=11.0; sys_platform == "darwin"',
+    'pyobjc-framework-Quartz>=11.0; sys_platform == "darwin"',
+    'pyobjc-framework-Vision>=11.0; sys_platform == "darwin"',
+    'pyobjc-framework-NaturalLanguage>=11.0; sys_platform == "darwin"',
+]
+opencc = [
+    'opencc-python-reimplemented>=0.1.7',
+]
 voxtral-hf = [
     "transformers>=5.2.0; python_version >= '3.10'",
     "mistral-common[audio]",

@@ -187,6 +187,7 @@ class TranscriptionEngine:
                     chunk_size_sec=config.mlx_qwen3_asr_chunk_sec,
                     max_context_sec=config.mlx_qwen3_asr_max_context_sec,
                     finalization_mode=config.mlx_qwen3_asr_finalization_mode,
+                    second_pass=config.mlx_qwen3_asr_second_pass,
                     sep="",  # CJK: no space between tokens (mirrors qwen3-asr-causal)
                 )
                 logger.info("Using mlx-qwen3-asr (pure MLX) backend")
