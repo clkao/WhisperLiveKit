@@ -1,6 +1,6 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: backlog
+status: ideation
 worktree: ""
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
@@ -25,7 +25,7 @@ gates:
                 reason: 'Captain direction: file and dispatch. Emitter is simple (timestamp per emitted word). Baseline anchor + flagship compare is the eval purpose.'
               application:
                 target-stage: ideation
-                state: pending
+                state: consumed
 ---
 
 A SimulST evaluation harness that runs our MLX ASR+MT cascade over the
