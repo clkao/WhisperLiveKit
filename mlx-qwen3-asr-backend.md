@@ -309,3 +309,34 @@ Both cycle-1 blockers are fixed: the transform now reads `get_hypothesis()` whil
 ### Summary
 
 AC-3 text duplication fixed with a two-part change: StableCommitTransform now tracks the cumulative committed text on inner._emitted_stable during streaming (soft-coupled via hasattr so the generalized layer stays backend-agnostic), and _finalize_utterance uses _compute_finalize_delta to emit only the uncommitted suffix at finalization. The correction case (re-decode revises the prefix) emits the full corrected text with the stale prefix remaining — documented as a known limitation. 7 new tests including an integration test that exercises the real transform + wrapper + dedup path and would fail on pre-fix code (verified independently).
+
+## Stage Report: validation (cycle 3)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --language zh` transcribes Mandarin in-process, no torch/transformers/WebSocket sidecar.
+  Live Mandarin/microphone execution was unavailable; `core.py` wires `_do_init` and `online_factory` in-process, while installed 0.3.5 metadata has no torch or transformers dependency.
+- DONE: AC-2: The dependency set coexists with mlx-lm + hunyuan-mlx on transformers 5.x.
+  `pyproject.toml` pins `mlx-qwen3-asr>=0.3.5,<0.4` without a transformers pin; installed metadata lists MLX/numpy/regex/huggingface-hub and no torch/transformers requirement.
+- DONE: AC-3: Two-pass re-decode gives clean per-utterance text with no rolling repetition.
+  A constructor-isolated real-processor reproduction drove `StableCommitTransform` through two streaming passes then actual `_finalize_utterance`; it emitted `alpha beta` plus `gamma delta`, not the full text twice.
+- DONE: AC-4: Warmup runs at init; the first real decode does not absorb initialization work.
+  `MlxQwen3AsrOnlineProcessor.__init__` calls `_warmup()`, which initializes state and feeds/finishes 0.5 seconds of silence; removing the constructor call would fail this check.
+- SKIPPED: AC-5: A second provider uses shared `asr_commit` or `asr_timestamps` without output changes.
+  Voxtral conversion remains outside the 11-file PR3 carve; `asr_commit`, `asr_timestamps`, and `asr_wrapper` import independently and `AsrWrapper` accepts a transform list.
+- DONE: AC-6: The wrapper layer is composable and `online_factory` builds the chain.
+  `AsrWrapper` applies ordered transforms; `online_factory` supplies `StableCommitTransform` only for `mlx-qwen3-asr` and empty normalization-only wrappers for other Qwen3 backends.
+- DONE: Finding 1: `get_buffer` remains the unstable tail and StableCommitTransform reads the full-hypothesis seam.
+  `get_buffer()` subtracts `_stable_text` only on a prefix match, while the transform reads `get_hypothesis()`; the 46-test suite covers the seam and prefix-mismatch fallback.
+- DONE: Finding 2: The per-session language override wins over the server-wide language.
+  Construction prefers `_session_language` before delegated `language`, so a session override reaches `_new_state(language=...)` rather than silently retaining the server default.
+- DONE: Run the prescribed wrapper test command and confirm 46 tests pass.
+  `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` passed 46/46 in 0.67 seconds.
+- DONE: Check the 11-file carve for scope leakage.
+  `git diff --stat origin/main..ee7e9e2` reports exactly the expected 11 ASR files (1820 insertions, 64 deletions), with no hunyuan/translation_hunyuan/mlx-llm-mt matches.
+- FAILED: Check for internal/workflow vocabulary.
+  The shipped test diff contains two `AC-3` references at `tests/test_asr_wrapper.py:618,622`; grep found no Tier, spacedock, ensign, or captain terms.
+- DONE: Preserve a clean code worktree with no staged files.
+  Final `git status --porcelain` and `git diff --cached --name-only` were empty; validation made no code edits or commits.
+
+### Summary
+
+The cycle-2 text-duplication blocker is behaviorally fixed: cumulative streaming commits are tracked on `_emitted_stable`, and finalization emits only the matching uncommitted suffix; all 46 focused tests pass and an independent actual-processor reproduction confirms the result. The ASR-only carve and prior contract fixes remain intact, but validation found internal acceptance-contract vocabulary in the shipped test file that should be removed before approval.
