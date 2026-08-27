@@ -35,6 +35,84 @@ from whisperlivekit.timed_objects import ASRToken, Transcript
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Language normalization (mirrors livecaption/livecaption/languages.py)
+# ---------------------------------------------------------------------------
+#
+# The model's ``prompt_dictionary`` uses full locale tags (``zh-CN``, ``en-US``)
+# but the CLI/API commonly passes bare 2-letter primaries (``zh``, ``en``).
+# ``_normalize_language`` bridges that gap so ``--language zh`` resolves to the
+# model's ``zh-CN`` prompt instead of raising ValueError.
+
+# Preferred full tag for a bare 2-letter primary (mirrors livecaption's
+# ``_DEFAULT_TAGS``).  Matching against the model's keys is case-insensitive.
+_DEFAULT_LANGUAGE_TAGS = {
+    "de": "de-DE",
+    "en": "en-US",
+    "es": "es-ES",
+    "fr": "fr-FR",
+    "it": "it-IT",
+    "ja": "ja-JP",
+    "ko": "ko-KR",
+    "pt": "pt-PT",
+    "zh": "zh-CN",
+}
+
+
+def _normalize_language(lan: str, supported_keys) -> str:
+    """Normalize a user-supplied language tag to a model prompt_dictionary key.
+
+    Mirrors livecaption's ``normalize_asr_language``
+    (livecaption/livecaption/languages.py).  Steps:
+
+    1. ``auto`` → ``"auto"`` (the caller converts this to ``None``).
+    2. Case-insensitive exact match against supported keys.
+    3. Default-tag mapping (``zh`` → ``zh-CN``, ``en`` → ``en-US``, …) then
+       case-insensitive match.
+    4. Primary-prefix match: if the input is a bare primary, find supported keys
+       starting with that prefix; use the unique match, or the default-tag
+       variant when multiple match.
+    5. Raise ``ValueError`` if no mapping is found.
+    """
+    if not lan or lan.casefold() == "auto":
+        return "auto"
+
+    supported = list(supported_keys)
+
+    # 1. Case-insensitive exact match.
+    for key in supported:
+        if key.casefold() == lan.casefold():
+            return key
+
+    primary = lan.split("-", 1)[0].casefold()
+
+    # 2. Default-tag mapping.
+    default_tag = _DEFAULT_LANGUAGE_TAGS.get(primary)
+    if default_tag is not None:
+        for key in supported:
+            if key.casefold() == default_tag.casefold():
+                return key
+
+    # 3. Primary-prefix match.
+    prefix_matches = [
+        key
+        for key in supported
+        if key.casefold() == primary or key.casefold().startswith(f"{primary}-")
+    ]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+    if len(prefix_matches) > 1 and default_tag is not None:
+        # Prefer the default-tag variant among the ambiguous matches.
+        for key in prefix_matches:
+            if key.casefold() == default_tag.casefold():
+                return key
+
+    # 4. No mapping found.
+    raise ValueError(
+        f"ASR language '{lan}' is not supported by this model.\n"
+        f"Available: {', '.join(sorted(supported))}"
+    )
+
+# ---------------------------------------------------------------------------
 # Constants (ported from livecaption/asr.py)
 # ---------------------------------------------------------------------------
 
@@ -166,7 +244,6 @@ class NemotronMLXASR:
         self.transcribe_kargs = {}
 
         lan = kwargs.get("lan", "auto")
-        self.original_language = None if lan == "auto" else lan
 
         self.model_id = kwargs.get("nemotron_mlx_asr_model", "nvidia/nemotron-3.5-asr-streaming-0.6b")
         self.att_context = kwargs.get("nemotron_mlx_asr_att_context", [56, 6])
@@ -178,13 +255,15 @@ class NemotronMLXASR:
         logger.info("Loading Nemotron MLX ASR model '%s' ...", self.model_id)
         self.model = load_stt(self.model_id)
 
-        # Validate the language against the model's prompt dictionary.
+        # Normalize the language against the model's prompt dictionary
+        # (mirrors livecaption's normalize_asr_language — the model exposes
+        # zh-CN/zh-ZH, not zh; en-US, not en).
         known = getattr(self.model, "prompt_dictionary", None) or {}
-        if self.original_language and known and self.original_language not in known:
-            raise ValueError(
-                f"ASR language '{self.original_language}' is not supported by this model.\n"
-                f"Available: {', '.join(sorted(known))}"
-            )
+        self.original_language = _normalize_language(lan, known) if known else (
+            None if lan.casefold() == "auto" else lan
+        )
+        if self.original_language == "auto":
+            self.original_language = None
 
         # Override the default [56, 13] (a 1.12s refresh is too sluggish); left
         # determines the cache length, right+1 is the feed chunk size.

@@ -144,6 +144,7 @@ from whisperlivekit.asr_nemotron_mlx import (  # noqa: E402
     NemotronMLXASR,
     NemotronMLXOnlineProcessor,
     _StreamingEncoder,
+    _normalize_language,
 )
 from whisperlivekit.timed_objects import ASRToken  # noqa: E402
 
@@ -457,3 +458,64 @@ def test_online_processor_lifecycle():
     # finish() on an idle processor returns no tokens.
     final_tokens, _ = proc.finish()
     assert final_tokens == [], "finish on idle processor should return no tokens"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: language normalization (mirrors livecaption normalize_asr_language)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_language_zh_to_zh_cn():
+    """Bare 'zh' resolves to the model's 'zh-CN' prompt key, not a ValueError."""
+    supported = ["zh-CN", "zh-ZH", "en-US", "ja-JP"]
+    result = _normalize_language("zh", supported)
+    assert result == "zh-CN", f"expected zh-CN, got {result!r}"
+
+
+def test_normalize_language_en_to_en_us():
+    """Bare 'en' resolves to the model's 'en-US' prompt key."""
+    supported = ["zh-CN", "zh-ZH", "en-US", "ja-JP"]
+    result = _normalize_language("en", supported)
+    assert result == "en-US", f"expected en-US, got {result!r}"
+
+
+def test_normalize_language_exact_match_passthrough():
+    """An exact prompt_dictionary key passes through unchanged."""
+    supported = ["zh-CN", "zh-ZH", "en-US", "ja-JP"]
+    assert _normalize_language("zh-CN", supported) == "zh-CN"
+    assert _normalize_language("en-US", supported) == "en-US"
+
+
+def test_normalize_language_case_insensitive():
+    """Matching is case-insensitive (model keys are mixed-case)."""
+    supported = ["zh-CN", "en-US"]
+    assert _normalize_language("zh-cn", supported) == "zh-CN"
+    assert _normalize_language("EN-us", supported) == "en-US"
+
+
+def test_normalize_language_auto():
+    """'auto' returns 'auto' (the caller converts to None)."""
+    assert _normalize_language("auto", ["zh-CN", "en-US"]) == "auto"
+    assert _normalize_language("", ["zh-CN"]) == "auto"
+
+
+def test_normalize_language_unknown_raises():
+    """An unknown language with no mapping raises ValueError."""
+    supported = ["zh-CN", "zh-ZH", "en-US", "ja-JP"]
+    with pytest.raises(ValueError, match="not supported"):
+        _normalize_language("xx", supported)
+
+
+def test_normalize_language_prefix_unique_match():
+    """When only one supported key matches the primary prefix, it is used
+    even without a default-tag mapping."""
+    # 'fr' has no default-tag match here, but only one fr-* key exists.
+    supported = ["fr-FR", "en-US"]
+    assert _normalize_language("fr", supported) == "fr-FR"
+
+
+def test_normalize_language_prefers_default_on_ambiguity():
+    """When multiple prefix matches exist, the default-tag variant wins."""
+    # Both 'pt-PT' and 'pt-BR' exist; default is pt-PT.
+    supported = ["pt-BR", "pt-PT"]
+    assert _normalize_language("pt", supported) == "pt-PT"
