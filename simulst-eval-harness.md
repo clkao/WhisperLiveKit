@@ -26,6 +26,15 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:8zdhkj86eqshqypzzme2v6ss:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-ideation-1
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:ideation:attempt-1:revision-1
+                digest: sha256:0769ce1c1e72ba17c7ae35b0f99a6cc9dc8f77a8fc74de4e670aba3d2804ad69
+                request-digest: sha256:ba74cbfb12684f889d00029cc598ad1fed7a090873f3cf4263f72b5742220da1
+                room-ref: ./simulst-eval-harness/review/ideation/briefing-1
 started: 2026-08-27T19:46:38Z
 ---
 
