@@ -49,6 +49,10 @@ gates:
                 digest: sha256:79b3f9bdfc88b5b7eb42c0b1b6dfa848ff5776622997109b295c09b330e57e38
                 request-digest: sha256:a16ed33328561fe2aeaf64590b128f4f3b39e5e0bbe020d142f2fa7ba5577003
                 room-ref: ./review/validation/briefing-3
+              withdrawal:
+                by: agent:first-officer
+                at: "2026-08-27T05:25:12.856144Z"
+                reason: cycle-4 gate superseded by cycle-5 PASSED report at eef6a1a (AC-4 vocabulary label fixed)
 review-round:
     id: round:5c87da2jhj60dtxmybb72v6p:validation:2
     stage: validation
