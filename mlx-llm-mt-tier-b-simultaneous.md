@@ -46,6 +46,17 @@ gates:
                 digest: sha256:e506a90ecf1a9d6d117d783592d02f29be6dc4ace2a951434594b7c1ea776a11
                 request-digest: sha256:e05a73273d82943003eba3f2d020f0ade3e6da8466889e4316247ce3a53af186
                 room-ref: ./mlx-llm-mt-tier-b-simultaneous/review/validation/briefing-3
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:ksxw8mezhk10fzx2yw7mfvj7:validation:3
+                briefing: briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-3:revision-1
+                by: person:captain
+                at: "2026-08-27T07:28:13.783506Z"
+                decision: approve
+                reason: 'Cycle-3 codex validator PASSED all checks, no blockers. 55/55 tests, ruff clean, no vocab/scope leakage (8 simul-layer files after the rebase onto PR1 tip 3aa3fa4). Registry key normalized to model id hy-mt2-1.8b; 4bit disabled via CalibrationEntry.disabled_quants; cli.py scope strictly --simultaneous. AC-1 live E2E SKIPPED (needs ASR backend on separate branch + mic). 4bit proxy caveat accepted. Captain override: the rebase to stack PR2 onto current PR1 moved the branch tip 27089d7 -> 20fd2e2; approve the rebased tip (same tree, same substance — 56 tests pass on the rebased branch). Approve to done; proceed to pr-merge ceremony.'
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
