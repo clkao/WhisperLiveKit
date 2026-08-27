@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-3:revision-1",
+  "question": "Validation gate (cycle 4): re-validate the reworked PR1 tip 39a23d6 (hunyuan-mlx alias restored, AC-5/AC-6 dropped) with codex/gpt-5.6-sol",
+  "artifacts": [
+    {
+      "id": "artifact:5c87da2jhj60dtxmybb72v6p:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/c12833357a260b007e33b18f6d92765cee80f0ef/mlx-llm-mt-backend/index.md",
+      "rev": "sha256:f45257694994abbfd05294b232ec33ab037d902e5e414ef390bfc8d9c6222c57",
+      "mediaType": "text/markdown",
+      "summary": "Re-validation after cycle-3 rejection + rework. Commit 39a23d6 restored the hunyuan-mlx alias; AC-5/AC-6 dropped per captain. 12/12 tests pass. Codex ensign re-review pending."
+    }
+  ]
+}
