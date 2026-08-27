@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-1:revision-1",
+  "question": "Validation gate (cycle 1): is the PR2 simultaneous-MT branch tip a121d4f ready to merge? Codex validator PASSED substance (44/44 tests, 8 heads, idempotent capture, clean 8-file simul commit, no vocab leakage); 2 checklist items FAILED on wording/base artifacts, not defects.",
+  "artifacts": [
+    {
+      "id": "artifact:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6c3e09d027bdfe03e9190aab0c7cb4d2785d1d6f/mlx-llm-mt-tier-b-simultaneous.md",
+      "rev": "sha256:d7bee8d374e8dff2f025f5c80eef51052e91ff78ac8937a045aec534ee309a32",
+      "mediaType": "text/markdown",
+      "summary": "Codex validator (gpt-5.6-sol) cycle-1: 44/44 tests pass (11 mlx-llm-mt + 21 simul + 12 alignatt), 8 calibrated heads load with (9,5) top, CapturedAttention idempotent, simul commit a121d4f is clean 8 files (no ASR/overlay/vendored/docs, no vocab leakage). 2 checklist items FAILED on artifacts: (1) CapturedAttention max abs diff 1.43e-6 vs the checklist's literal 'bit-identical' wording — within float32 softmax noise, not a behavioral change; (2) the named base diff (PR2 vs PR1 old tip f973a48) includes 2 PR1 files because PR1's alias restoration isn't in that base — the simul commit alone (a121d4f^..a121d4f) is the clean 8 files. Both are checklist wording/base errors, not PR2 defects. Recommend gate-approval."
+    }
+  ]
+}

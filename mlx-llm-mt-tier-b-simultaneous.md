@@ -6,6 +6,18 @@ score: 0.8
 id: ksxw8mezhk10fzx2yw7mfvj7
 worktree: .worktrees/spacedock-ensign-mlx-llm-mt-tier-b-simultaneous
 started: 2026-08-27T06:27:39Z
+gates:
+    version: 1
+    records:
+        - id: gate:ksxw8mezhk10fzx2yw7mfvj7:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:ksxw8mezhk10fzx2yw7mfvj7-validation-1
+              briefing:
+                id: briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-1:revision-1
+                digest: sha256:cafba82adca9da6ebafe7eab75fa6c266996baec6a79aaded99b690538eb781f
+                request-digest: sha256:5222e1534d49ed764ee916299f413adc653fe5901edfbc5ac221b6ff975639e7
+                room-ref: ./mlx-llm-mt-tier-b-simultaneous/review/validation/briefing-1
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
