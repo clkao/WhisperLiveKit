@@ -53,6 +53,12 @@ gates:
                 by: agent:first-officer
                 at: "2026-08-27T05:25:12.856144Z"
                 reason: cycle-4 gate superseded by cycle-5 PASSED report at eef6a1a (AC-4 vocabulary label fixed)
+            - id: gate-attempt:5c87da2jhj60dtxmybb72v6p-validation-4
+              briefing:
+                id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-4:revision-1
+                digest: sha256:a3d2a22f98becb4995ada8cae28d51f3c5fd6952cee1d33106d436364fc9d331
+                request-digest: sha256:06867d2be99051983d1dfca7887dd74095bc8d8de90a2d62a2f5cc197014e4fb
+                room-ref: ./review/validation/briefing-4
 review-round:
     id: round:5c87da2jhj60dtxmybb72v6p:validation:2
     stage: validation

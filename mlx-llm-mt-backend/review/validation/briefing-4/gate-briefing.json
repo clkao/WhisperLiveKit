@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-4:revision-1",
+  "question": "Validation gate (cycle 5): is the reworked mlx-llm-mt PR1 branch tip eef6a1a ready to merge? Codex validator PASSED all checkable ACs; AC-1 live decode remains SKIPPED (needs CL's Mac).",
+  "artifacts": [
+    {
+      "id": "artifact:5c87da2jhj60dtxmybb72v6p:validation:attempt-4:revision-1:item-1",
+      "uri": "git-root://state/42b03283dddf13df459afcdb8c99b0169abdecd9/mlx-llm-mt-backend/index.md",
+      "rev": "sha256:df6bb71e5f9b16612ecb6cfd502a2b33027f03cb2cb7748a19b78a87fe8ab6cd",
+      "mediaType": "text/markdown",
+      "summary": "Cycle-5 codex validator (gpt-5.6-sol) PASSED PR1 tip eef6a1a: 12/12 focused tests pass, 0 new non-async failures vs origin/main, hunyuan-mlx alias restored (shim+core.py+parse_args+test), 0 internal/workflow vocabulary matches (AC-4 label fixed). AC-1 live zh→en decode SKIPPED (needs CL's Mac). Recommend gate-approval to done."
+    }
+  ]
+}
