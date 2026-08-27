@@ -294,3 +294,18 @@ Resolved both cycle-1 blockers. The get_buffer contract conflict is fixed by add
 ### Summary
 
 Both cycle-1 blockers are fixed: the transform now reads `get_hypothesis()` while `get_buffer()` remains the unstable tail, and the carve is ASR-only. Validation found a separate blocking repetition path: a stable prefix emitted during streaming is followed by the complete offline re-decode at the utterance boundary, so long utterances can be appended twice despite all 39 wrapper tests passing.
+
+## Stage Report: implementation (cycle 3)
+
+- DONE: Fix AC-3 text duplication: _finalize_utterance (asr_mlx_qwen3.py:171) must emit only the uncommitted delta, not the full re-decoded text.
+  Added _compute_finalize_delta() module function: subtracts _emitted_stable from final_text (suffix-only), emits full text when _emitted_stable empty, emits full corrected text when re-decode corrected the prefix (documented as known limitation). StableCommitTransform.__call__ now tracks cumulative committed text on inner._emitted_stable (soft-coupled via hasattr guard).
+- DONE: Add an integration test in tests/test_asr_wrapper.py covering streaming process_iter commits + start_silence finalization asserting NO duplication.
+  TestFinalizeDedup class with 7 tests: 4 unit tests for _compute_finalize_delta (no-emitted, prefix-match, exact-match, correction), 1 test for transform tracking _emitted_stable, 1 integration test exercising StableCommitTransform + AsrWrapper + _compute_finalize_delta end-to-end (combined output == "alpha beta gamma delta", no duplication), 1 integration test for short-utterance no-commit path. Verified pre-fix code produces "alpha beta alpha beta gamma delta" (duplication).
+- DONE: Run `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` and confirm ALL tests pass.
+  46 passed in 0.67s (39 original + 7 new).
+- DONE: Run `git diff --stat origin/main..HEAD` and confirm the diff is still the 11 ASR-only files.
+  11 files (pyproject.toml, test_asr_wrapper.py, asr_commit.py, asr_mlx_qwen3.py, asr_timestamps.py, asr_wrapper.py, backend_support.py, cli.py, config.py, core.py, parse_args.py); grep for hunyuan/translation_hunyuan/mlx-llm-mt found no matches.
+
+### Summary
+
+AC-3 text duplication fixed with a two-part change: StableCommitTransform now tracks the cumulative committed text on inner._emitted_stable during streaming (soft-coupled via hasattr so the generalized layer stays backend-agnostic), and _finalize_utterance uses _compute_finalize_delta to emit only the uncommitted suffix at finalization. The correction case (re-decode revises the prefix) emits the full corrected text with the stale prefix remaining — documented as a known limitation. 7 new tests including an integration test that exercises the real transform + wrapper + dedup path and would fail on pre-fix code (verified independently).
