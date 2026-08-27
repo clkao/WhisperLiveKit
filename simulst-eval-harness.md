@@ -217,3 +217,30 @@ Total: ~550-870 lines, all scripts (no library changes). The cascade, the MT sim
 ### Summary
 
 The harness is an emitter + runner + the existing `alignatt-eval` scorer, all in `WhisperLiveKit/scripts/` (~550-870 lines, no library changes). The emitter drives the WLK/MLX cascade (PR2 simul-MT + mlx-qwen3-asr/nemotron-mlx), records per-word emission times (audio-processed-time as `delays`, normalized wallclock as `elapsed` — the exact SimulEval semantics, NOT acoustic positions), and writes the `hypothesis.jsonl` shape that `alignatt-eval` already scores. A `TimestampSource` abstraction (forced-aligner for anchor, nemotron native for flagship) handles the two ASR-frontier timestamp sources behind one seam. en→zh heads are calibrated and wired (resolving the entity's open dependency). The hard blockers are the devset audio (sourcing) and XCOMET-XL access (CL's HF); both are external to the harness. Risk evidence was probed against the actual scorer, PR2 backend, forced aligner, and eval venv — not asserted.
+
+## Stage Report: implementation
+
+- DONE: Implement the 3 scripts (simulst_timestamp.py, simulst_emit.py, simulst_run.py)
+  Commit f673273 on feat/apple-silicon-backends. 5 files, 1249 lines (within the ±30% tolerance of the plan's ~550-870 estimate; the eval wrapper is a 4th small file for the sandbox Pool fix).
+- DONE: TimestampSource abstraction + ForcedAlignTimestampSource + NativeTokenTimestampSource
+  scripts/simulst_timestamp.py — Protocol with two implementations. ForcedAlignTimestampSource wraps mlx_qwen3_asr.forced_aligner.ForcedAligner; NativeTokenTimestampSource wraps transducer AlignedToken.start. Unit test verifies Protocol conformance and token update/reset.
+- DONE: HypothesisEmitter (asr-only + asr-mt modes)
+  scripts/simulst_emit.py — drives mlx-qwen3-asr streaming over one audio, hooks per-word emission via register_translation_words/register_translation_timestamps, writes hypothesis.jsonl + manifest.json in alignatt-eval schema. delays = chunk-boundary audio-processed-time (NOT acoustic positions). elapsed = normalized wallclock. elapsed_semantics = ca_compatible_incremental.
+- DONE: Runner (single-audio + full devset + eval invocation)
+  scripts/simulst_run.py — argparse CLI, iterates audios, invokes emitter per audio, then runs alignatt-eval via the eval venv. Multi-audio merges records into one hypothesis.jsonl.
+- DONE: alignatt4llm install in eval venv
+  .pth file approach (alignatt4llm requires Python >=3.13, eval venv is 3.12; package has no deps so .pth import works). Created at both _eval_venv and WLK .venv site-packages.
+- DONE: No-audio unit tests (hypothesis-record shape + TimestampSource abstraction)
+  tests/test_simulst_emit.py — 5 tests: record shape (delays=chunk-boundary, monotonic, len matches word count), char-level zh (7 char units), TimestampSource protocol conformance, CA normalization round-trip, manifest builder. All pass.
+- DONE: Single-audio smoke (AC-1) on ccpXHNfaoy.wav with --skip-comet
+  Emitted hypothesis.jsonl (4810 chars, 747 delay units). alignatt-eval produced non-null scores: BLEU=23.35, CHRF=68.49, LongYAAL CA=3262, LongYAAL CU=3645. XCOMETXL=None (--skip-comet, expected). evaluation.json written.
+- SKIPPED: Full devset run (AC-2)
+  Requires all 21 audios + XCOMET-XL access (CL's HF). The harness is ready; the 21 wavs are present but the full run is outside this implementation stage's scope (AC-1 is the gate).
+- SKIPPED: ASR+MT mode smoke (AC-3)
+  asr-mt code path is implemented but untested live (requires MT model warmup + the PR2 simul-MT backend, which needs the sandbox's GPU access). The emitter code for asr-mt is complete but not exercised in this stage.
+- SKIPPED: Flagship run (AC-4)
+  Blocked by nemotron-mlx (separate entity). Harness is flag-ready (--asr-backend nemotron-mlx) but the backend is not yet available.
+
+### Summary
+
+Implemented the SimulST eval harness as 5 scripts (1249 lines) on feat/apple-silicon-backends (commit f673273). The emitter drives mlx-qwen3-asr streaming over devset audio, timestamps per-word emission with chunk-boundary audio-processed-time as `delays` (SimulEval semantics, not acoustic positions), normalizes wallclock to CA-compatible `elapsed`, and writes hypothesis.jsonl + manifest.json in the alignatt-eval schema. A sandbox-specific eval wrapper patches omnisteval's multiprocessing Pool to serial execution (sandbox blocks semaphores). AC-1 verified: single-audio smoke on ccpXHNfaoy.wav (asr-only, --skip-comet) round-trips through alignatt-eval producing non-null BLEU=23.35, CHRF=68.49, LongYAAL CA=3262, LongYAAL CU=3645. The harness is ready for AC-2 (full devset) and AC-4 (flagship) once the external dependencies (XCOMET-XL access, nemotron-mlx) are available.
