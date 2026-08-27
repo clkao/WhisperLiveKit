@@ -36,6 +36,17 @@ gates:
                 digest: sha256:17f9f624a0da2b5f132ebd9fb8fcb4fcfe0aab0002bbfb43442e51f4a2768010
                 request-digest: sha256:1db595626d0c7ec2ceb5f080272e7d2618cbccef7498134782c27bfe119ad79e
                 room-ref: ./nemotron-mlx-asr-backend/review/ideation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:ideation:1
+                briefing: briefing:n5g2sjy16zzy9rhdk8d1zn1p:ideation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-27T18:22:27.046715Z"
+                decision: approve
+                reason: 'Captain approval. Ideation complete: concrete plan (asr_nemotron_mlx.py porting _StreamingEncoder + _decode_chunk + _finalize + VAD), skip wrapper (transducer monotonic + native timestamps), 4 ACs with Verified-by, zh-tw=zh-CN documented. Advance to implementation.'
+              application:
+                target-stage: implementation
+                state: pending
 started: 2026-08-27T08:42:04Z
 worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
 ---
