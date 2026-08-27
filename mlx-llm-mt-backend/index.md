@@ -59,6 +59,17 @@ gates:
                 digest: sha256:a3d2a22f98becb4995ada8cae28d51f3c5fd6952cee1d33106d436364fc9d331
                 request-digest: sha256:06867d2be99051983d1dfca7887dd74095bc8d8de90a2d62a2f5cc197014e4fb
                 room-ref: ./review/validation/briefing-4
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:5c87da2jhj60dtxmybb72v6p:validation:4
+                briefing: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-4:revision-1
+                by: person:captain
+                at: "2026-08-27T06:09:09.040143Z"
+                decision: approve
+                reason: 'Cycle-5 codex validator PASSED all checkable ACs at eef6a1a: 12/12 focused tests, 0 new non-async failures, hunyuan-mlx alias restored, 0 vocab leakage. AC-1 live decode SKIPPED (needs CL''s Mac) — documented residual. Approve to done; proceed to pr-merge ceremony.'
+              application:
+                target-stage: done
+                state: pending
 review-round:
     id: round:5c87da2jhj60dtxmybb72v6p:validation:2
     stage: validation
