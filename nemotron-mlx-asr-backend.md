@@ -28,6 +28,7 @@ gates:
                 target-stage: ideation
                 state: consumed
 started: 2026-08-27T08:42:04Z
+worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
