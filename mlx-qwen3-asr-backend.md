@@ -1,13 +1,13 @@
 ---
 id: p0f67wa79kd56yh3bs0cca2e
 title: mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
-status: implementation
+status: validation
 source: WhisperLiveKit Apple-Silicon backend work
 started: 2026-08-25T15:52:13Z
 completed:
 verdict:
 score:
-worktree: .worktrees/spacedock-ensign-mlx-qwen3-asr-backend
+worktree: .worktrees/spacedock-ensign-mlx-qwen3-asr-pr
 issue:
 pr:
 gates:
