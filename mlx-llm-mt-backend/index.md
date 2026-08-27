@@ -242,3 +242,24 @@ Validation FAILED at `f973a48`: baseline parity and the covered buffer/config be
 ### Summary
 
 Rework restored the `hunyuan-mlx` backward-compat alias that regressed at `f973a48` (shim + core.py dispatch + parse_args choices + test), committed as `39a23d6` on `spacedock-ensign/hunyuan-mlx-translation-backend`. 12/12 tests pass. Entity ACs amended to drop the brittle AC-5 (file count) and redundant AC-6 (HypothesisTail); AC-1/AC-2/AC-3/AC-4 remain. The branch diff is now 14 files (benchmark wiring + `translation_profiles.py` stay per the dropped AC-5). AC-1 live decode stays for CL's Mac.
+
+## Stage Report: validation (cycle 4)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --language zh` produces correct zh→en translation.
+  Live model load, Metal generation, and translation quality require CL's Mac; a runtime/model incompatibility would remain undetected.
+- DONE: AC-2: `validate_buffer_and_reset` does not double the output.
+  `test_validate_does_not_double_after_process` passed; returning the already-emitted translation or stale buffer after `process()` would fail it.
+- DONE: AC-3: Hunyuan is one config, not the backend identity — a second config loads with a different repo+prompt without new code.
+  `test_second_config_constructs_without_new_code` passed; resolving TranslateGemma to Hunyuan's repo or prompt kind would fail it.
+- DONE: AC-4: backward-compat alias `--translation-backend hunyuan-mlx` works.
+  `test_hunyuan_mlx_reexports` passed, while parser choices and core dispatch both contain `hunyuan-mlx`; removing the shim, CLI choice, or dispatch tuple would break compatibility.
+- DONE: Run `pytest tests/test_mlx_llm_mt.py -v` at the branch tip and report the pass count.
+  `uv run --frozen --extra test pytest tests/test_mlx_llm_mt.py -v` collected 12 tests and output `12 passed in 2.00s`; regressions in registry, buffering, no-op silence, or alias identity would fail their corresponding tests.
+- DONE: Run the full non-async suite and confirm 0 new failures vs the `origin/main` baseline.
+  Branch output was `5 failed, 137 passed, 3 skipped`; fresh `origin/main` archive output was `5 failed, 125 passed, 3 skipped`, with the same five missing-`qwen3_asr_causal` failures and therefore 0 new failures.
+- FAILED: Confirm `git diff --stat origin/main..39a23d6` and check the diff for scope leakage and internal/workflow vocabulary.
+  Stat output was `14 files changed, 1076 insertions(+), 22 deletions(-)`; captain-approved benchmark/profile wiring has no forbidden production ASR/overlay/vendored/docs path, but vocabulary grep found `tests/test_mlx_llm_mt.py:170` containing the internal label `AC-4` (removing that label would make the check pass).
+
+### Summary
+
+Validation FAILED at `39a23d6`: all 12 focused tests pass, the restored `hunyuan-mlx` shim/parser/dispatch path is present, and the full non-async suite has zero new failures against a fresh `origin/main` archive. AC-1 remains unverified without CL's live Metal environment, and the diff retains one internal acceptance-criterion label in a test comment, which blocks the required vocabulary check.
