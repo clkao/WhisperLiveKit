@@ -401,3 +401,22 @@ stays as buffer).
 ### Summary
 
 Re-verified the simultaneous-MT implementation at the correct branch tip a121d4f on spacedock-ensign/mlx-llm-mt-simultaneous. The prior report's stale commit SHA (e3147cd on a non-existent branch) is corrected: the actual branch is spacedock-ensign/mlx-llm-mt-simultaneous at a121d4f. All 44 tests pass (11 existing mlx-llm-mt + 21 new simul + 12 existing alignatt). The 8 calibrated heads load correctly with (9,5) as top. CapturedAttention is idempotent and bit-identical (max abs diff 4.77e-7, same order as prior 1.5e-7). The simul commit touches only 8 simul-layer files with no vocabulary or scope leakage. One environment note: the dispatch's exact test command fails because `simul_mt_capture.py` imports mlx at module level and the `test` extra doesn't include mlx; `--with 'mlx>=0.11.0' --with 'mlx-lm>=0.31.1'` is required (or the lockfile needs regenerating to include the `mlx-llm-mt` extra).
+
+## Stage Report: validation (cycle 1)
+
+- DONE: Confirm `git -C <worktree> rev-parse HEAD` returns a121d4f
+  `rev-parse HEAD` returned `a121d4fda57048a1b55406e3ae911a75333f1e79` on `spacedock-ensign/mlx-llm-mt-simultaneous`; a moved tip or wrong checkout would fail this check.
+- DONE: Run the full test suite at the actual tip and confirm it passes, reporting the exact pass count per file
+  The dispatched two-file suite passed 32 tests (11 `test_mlx_llm_mt.py` + 21 `test_mlx_llm_mt_simul.py`); adding the 12 existing `test_translation_alignatt.py` tests reproduced 44/44, and regressions in base translation, simultaneous tail/commit/release wiring, or AlignAtt plumbing would fail these tests.
+- DONE: Verify the 8 calibrated zh→en alignment heads load and (9,5) is the top head
+  Import printed `[(9,5),(13,1),(9,6),(12,11),(14,2),(14,0),(4,12),(1,10)] (9,5)`; changing the calibrated list or top-head selection would fail this output check.
+- FAILED: Confirm CapturedAttention install is idempotent and bit-identical
+  Real `mlx-community/Hy-MT2-1.8B-8bit` load confirmed stable wrapper identities and the same capture dict across two installs, but original-vs-wrapper output had nonzero max absolute difference `1.43051147e-06`, so the literal bit-identical claim is not satisfied (and differs from the prior `1.5e-7` figure).
+- FAILED: Confirm `git diff --stat spacedock-ensign/hunyuan-mlx-translation-backend..HEAD` shows only the simul-layer files and no scope or internal-vocabulary leakage
+  The named comparison includes 10 files, including PR1 deltas (`tests/test_mlx_llm_mt.py` and deleted `translation_hunyuan_mlx.py`), so it is not simul-only; independently, `a121d4f^..a121d4f` is the expected 8 simul-layer files and an internal-vocabulary scan returned no hits.
+- DONE: Do not rebase, push, or open a PR; keep code validation read-only
+  Code worktree remained clean with zero staged files and no code commit, rebase, push, or PR operation; any worktree/index change would fail this check.
+
+### Summary
+
+Re-verified the actual branch tip and reproduced both the dispatched 32-test result and the broader prior 44-test total. Heads, idempotent capture installation, isolated-commit scope, and vocabulary hygiene check out, but validation is failed as written because the attention outputs are numerically close rather than bit-identical and the mandated named-base diff includes two PR1 files.
