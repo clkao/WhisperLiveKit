@@ -27,6 +27,15 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:n5g2sjy16zzy9rhdk8d1zn1p:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-ideation-1
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:ideation:attempt-1:revision-1
+                digest: sha256:17f9f624a0da2b5f132ebd9fb8fcb4fcfe0aab0002bbfb43442e51f4a2768010
+                request-digest: sha256:1db595626d0c7ec2ceb5f080272e7d2618cbccef7498134782c27bfe119ad79e
+                room-ref: ./nemotron-mlx-asr-backend/review/ideation/briefing-1
 started: 2026-08-27T08:42:04Z
 worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
 ---

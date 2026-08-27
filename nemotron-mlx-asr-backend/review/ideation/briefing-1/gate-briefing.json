@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:ideation:attempt-1:revision-1",
+  "question": "Ideation gate: approve the nemotron-mlx ASR backend implementation plan + ACs?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/fb7f7c19f3db10fb6114cfabc062746b8fc7e5f8/nemotron-mlx-asr-backend.md",
+      "rev": "sha256:5b03d2b7a70d06f897a7b0459ab7f87c7897459d99197139acaca2d0a2066b8a",
+      "mediaType": "text/markdown",
+      "summary": "Ideation complete. Plan: create asr_nemotron_mlx.py porting livecaption's _StreamingEncoder + _decode_chunk (greedy RNN-T → ASRToken via AlignedToken.start mid-decode) + _finalize + mel holdback + VAD endpointer; skip the wrapper layer (transducer is monotonic + has native timestamps); register in core/config/parse_args/backend_support + pyproject nemotron-mlx-asr extra. 4 ACs (in-process zh, per-token start mid-decode, coexists with mlx-lm on transformers 5.x, second language); 4 unit tests mocking the model; zh-tw=zh-CN documented as known limitation; benchmark out of scope (consumes AccessibleBoundary adapter)."
+    }
+  ]
+}
