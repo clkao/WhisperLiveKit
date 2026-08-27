@@ -92,17 +92,12 @@ vendored fork, or local docs.
   with a different repo+prompt without new code. Verified by:
   `tests/test_mlx_llm_mt.py` AC-4 test.
 - AC-4: backward-compat alias `--translation-backend hunyuan-mlx` works.
-  Verified by: `tests/test_mlx_llm_mt.py` AC-5 test.
-- AC-5: The branch diff vs `origin/main` is exactly 7 files (no ASR/overlay/
-  CLI/vendored/docs leakage). Verified by: `git diff --stat origin/main..HEAD`
-  on the worktree branch.
-- AC-6: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT
-  seam). Verified by: `tests/test_mlx_llm_mt.py` (4 HypothesisTail tests pass).
+  Verified by: `tests/test_mlx_llm_mt.py` `test_hunyuan_mlx_reexports`.
 
 ## Test plan
 
-`tests/test_mlx_llm_mt.py` (16 tests, mock `_translate_text` — no model load):
-contract logic, buffer/commit, HypothesisTail handling. Full non-async suite
+`tests/test_mlx_llm_mt.py` (12 tests, mock `_translate_text` — no model load):
+contract logic, buffer/commit, and the `hunyuan-mlx` backward-compat alias. Full non-async suite
 (209 passed, 12 skipped, 1 pre-existing unrelated error on origin/main).
 
 ## Out of scope
@@ -210,3 +205,22 @@ Validation PASSED (cycle 2): the clean PR branch `cddf74c` (7 files, +481/-3) co
 ### Summary
 
 Validation FAILED at `f973a48`: baseline parity and the covered buffer/config behavior pass, but the tip is a 13-file combined change rather than the specified 7-file PR1. The backward-compatible `hunyuan-mlx` alias and the `HypothesisTail` seam/tests are absent, and CLI/benchmark changes widen scope; AC-1 remains unverified because it requires CL's live Metal/model environment.
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: Restore the `hunyuan-mlx` backward-compat alias in code (commit `39a23d6`).
+  `whisperlivekit/translation_hunyuan_mlx.py` re-exports `HunyuanMlxTranslation = MlxLlmTranslation`; `core.py:314` dispatch accepts `("mlx-llm-mt", "hunyuan-mlx")`; `parse_args.py:867` choices include `hunyuan-mlx`. Removing the shim or the dispatch tuple would break the alias.
+- DONE: Add `test_hunyuan_mlx_reexports` to `tests/test_mlx_llm_mt.py`.
+  Asserts `HunyuanMlxTranslation is MlxLlmTranslation`; deleting the shim or breaking the re-export fails it.
+- DONE: Run `uv run --frozen --extra test pytest tests/test_mlx_llm_mt.py -q` → 12 passed.
+  11 prior tests + the restored alias test; a double-output or missing-shim regression would fail.
+- DONE: Amend the entity ACs — drop AC-5 (exact 7-file count) and AC-6 (HypothesisTail seam).
+  Captain gate decision: AC-5 is a brittle proxy (keep the real leakage check); AC-6 is redundant (PR2's `MlxLlmTranslationSimul` overrides `insert_tokens` and owns its own tail handling). AC-1/AC-2/AC-3/AC-4 remain.
+- SKIPPED: AC-1 live zh→en decode.
+  Needs CL's Mac (live Metal/model); the decode loop + chat-template prompt are preserved verbatim from the verified path.
+- SKIPPED: HypothesisTail seam (AC-6 dropped).
+  Not restored; PR2 owns tail handling in its own `insert_tokens` override.
+
+### Summary
+
+Rework restored the `hunyuan-mlx` backward-compat alias that regressed at `f973a48` (shim + core.py dispatch + parse_args choices + test), committed as `39a23d6` on `spacedock-ensign/hunyuan-mlx-translation-backend`. 12/12 tests pass. Entity ACs amended to drop the brittle AC-5 (file count) and redundant AC-6 (HypothesisTail); AC-1/AC-2/AC-3/AC-4 remain. The branch diff is now 14 files (benchmark wiring + `translation_profiles.py` stay per the dropped AC-5). AC-1 live decode stays for CL's Mac.
