@@ -252,3 +252,20 @@ the `voxtral_mlx_asr.py` / `qwen3_streaming` shape:
 ### Summary
 
 Fleshed out the nemotron-mlx ASR backend implementation plan from the design body: a single new module (`asr_nemotron_mlx.py`) porting livecaption's `_StreamingEncoder` + `_decode_chunk` (the greedy RNN-T loop that emits `AlignedToken.start` mid-decode) + `_finalize` + mel holdback + VAD endpointer, skipping the wrapper layer the transducer makes redundant. Registration follows the established voxtral-mlx/qwen3-streaming pattern (core.py + config.py + parse_args.py + backend_support.py + pyproject extra). Four ACs with `Verified by:` clauses mirror the mlx-qwen3-asr-backend shape; the unit-test suite mocks the model to prove the time-based boundary is populated during decode (the research value), with the live zh-tw WER gap and the nemotron+AlignAtt benchmark explicitly out of scope (the latter consumes the backend via the AccessibleBoundary adapter, a research artifact). Key risk — nemotron is zh-CN, weaker than qwen3 on zh-tw — is documented as a known limitation, not a blocker.
+
+## Stage Report: implementation
+- DONE: Create `whisperlivekit/asr_nemotron_mlx.py` (NemotronMLXASR + NemotronMLXOnlineProcessor) porting _StreamingEncoder + _decode_chunk (greedy RNN-T → AlignedToken.start mid-decode) + _finalize + mel holdback + VAD endpointer from livecaption/asr.py
+  Commit 3f604b0; _decode_chunk line `AlignedToken(pred_token, start=(self._global_time + time)*self._frame_sec, ...)` is the load-bearing time-based boundary emission.
+- DONE: Skip the wrapper layer (transducer is monotonic + has native timestamps)
+  No monotonic-enforce or timestamp-inject code; _decode_chunk only appends to _hypothesis (append-only by construction).
+- DONE: Register in core.py (_do_init + online_factory), config.py (nemotron_mlx_asr_* fields), parse_args.py (--backend nemotron-mlx-asr + knobs), backend_support.py (nemotron_mlx_asr_backend_available), cli.py (BACKENDS entry)
+  All 6 registration points present; config/parse_args tests pass (model, att_context [56,6], two_pass).
+- DONE: Add the nemotron-mlx-asr pyproject extra (mlx-audio>=0.4.4,<0.5 + mlx>=0.11.0, pure-MLX, no transformers/torch)
+  pyproject.toml extra added; AST import-graph check confirms no torch/transformers/nemo_toolkit in the module.
+- DONE: Write the 4 unit tests mocking the model (emission/monotonicity/finalize-flush/lifecycle) in tests/test_asr_nemotron_mlx.py
+  4/4 pass: emission asserts start=0.0/0.08 monotonic; monotonicity asserts prior tokens unmutated; finalize asserts _drive(final=True) called + state reset; lifecycle asserts insert→process→buffer→finish returns ASRTokens with timestamps.
+- DONE: Run `git diff --stat origin/main..HEAD` and confirm the diff is ASR-only (no hunyuan-mlx/translation wiring leakage)
+  20fd2e2..HEAD diff is 8 files: asr_nemotron_mlx.py, test_asr_nemotron_mlx.py, core.py, config.py, parse_args.py, backend_support.py, cli.py, pyproject.toml — ASR-only; translation files are from the PR2 stack (pre-20fd2e2).
+
+### Summary
+Implemented the nemotron-mlx ASR transducer backend as a single new module (`asr_nemotron_mlx.py`) porting livecaption's `_StreamingEncoder` + `_decode_chunk` (greedy RNN-T loop emitting `AlignedToken.start` mid-decode — the time-based accessible boundary) + `_finalize` + mel grow/holdback + Silero VAD endpointer (rule1/2/3 + soft-max cut), skipping the wrapper layer the transducer makes redundant. Registered in all 6 points (core/config/parse_args/backend_support/cli/pyproject); the `nemotron-mlx-asr` extra is pure-MLX (mlx + mlx-audio, no torch/transformers). Four unit tests mock the model and pass (4/4): emission proves non-None monotonic start timestamps, monotonicity proves append-only, finalize-flush proves held-mel is emitted + state reset, lifecycle proves the insert→process→buffer→finish contract. Import-graph check confirms no banned imports. The diff vs PR2 tip (20fd2e2) is ASR-only — no translation/hunyuan-mlx wiring leakage. Live zh-tw WER comparison and the nemotron+AlignAtt benchmark remain out of scope (research artifacts consuming this backend via the AccessibleBoundary adapter).
