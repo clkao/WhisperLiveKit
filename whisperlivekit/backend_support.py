@@ -55,6 +55,15 @@ def nemotron_mlx_asr_backend_available():
         and module_available("mlx")
         and module_available("mlx_audio")
     )
+def mlx_qwen3_asr_backend_available():
+    """Return True if the pure-MLX mlx-qwen3-asr backend is available.
+
+    This backend uses the `mlx-qwen3-asr` package (moona3k): a ground-up MLX
+    reimplementation of Qwen3-ASR with no torch/transformers dependency, so it
+    coexists cleanly with recent mlx-lm on transformers 5.x (unlike the
+    qwen3-streaming backend, which pins transformers==4.57.6).
+    """
+    return module_available("mlx_qwen3_asr")
 
 
 
