@@ -51,6 +51,15 @@ gates:
               application:
                 target-stage: implementation
                 state: consumed
+        - id: gate:p0f67wa79kd56yh3bs0cca2e:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-validation-1
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-1:revision-1
+                digest: sha256:622019c4951b1a0f1b616686b35c9d928fe2ddf667482f4d754ec93729d1b879
+                request-digest: sha256:d33dcf3406da49ca3332d939ec2dc4de9531f62597bc8b62511fdbe237e4879b
+                room-ref: ./mlx-qwen3-asr-backend/review/validation/briefing-1
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer

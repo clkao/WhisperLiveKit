@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-1:revision-1",
+  "question": "Validation gate (cycle 1): PR3 mlx-qwen3-asr — two blockers found. Reject to implementation?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/01b032d0dc308feb7a3a373103ba797bbf8a3896/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:ab110e801f25703a7a3fb3d7ac12c06b2aa10031f6f9ff6da6082ff908ed0969",
+      "mediaType": "text/markdown",
+      "summary": "Codex validator found 2 blockers: (1) get_buffer contract conflict — StableCommitTransform reads get_buffer for the full rolling hypothesis but Finding-1 made it return only the unstable tail; the transform emits garbage. Fix: add get_hypothesis() (full text) for the transform; get_buffer stays the tail (WLK contract). (2) Hunyuan-mlx scope leakage — config.py/core.py/parse_args.py carry hunyuan-mlx translation wiring (PR1's domain). Fix: re-carve those 3 files to ASR-only changes. The 38 wrapper tests pass; Finding 1 + Finding 2 fixes work in isolation; AC-1/AC-4/AC-5 pass."
+    }
+  ]
+}
