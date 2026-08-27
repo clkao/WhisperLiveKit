@@ -171,3 +171,28 @@ The `core.py` diff removes a guard in the NLLB `else` branch (enables qwen3 ASR 
 Validation PASSED (cycle 2): the clean PR branch `cddf74c` (7 files, +481/-3) contains only the mlx-llm-mt deliverable, 11/11 tests pass, baseline parity confirmed (0 new failures), no internal/workflow vocabulary, and the `core.py` diff is strictly in-scope (no guard removals — the prior cycle's residual flag is resolved). Recommend gate-approval to `done`.
 
 ### Recommendation: PASSED
+
+## Stage Report: validation (cycle 3)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --translation-backend mlx-llm-mt --target-language en --language zh` produces correct zh→en translation.
+  Live Metal/model verification requires CL's Mac; no live decode was run, so a broken model load or generation path would remain undetected.
+- DONE: AC-2: `validate_buffer_and_reset` does not double the output.
+  PASS — `test_validate_does_not_double_after_process` passed; returning `_last_buffer` instead of empty `TimedText` after `process()` would fail it.
+- DONE: AC-3: Hunyuan is one config, not the backend identity — a second config loads with a different repo+prompt without new code.
+  PASS — `test_second_config_constructs_without_new_code` passed; hard-coding Hunyuan's repo or prompt for TranslateGemma would fail it.
+- FAILED: AC-4: backward-compat alias `--translation-backend hunyuan-mlx` works.
+  FAIL — `grep -RIl 'hunyuan-mlx' whisperlivekit tests/test_mlx_llm_mt.py | wc -l` output `0`; the parser choices omit the alias and no alias test exists.
+- FAILED: AC-5: The branch diff vs `origin/main` is exactly 7 files (no ASR/overlay/CLI/vendored/docs leakage).
+  FAIL — `git diff --name-only origin/main..f973a48 | wc -l` output `13`; six extra files include `whisperlivekit/cli.py` and five benchmark modules, while the required compatibility shim is absent.
+- FAILED: AC-6: `insert_tokens` accepts `HypothesisTail` (the AlignAtt simultaneous-MT seam).
+  FAIL — `grep -RIl 'HypothesisTail' whisperlivekit/translation_mlx_llm_mt.py tests/test_mlx_llm_mt.py | wc -l` output `0`; none of the four required contract tests exists.
+- FAILED: Run `pytest tests/test_mlx_llm_mt.py -v` at the branch tip and report the pass count.
+  `uv run --frozen --extra test pytest tests/test_mlx_llm_mt.py -v` output `collected 11 items` and `11 passed in 25.00s`, not the specified 16; removing buffer/config behavior would fail covered tests, but alias and HypothesisTail regressions are uncovered.
+- DONE: Run the full non-async suite and confirm 0 new failures vs the `origin/main` baseline.
+  `.venv/bin/pytest tests $(grep -RIl 'pytest.mark.asyncio\|async def test_' tests | sed 's#^#--ignore=#') -q` output branch `5 failed, 136 passed, 3 skipped`; archived `origin/main` output `5 failed, 125 passed, 3 skipped`, with identical failures and therefore 0 new failures.
+- FAILED: Confirm `git diff --stat origin/main..f973a48` and check the diff for scope leakage and internal/workflow vocabulary.
+  Stat output is `13 files changed, 1050 insertions(+), 22 deletions(-)` with CLI/benchmark leakage; vocabulary grep output `internal vocabulary matches: 0`, so workflow terminology itself is clean.
+
+### Summary
+
+Validation FAILED at `f973a48`: baseline parity and the covered buffer/config behavior pass, but the tip is a 13-file combined change rather than the specified 7-file PR1. The backward-compatible `hunyuan-mlx` alias and the `HypothesisTail` seam/tests are absent, and CLI/benchmark changes widen scope; AC-1 remains unverified because it requires CL's live Metal/model environment.
