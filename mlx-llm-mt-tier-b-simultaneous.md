@@ -463,3 +463,24 @@ Re-verified the actual branch tip and reproduced both the dispatched 32-test res
 ### Summary
 
 Implemented a per-(model_repo, source_lang, target_lang) calibration registry (CALIBRATION_REGISTRY) in simul_mt_capture.py, seeded with the calibrated 8bit zh→en entry. MlxLlmTranslationSimul looks up its tuple at init: found → activates simultaneous mode (installs capture with calibrated heads, sets wants_hypothesis_tail=True); not found → silently deactivates (wants_hypothesis_tail=False, delegates to base class, logs warning). The 4bit calibration check probed via MLX Q/K capture comparison (48.9% argmax match vs 8bit — below threshold) and the formal promotion gate could not run (AlignAtt4LLM requires PyTorch, can't load MLX repos), so 4bit is left out of the registry and deactivates. 10 new tests + 44 existing = 54 total pass. All changes are in the simul layer (3 files); no PR1 files, no scope leakage, no internal vocabulary.
+
+## Stage Report: validation (cycle 2)
+
+- DONE: Implement a per-(mt-model, src, target) head registry in the simul layer; seed with ("mlx-community/Hy-MT2-1.8B-8bit", "zh", "en") and the 8 calibrated heads
+  `test_registry_has_8bit_zh_en_entry`, variant normalization, and missing-tuple tests pass; removing/changing the seeded tuple, its eight heads, or top head (9,5) would fail them.
+- DONE: MlxLlmTranslationSimul looks up its (model, src, tgt) at init — found → install capture with those heads; not found → silent deactivate (wants_hypothesis_tail=False, warning naming the tuple, base behavior)
+  The calibrated activation and uncalibrated model/direction tests pass; activation loss, tail opt-in on a missing tuple, absent tuple warning, or failure to delegate insert/process/validate to the base would fail the matrix.
+- DONE: Do NOT raise on missing heads (WLK degrades gracefully)
+  Uncalibrated TranslateGemma, en→it, and 4bit zh→en constructors complete and their fallback tests pass; introducing a missing-calibration exception would fail construction before those assertions.
+- DONE: Run the 4bit calibration check against mlx-community/Hy-MT2-1.8B-4bit
+  The dispatched probe result is 116/237 (48.9%) top-head argmax agreement versus 8bit, so no registry entry was promoted; `test_4bit_zh_en_deactivates_without_calibration` would fail if 4bit were accidentally activated or base translation stopped working.
+- DONE: Verify with a 3-tuple test matrix: calibrated 8bit zh→en, uncalibrated tuple, and 4bit zh→en
+  The 54-test run passes: 8bit emits `Hello` provisionally and preserves call-counter/release behavior; TranslateGemma has no provisional but translates on close with a warning; 4bit deactivates and translates through the base.
+- DONE: The test for activated tuples must assert provisional APPEARS
+  `test_calibrated_tuple_activates_simul` asserts `buf.text == "Hello"` during an open utterance; silent deactivation would instead retain untranslated source and fail the assertion.
+- DONE: Do NOT rebase onto PR1, push, or open a PR; do NOT address the cycle-1 validator wording/base artifacts
+  Validation was read-only at code tip `bc61d57`; `git status --porcelain`, cached diff, and out-of-scope diff scan were empty, with only the expected three simul-layer files in `a121d4f..bc61d57`.
+
+### Summary
+
+Validated the cycle-2 registry and graceful-deactivation rework at `bc61d57` with code review, the complete 54-test mlx-llm-mt/simul/AlignAtt suite, targeted Ruff, and diff hygiene checks. The calibrated 8bit zh→en tuple remains active and demonstrably provisional, while uncalibrated and 4bit tuples cleanly fall back to Tier A; no blockers were found. The 48.9% 4bit probe result was supplied by the implementation dispatch rather than independently recalibrated during this read-only validation.
