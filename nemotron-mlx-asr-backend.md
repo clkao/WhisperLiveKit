@@ -327,3 +327,4 @@ Validation is not approved in cycle 1. The required 4-test command passes and th
 
 ### Summary
 Fixed the AC-1 blocker from cycle-1 validation: NemotronMLXASR.__init__ now normalizes the user-supplied language tag against the model's prompt_dictionary before validation, mirroring livecaption's normalize_asr_language. The _normalize_language function resolves bare 2-letter primaries (zh→zh-CN, en→en-US) via default-tag mapping and primary-prefix fallback, raising ValueError only when no mapping is found. Eight unit tests cover the normalization (zh→zh-CN, en→en-US, exact passthrough, case-insensitivity, auto, unknown-raises, unique-prefix, default-preference-on-ambiguity). All 12 tests pass (4 original + 8 new). The nemotron-mlx-asr extra remains pure-MLX (mlx + mlx-audio, no torch/transformers).
+
