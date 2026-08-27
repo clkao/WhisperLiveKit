@@ -323,3 +323,61 @@ Live A/B benchmark (faster-whisper, base model, zh_long.wav 31.6s, speed=1.0):
 No internal vocab in the diff (no AC-#, ensign, captain, fast-track, stage
 report, livecaption, clkao, _work/). No third_party submodule changes. One
 clean commit on the new branch.
+
+## Rework (2026-08-26): PR2 fix — provisional duplication + MT-call hysteresis
+
+Commit `c6d942c` on `spacedock-ensign/mlx-llm-mt-simultaneous`. Two issues fixed:
+
+### Issue 1: provisional draft duplication (FIXED)
+
+**Root cause**: `validate_buffer_and_reset` returned the provisional text as
+a validated `Translation`, which got committed to `all_translation_segments`
+alongside the pending final (queued in the same method). Both translations
+overlapped the same speech segment, so `add_translations` appended both →
+duplicated text in the final output (e.g. "Today we are discussing the
+applications Today we are discussing the applications of lasers...").
+
+**Fix**: `validate_buffer_and_reset` now returns `(None, self._last_buffer)`
+instead of `(validated, TimedText())`. The provisional is kept as the on-screen
+buffer (shown to the user); the pending final (quality pass from
+`_translate_text`) is the only committed Translation. Verified: the simul
+final translation is a single clean translation with no duplication.
+
+### Issue 2: MT-call-count higher than base (IMPROVED 25→24)
+
+**Root cause**: `process()` made a new MT call whenever the total source
+(committed+tail) changed (`source == self._last_source_text`). Since the tail
+grows on every ASR update, the source changed on every update, and the
+new-call branch always fired.
+
+**Fix**: hysteresis on source growth. A new MT call is made only when the
+source grew by >= `MIN_SOURCE_DELTA` (15 chars, ≈ 1 CJK sentence) since the
+last draft, or when no draft exists yet. Otherwise, the release path
+re-applies the commit policy on the cached attention (no MT call).
+`_last_source_text` is only updated when a new draft is made, so the
+hysteresis accumulates across releases within an utterance.
+
+**Call count after fix**: simul=24 (12 provisional + 12 final) vs base=12.
+The 12 extra calls are provisional drafts during speech — one per sentence
+boundary (when `_last_draft` is None after reset). The 12 final calls match
+the base exactly. The simul variant cannot have fewer calls than the base
+because it makes the same final calls PLUS provisional calls for early EN
+translation. The win is latency: first EN provisional at 2.44s vs base first
+final at 16.52s (14s improvement).
+
+### Benchmark evidence
+
+Recorded at `/Users/clkao/git/asr/_work/pr2_evidence.txt` (faster-whisper,
+base model, zh_long.wav 31.6s, speed=1.0):
+- BASE: mt_calls=12, first_final=16.52s, translation clean
+- SIMUL: mt_calls=24, first_provisional=2.44s, first_final=6.78s,
+  translation clean (no duplication)
+- Simul provisional EN arrives ~14s before base's first final translation
+
+### Unit tests
+
+`pytest tests/test_mlx_llm_mt.py tests/test_mlx_llm_mt_simul.py -q` → 32 passed.
+`ruff check` → All checks passed.
+Test updated: `test_validate_returns_provisional_then_final` now asserts
+`tr is None` (provisional not committed) and `buf.text == "Hello"` (provisional
+stays as buffer).
