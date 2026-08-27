@@ -3,6 +3,7 @@ title: "nemotron-mlx ASR backend (transducer; AlignAtt time-based frontier)"
 source: PR3 research — _work/nemotron_transducer_alignatt_research.md
 score: 0.8
 id: n5g2sjy16zzy9rhdk8d1zn1p
+status: backlog
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
