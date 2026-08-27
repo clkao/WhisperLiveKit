@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-3:revision-1",
+  "question": "Validation gate (cycle 3): is the reworked PR2 simultaneous-MT (per-(model,src,tgt) head registry with normalized model-id key + silent deactivation, tip 27089d7) ready to merge? Codex validator PASSED all checks, no blockers.",
+  "artifacts": [
+    {
+      "id": "artifact:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/6a154b1d8403c1bdc57d632d5f58ca15fee17e9f/mlx-llm-mt-tier-b-simultaneous.md",
+      "rev": "sha256:48fab188a420c8d104a67a8c6ff8bd80da782aeccd5e85a265e8c9a745a22056",
+      "mediaType": "text/markdown",
+      "summary": "Cycle-3 codex validator (gpt-5.6-sol) PASSED PR2 tip 27089d7: 55/55 tests (11 mlx-llm-mt + 32 simul + 12 alignatt), ruff clean, no vocab/scope leakage (3 simul-layer files only). Registry key normalized to model id 'hy-mt2-1.8b' (org prefix + quant suffix stripped; _normalize_model_id + _extract_quant helpers); 4bit deactivation moved to CalibrationEntry.disabled_quants (cleaner than missing-key); cli.py scope reverted to only --simultaneous. 4bit proxy 48.9% accepted → disabled_quants={'4bit'} (formal promotion gate couldn't run: AlignAtt4LLM needs PyTorch, can't load MLX repos — conservative, honest-by-construction; 4bit translation still works via base). TODO comment + entity note for external-heads-loading refactor recorded. AC-1 live E2E SKIPPED (needs mlx-qwen3-asr on separate branch + mic). Recommend gate-approval to done."
+    }
+  ]
+}

@@ -40,6 +40,12 @@ gates:
                 at: "2026-08-27T07:05:38.08804Z"
                 decision: revise
                 reason: 'Reject to implementation. Two findings: (1) cli.py helptext scope leak — PR2''s diff tightens --target-language and --reference-translation helptext (PR1''s flags); only the --simultaneous help expansion is in-scope. Revert the --target-language and --reference-translation helptext changes, keep only --simultaneous, so PR2''s cli.py diff is strictly the simul flag. (2) Registry key design — the key is currently the fully-qualified mlx-community/Hy-MT2-1.8B-8bit variant; it should be the model id (Hy-MT2-1.8B / hy-mt2-1.8b) so a non-MLX implementation (vLLM/CUDA, the AlignAtt4LLM path) can reuse the same calibration entry. Change the key to the model id (strip the mlx-community/ prefix, or key by a normalized model id). Additionally, record a TODO note in the entity body + a comment in simul_mt_capture.py: heads should be refactored to load from external files (the AlignAtt4LLM translation_heads_<model>_<direction>.json pattern), not hardcoded in Python — so calibration entries are shareable across implementations. The 4bit caveat (proxy 48.9% check, formal promotion gate couldn''t run) is accepted as conservative — no change. The cycle-2 PASSED substance (54 tests, registry, silent deactivation, 3-tuple matrix) stands.'
+            - id: gate-attempt:ksxw8mezhk10fzx2yw7mfvj7-validation-3
+              briefing:
+                id: briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-3:revision-1
+                digest: sha256:e506a90ecf1a9d6d117d783592d02f29be6dc4ace2a951434594b7c1ea776a11
+                request-digest: sha256:e05a73273d82943003eba3f2d020f0ade3e6da8466889e4316247ce3a53af186
+                room-ref: ./mlx-llm-mt-tier-b-simultaneous/review/validation/briefing-3
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
