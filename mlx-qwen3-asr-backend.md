@@ -184,3 +184,36 @@ Fix: thread the per-session language into `init_streaming(language=...)` on the 
 ### Scope of the re-implementation
 
 Both fixes are small and localized to `asr_mlx_qwen3.py`. No new modules, no base class, no second backend. The generalization (the wrapper chain) is already shipped; these are contract-compliance fixes so the backend speaks the AlignAtt seam correctly. Add a test: `get_buffer` returns only the tail after a commit; `process_iter` returns the committed prefix.
+
+## Stage Report: validation (cycle 1)
+
+- SKIPPED: AC-1: `wlk serve --backend mlx-qwen3-asr --language zh` transcribes Mandarin in-process, no torch/transformers/WebSocket sidecar.
+  Live Mandarin/mic execution was not available; static wiring exists in `core.py:178-192,401-415`, backend availability/CLI registration is present, and the extra contains only MLX dependencies.
+- DONE: AC-2: The dependency set coexists with mlx-lm + hunyuan-mlx on transformers 5.x.
+  `pyproject.toml:59-62` pins `mlx-qwen3-asr>=0.3.5,<0.4` without a transformers constraint; adding such a constraint would fail this check.
+- FAILED: AC-3: Two-pass re-decode gives clean per-utterance text and StableCommitTransform handles streaming commits.
+  `_finalize_utterance` does offline re-decode, but the composed transform reads the now-tail-only `get_buffer()` and reproducibly emits `gamma`, `delta` while omitting model-stable prefix `alpha beta`.
+- DONE: AC-4: Warmup runs at init so the first decode does not absorb compilation.
+  `asr_mlx_qwen3.py:107-120` calls `_warmup()` during construction and feeds/finishes 0.5 s silence; removing that constructor call would fail the assertion.
+- SKIPPED: AC-5: A second provider shares `asr_commit` or `asr_timestamps`.
+  Voxtral conversion is outside this carve; all three shared modules import, `AsrWrapper` accepts a transform list, and their isolated tests pass.
+- FAILED: AC-6: The wrapper layer is composable and `online_factory` builds the chain.
+  Structural composition exists at `core.py:401-415`, but `StableCommitTransform` consumes `inner.get_buffer()` as a full rolling hypothesis while the inner now returns only its unstable tail, so the declared chain is behaviorally invalid.
+- DONE: Finding 1: `get_buffer` returns the unstable tail, with full-text fallback on a prefix mismatch.
+  A targeted constructor-free check observed `" gamma"` for stable `"alpha beta"` plus full `"alpha beta gamma"`, and the full text after a non-prefix stable value.
+- DONE: Finding 2: The per-session language override wins over the server-wide language.
+  A mocked construction with server `English` and `_session_language="zh"` produced `self.language == "Chinese"`; reverting to the delegated `language` attribute would fail.
+- FAILED: Run the prescribed project-resolving wrapper test command.
+  `uv run --extra test --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` failed before collection because the uninitialized `third_party/qwen3-asr-causal` submodule lacks `pyproject.toml`.
+- DONE: Confirm the 38 wrapper tests pass with the required mlx-qwen3-asr dependency available.
+  `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` passed 38/38; `uv run --no-sync` also passed 38/38.
+- FAILED: Check the 11-file carve for scope leakage.
+  The file list is exactly 11, but `config.py`, `core.py`, and `parse_args.py` still add unrelated `hunyuan-mlx` translation configuration/wiring, including an import of absent `translation_hunyuan_mlx.py`.
+- DONE: Check for internal/workflow vocabulary.
+  A case-insensitive git grep across all 11 changed files found no AC, Tier, spacedock, ensign, or captain vocabulary.
+- DONE: Preserve a clean code worktree with no staged files.
+  Final `git status --porcelain` and `git diff --cached --name-only` were empty; validation made no code edits or commits.
+
+### Summary
+
+Validation found two blockers despite both requested finding fixes working in isolation: the Finding 1 tail contract is incompatible with the current `StableCommitTransform` integration, and unrelated Hunyuan translation wiring remains in the nominal ASR carve. The 38 isolated wrapper tests pass but do not exercise either finding or the backend/transform seam; live Mandarin execution was skipped.
