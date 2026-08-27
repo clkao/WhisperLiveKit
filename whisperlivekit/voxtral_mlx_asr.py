@@ -13,12 +13,13 @@ enough to run synchronously inside ``asyncio.to_thread(process_iter)``.
 import logging
 import sys
 import time
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import mlx.core as mx
 import numpy as np
 from mistral_common.tokens.tokenizers.base import SpecialTokenPolicy
 
+from whisperlivekit.asr_timestamps import WordTimestampTracker
 from whisperlivekit.timed_objects import ASRToken, Transcript
 from whisperlivekit.voxtral_mlx.loader import DEFAULT_MODEL_ID, load_voxtral_model
 from whisperlivekit.voxtral_mlx.model import SlidingKVCache
@@ -166,11 +167,12 @@ class VoxtralMLXOnlineProcessor:
         self._n_text_tokens = 0
         self._n_committed_words = 0
         self._time_offset = 0.0
-        # Per-word audio position tracking: decoder position (relative to prefix)
-        # where each word in _full_text started and ended
-        self._word_audio_starts: list[int] = []   # audio pos where word i started
-        self._word_audio_ends: list[int] = []     # audio pos where word i last produced a token
-        self._current_word_pos: Optional[int] = None  # audio pos of current (incomplete) word's first token
+        # Per-word audio position tracking: delegated to the shared
+        # WordTimestampTracker (asr_timestamps module, Job 2).
+        self._ts_tracker = WordTimestampTracker(
+            secs_per_token=self._secs_per_token,
+            delay_secs=self._delay_secs,
+        )
 
     # -- audio ingestion --
 
@@ -275,6 +277,7 @@ class VoxtralMLXOnlineProcessor:
             saved_end = self.end
             self._reset_state()
             self._time_offset = new_offset
+            self._ts_tracker.time_offset = new_offset
             self.end = saved_end
             mx.clear_cache()
             return words, self.end
@@ -354,9 +357,7 @@ class VoxtralMLXOnlineProcessor:
             token_id = self._last_token.item()
             if token_id == self._eos_id:
                 # Close the current word if one is being built
-                if self._current_word_pos is not None:
-                    self._word_audio_ends.append(base_pos + i - self._prefix_len)
-                    self._current_word_pos = None
+                self._ts_tracker.record_word_end(base_pos + i - self._prefix_len)
                 self._trim_embeds(i)
                 self._positions_decoded += i
                 return True
@@ -370,16 +371,11 @@ class VoxtralMLXOnlineProcessor:
 
                 # Detect word boundary: new word starts with space or is the very first text
                 if text.lstrip() != text or not self._full_text:
-                    # Close previous word if exists
-                    if self._current_word_pos is not None:
-                        self._word_audio_ends.append(audio_pos)
-                    # Start new word
-                    self._word_audio_starts.append(audio_pos)
-                    self._current_word_pos = audio_pos
-                elif self._current_word_pos is None:
+                    # record_word_start closes the previous word and starts a new one
+                    self._ts_tracker.record_word_start(audio_pos)
+                elif not self._ts_tracker.has_current_word:
                     # First token of first word (no leading space)
-                    self._word_audio_starts.append(audio_pos)
-                    self._current_word_pos = audio_pos
+                    self._ts_tracker.record_word_start(audio_pos)
 
                 self._full_text += text
                 self._n_text_tokens += 1
@@ -404,50 +400,17 @@ class VoxtralMLXOnlineProcessor:
 
     # -- word extraction --
 
-    def _audio_pos_to_time(self, pos: int) -> float:
-        """Convert an audio position (relative to prefix end) to seconds."""
-        return max(0.0, pos * self._secs_per_token - self._delay_secs + self._time_offset)
-
-    def _word_time_range(self, word_idx: int, n_words: int) -> Tuple[float, float]:
-        """Compute (start, end) time for a word using tracked word positions."""
-        starts = self._word_audio_starts
-        ends = self._word_audio_ends
-
-        if not starts:
-            return self._time_offset, self._time_offset
-
-        # Get start position for this word
-        if word_idx < len(starts):
-            t0 = self._audio_pos_to_time(starts[word_idx])
-        else:
-            # Fallback: estimate from last known position
-            last_pos = ends[-1] if ends else starts[-1]
-            t0 = self._audio_pos_to_time(last_pos + 1)
-
-        # Get end position: use the start of the next word, or the end of this word
-        if word_idx + 1 < len(starts):
-            t1 = self._audio_pos_to_time(starts[word_idx + 1])
-        elif word_idx < len(ends):
-            t1 = self._audio_pos_to_time(ends[word_idx] + 1)
-        else:
-            # Last word, still being built: use last known position + 1 token
-            last_pos = starts[word_idx] if word_idx < len(starts) else (ends[-1] if ends else 0)
-            t1 = self._audio_pos_to_time(last_pos + 1)
-
-        return t0, t1
-
     def _extract_committed_words(self) -> List[ASRToken]:
         """Return complete words (all except the last which may still grow)."""
         if not self._full_text:
             return []
         words = self._full_text.split()
         tokens: List[ASRToken] = []
-        n_total = max(len(words), 1)
 
         while len(words) > self._n_committed_words + 1:
             w = words[self._n_committed_words]
             idx = self._n_committed_words
-            t0, t1 = self._word_time_range(idx, n_total)
+            t0, t1 = self._ts_tracker.word_time_range(idx)
             label = w if idx == 0 else " " + w
             tokens.append(ASRToken(start=t0, end=t1, text=label))
             self._n_committed_words += 1
@@ -460,12 +423,11 @@ class VoxtralMLXOnlineProcessor:
             return []
         words = self._full_text.split()
         tokens: List[ASRToken] = []
-        n_total = max(len(words), 1)
 
         while self._n_committed_words < len(words):
             w = words[self._n_committed_words]
             idx = self._n_committed_words
-            t0, t1 = self._word_time_range(idx, n_total)
+            t0, t1 = self._ts_tracker.word_time_range(idx)
             label = w if idx == 0 else " " + w
             tokens.append(ASRToken(start=t0, end=t1, text=label))
             self._n_committed_words += 1
@@ -515,22 +477,17 @@ class VoxtralMLXOnlineProcessor:
             return
         last_pos = self._positions_decoded - self._prefix_len
         if text.lstrip() != text or not self._full_text:
-            if self._current_word_pos is not None:
-                self._word_audio_ends.append(last_pos)
-            self._word_audio_starts.append(last_pos)
-            self._current_word_pos = last_pos
-        elif self._current_word_pos is None:
-            self._word_audio_starts.append(last_pos)
-            self._current_word_pos = last_pos
+            self._ts_tracker.record_word_start(last_pos)
+        elif not self._ts_tracker.has_current_word:
+            self._ts_tracker.record_word_start(last_pos)
         self._full_text += text
         self._n_text_tokens += 1
 
     def _close_current_word(self):
         """Close the last word if one is being built."""
-        if self._current_word_pos is not None:
+        if self._ts_tracker.has_current_word:
             last_pos = self._positions_decoded - self._prefix_len
-            self._word_audio_ends.append(last_pos)
-            self._current_word_pos = None
+            self._ts_tracker.close_current_word(last_pos)
 
     def _flush_and_reset(self) -> List[ASRToken]:
         """Flush pending audio, decode remaining, extract all words, then
@@ -575,6 +532,7 @@ class VoxtralMLXOnlineProcessor:
         # embeddings incompatible with a fresh decoder prefill.
         self._reset_state()
         self._time_offset = new_offset
+        self._ts_tracker.time_offset = new_offset
         self.end = saved_end
 
         # Free MLX caches eagerly
@@ -596,6 +554,7 @@ class VoxtralMLXOnlineProcessor:
 
     def end_silence(self, silence_duration: float, offset: float):
         self._time_offset += silence_duration
+        self._ts_tracker.time_offset = self._time_offset
         self.end += silence_duration
 
     def new_speaker(self, change_speaker):
