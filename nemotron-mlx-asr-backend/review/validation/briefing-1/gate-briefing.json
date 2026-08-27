@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-1:revision-1",
+  "question": "Validation gate (cycle 1): nemotron-mlx ASR — language normalization blocker. Reject to implementation?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/64d3f0e2ec1cd366979908457aa979940c41ecb5/nemotron-mlx-asr-backend.md",
+      "rev": "sha256:22447229f93cd43360a585b4ea0c0f40859ee2851172daf0d6386da40b29449a",
+      "mediaType": "text/markdown",
+      "summary": "Codex validator cycle 1: 4/4 tests pass, AC-2/AC-4 DONE, ASR-only 8-file diff. Two blockers: (1) AC-1 — --language zh rejected; model has zh-CN/zh-ZH not zh; livecaption's normalize_asr_language maps zh→zh-CN but nemotron backend skipped it. Real code fix. (2) AC-3 — uv sync fails on pre-existing qwen3-streaming vs mlx-llm-mt conflict (the known --frozen issue), NOT the nemotron extra's fault (nemotron deps are pure MLX). Submodule now initialized. Blocker 2 is env/methodology, not code."
+    }
+  ]
+}
