@@ -47,6 +47,32 @@ HEAD_TS_SCORES: Dict[Tuple[int, int], float] = {
     (1, 10): 0.3231,
 }
 
+# 8 calibrated production head indices for tencent/Hy-MT2-1.8B ja→zh.
+# Top head (L9, H5, TS=0.89) is the primary alignment signal. The top 3
+# heads (L9/H5, L13/H1, L9/H6) are identical to zh→en, suggesting these
+# are general alignment heads for the hunyuan_v1_dense architecture, not
+# direction-specific; the ja→zh TS scores are uniformly higher (kanji→hanzi
+# is often 1:1, simplifying word alignment). 219 aligned pairs from
+# larryvrh/WikiMatrix-v1-Ja_Zh-filtered; promotion gate passed (3/3 splits
+# stable, max TS delta 0.0244 < 0.03 threshold). Hardcoded from the
+# calibration run so the variant is self-contained.
+JA_ZH_ALIGNMENT_HEADS: List[Tuple[int, int]] = [
+    (9, 5), (13, 1), (9, 6), (4, 12), (1, 10), (2, 9), (8, 8), (8, 6),
+]
+JA_ZH_TOP_HEAD: Tuple[int, int] = (9, 5)
+
+# TS scores for the ja→zh heads. Keys match JA_ZH_ALIGNMENT_HEADS.
+JA_ZH_HEAD_TS_SCORES: Dict[Tuple[int, int], float] = {
+    (9, 5): 0.8910,
+    (13, 1): 0.7758,
+    (9, 6): 0.7665,
+    (4, 12): 0.6956,
+    (1, 10): 0.5907,
+    (2, 9): 0.5420,
+    (8, 8): 0.5014,
+    (8, 6): 0.4418,
+}
+
 # Language codes that count as "Chinese" for registry key normalization.
 _ZH_CODES = {"zh", "zh-cn", "zh-tw", "zh-hans", "zh-hant", "cmn", "yue"}
 
@@ -94,6 +120,12 @@ CALIBRATION_REGISTRY: Dict[Tuple[str, str, str], CalibrationEntry] = {
         heads=ALIGNMENT_HEADS,
         ts_scores=HEAD_TS_SCORES,
         top_head=TOP_HEAD,
+        disabled_quants={"4bit"},
+    ),
+    ("hy-mt2-1.8b", "ja", "zh"): CalibrationEntry(
+        heads=JA_ZH_ALIGNMENT_HEADS,
+        ts_scores=JA_ZH_HEAD_TS_SCORES,
+        top_head=JA_ZH_TOP_HEAD,
         disabled_quants={"4bit"},
     ),
 }
