@@ -18,6 +18,14 @@ gates:
                 digest: sha256:cafba82adca9da6ebafe7eab75fa6c266996baec6a79aaded99b690538eb781f
                 request-digest: sha256:5222e1534d49ed764ee916299f413adc653fe5901edfbc5ac221b6ff975639e7
                 room-ref: ./mlx-llm-mt-tier-b-simultaneous/review/validation/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:ksxw8mezhk10fzx2yw7mfvj7:validation:1
+                briefing: briefing:ksxw8mezhk10fzx2yw7mfvj7:validation:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-27T06:47:04.628253Z"
+                decision: revise
+                reason: 'Reject to implementation. Finding: ALIGNMENT_HEADS is hardcoded to tencent/Hy-MT2-1.8B zh→en (8 heads, top L9/H5), but --simultaneous lets the user pick any model/direction from the registry. Wrong heads → unsafe failure (garbage provisional) for uncalibrated tuples. Fix: per-(mt-model, src, target) head registry keyed by (model_repo, source_lang, target_lang); MlxLlmTranslationSimul looks up its tuple at init — found → install capture with those heads; not found → SILENT DEACTIVATE (wants_hypothesis_tail=False, log warning naming the missing tuple, behave as base MlxLlmTranslation translate-on-close). This is better than AlignAtt4LLM which hard-fails (RuntimeError) on missing heads. Seed registry with the calibrated 8bit zh→en entry. Verify: (1) calibrated tuple (8bit zh→en) — provisional appears + content correct + MT-call counter (existing tests); (2) uncalibrated tuple (en→it or translategemma) — deactivates, no provisional, translation correct via base, wants_hypothesis_tail=False, warning logged; (3) 4bit zh→en — run the calibration (tooling: livecaption/scripts/detect_heads_1.8b.sh against mlx-community/Hy-MT2-1.8B-4bit); if passes promotion gate seed as own entry, else deactivate (translation still works via base). The 2 cycle-1 validator ''failures'' (CapturedAttention 1.43e-6 not ''bit-identical''; named-base diff including PR1 files) are wording/base artifacts, not defects — do not address them.'
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
