@@ -234,3 +234,18 @@ Both fixes are small and localized to `asr_mlx_qwen3.py`. No new modules, no bas
 ### Summary
 
 Validation found two blockers despite both requested finding fixes working in isolation: the Finding 1 tail contract is incompatible with the current `StableCommitTransform` integration, and unrelated Hunyuan translation wiring remains in the nominal ASR carve. The 38 isolated wrapper tests pass but do not exercise either finding or the backend/transform seam; live Mandarin execution was skipped.
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: Fix the get_buffer contract conflict: add a get_hypothesis() method to asr_mlx_qwen3.py returning the full rolling text (Transcript with text=self._text); update StableCommitTransform in asr_commit.py to call inner.get_hypothesis() instead of inner.get_buffer() for the full hypothesis. get_buffer stays the unstable tail. Add a test exercising the transform + get_hypothesis seam.
+  asr_mlx_qwen3.py:152-161 adds get_hypothesis() (full rolling text); asr_commit.py:336 calls inner.get_hypothesis(); new test test_get_hypothesis_full_text_not_buffer_tail asserts a delta containing "alpha" commits from the full hypothesis while get_buffer returns only "gamma" — empirically falsified (fails when the transform reads get_buffer, passes with get_hypothesis).
+- DONE: Re-carve config.py/core.py/parse_args.py to drop hunyuan-mlx translation wiring (hunyuan_mlx_model, translation_hunyuan_mlx import, hunyuan-mlx choices, mlx-llm-mt lines). Keep only ASR-related changes.
+  config.py drops hunyuan_mlx_model field; core.py drops the hunyuan-mlx translation_backend branch + the online_translation_factory HunyuanMlx block and restores the qwen3+NLLB guard; parse_args.py restores choices=["nllb","alignatt"] and drops --hunyuan-mlx-model. `git diff origin/main..HEAD | grep -iE 'hunyuan|translation_hunyuan|mlx-llm-mt'` returns nothing.
+- DONE: Run the prescribed wrapper test command and confirm all tests pass (including the new get_hypothesis test).
+  `uv run --no-project --with pytest --with numpy --with 'mlx-qwen3-asr>=0.3.5' pytest tests/test_asr_wrapper.py -q` → 39 passed (38 prior + 1 new).
+- DONE: Run `git diff --stat origin/main..HEAD` and confirm no hunyuan-mlx/translation_hunyuan_mlx/mlx-llm-mt lines remain in the diff.
+  11-file diff, 1575 insertions / 64 deletions; grep for hunyuan|translation_hunyuan|mlx-llm-mt in the full diff returns no matches.
+
+### Summary
+
+Resolved both cycle-1 blockers. The get_buffer contract conflict is fixed by adding get_hypothesis() (full rolling text) as the seam StableCommitTransform reads; get_buffer stays the unstable tail (WLK contract). The new test is falsifiable — it fails when the transform reads get_buffer and passes with get_hypothesis. The hunyuan-mlx translation wiring is fully excised from config.py, core.py, and parse_args.py (including restoring the qwen3+NLLB guard and the original translation-backend choices), so the PR3 diff is ASR-only. Code committed as 6c1a53d on branch spacedock-ensign/mlx-qwen3-asr-pr; worktree is clean with no staged files.
