@@ -3,6 +3,18 @@ title: SimulST eval harness — MLX IWSLT anchor + flagship compare
 status: backlog
 worktree: ""
 id: 8zdhkj86eqshqypzzme2v6ss
+gates:
+    version: 1
+    records:
+        - id: gate:8zdhkj86eqshqypzzme2v6ss:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-backlog-1
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:backlog:attempt-1:revision-1
+                digest: sha256:f27ce53e5ca2e7f8638a80912e575eb26bf38dc7f3d735b6bc9bc6b0187e8315
+                request-digest: sha256:41f947b510293c408f37c049ec6753d2a0cc6737305baae64c1f5b59d828f61e
+                room-ref: ./simulst-eval-harness/review/backlog/briefing-1
 ---
 
 A SimulST evaluation harness that runs our MLX ASR+MT cascade over the

@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:backlog:attempt-1:revision-1",
+  "question": "Backlog gate: advance simulst-eval-harness to ideation? The emitter is simple (timestamp per emitted word → hypothesis.jsonl); the scorer (alignatt-eval) and forced-aligner MLX port already exist.",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/f57f2331d0d230a68007ece5c0940e843442c070/simulst-eval-harness.md",
+      "rev": "sha256:2d66b6eac77673fc790ef170c9b32c48982ef4be46b8baa7e701c53d82350722",
+      "mediaType": "text/markdown",
+      "summary": "SimulST eval harness: MLX IWSLT anchor + flagship compare. Pieces exist: PR2 (MT), mlx forced-aligner (ASR frontier), alignatt-eval (scorer). One gap: hypothesis emitter (timestamp per word → hypothesis.jsonl). 4 ACs. Advance to ideation to flesh out the emitter hooks + runner + devset-sourcing plan."
+    }
+  ]
+}
