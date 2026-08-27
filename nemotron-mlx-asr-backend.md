@@ -269,3 +269,28 @@ Fleshed out the nemotron-mlx ASR backend implementation plan from the design bod
 
 ### Summary
 Implemented the nemotron-mlx ASR transducer backend as a single new module (`asr_nemotron_mlx.py`) porting livecaption's `_StreamingEncoder` + `_decode_chunk` (greedy RNN-T loop emitting `AlignedToken.start` mid-decode — the time-based accessible boundary) + `_finalize` + mel grow/holdback + Silero VAD endpointer (rule1/2/3 + soft-max cut), skipping the wrapper layer the transducer makes redundant. Registered in all 6 points (core/config/parse_args/backend_support/cli/pyproject); the `nemotron-mlx-asr` extra is pure-MLX (mlx + mlx-audio, no torch/transformers). Four unit tests mock the model and pass (4/4): emission proves non-None monotonic start timestamps, monotonicity proves append-only, finalize-flush proves held-mel is emitted + state reset, lifecycle proves the insert→process→buffer→finish contract. Import-graph check confirms no banned imports. The diff vs PR2 tip (20fd2e2) is ASR-only — no translation/hunyuan-mlx wiring leakage. Live zh-tw WER comparison and the nemotron+AlignAtt benchmark remain out of scope (research artifacts consuming this backend via the AccessibleBoundary adapter).
+
+## Stage Report: validation (cycle 1)
+
+- DONE: Independently validate the nemotron-mlx ASR backend (cycle 1) on branch spacedock-ensign/nemotron-mlx-asr-backend (tip 3f604b0).
+  Reviewed 3f604b0 against PR2 tip 20fd2e2; found one acceptance blocker and one project-sync verification failure.
+- DONE: Run `uv run --no-project --with pytest --with numpy --with mlx --with mlx-audio --directory .worktrees/spacedock-ensign-nemotron-mlx-asr-backend pytest tests/test_asr_nemotron_mlx.py -q` and confirm all tests pass.
+  4/4 passed in 2.36s; tests fail if mid-decode timestamps disappear/become non-monotonic, hypotheses mutate, final flush/reset breaks, or lifecycle stops returning timestamped ASRTokens.
+- FAILED: Verify AC-1 (in-process zh, no torch/transformers/nemo_toolkit in import graph).
+  Blocker: the real cached MLX model's prompt_dictionary has `zh-CN`/`zh-ZH` but no `zh`, while NemotronMLXASR.__init__ rejects unknown `lan`; therefore the specified `--language zh` path raises ValueError before transcription. AST confirms no banned direct backend imports; importing through the existing whisperlivekit package loads torch from baseline package initialization.
+- DONE: Verify AC-2 (per-token ASRToken.start populated mid-decode, monotonic non-decreasing).
+  `test_decode_chunk_emits_aligned_tokens` exercised `_decode_chunk` before finish and observed starts 0.0 and 0.08; append-only test preserved prior token identity and ordering across chunks.
+- FAILED: Verify AC-3 (coexists with mlx-lm on transformers 5.x — uv sync resolves).
+  Isolated imports passed with mlx-audio + mlx-lm + transformers 5.15.1, but project `uv sync --extra nemotron-mlx-asr --extra mlx-llm-mt --dry-run` failed because stacked PR2's uninitialized `third_party/qwen3-asr-causal` submodule contains no pyproject.toml/setup.py.
+- DONE: Verify AC-4 (second language via prompt_dictionary).
+  Real model inspection found `en` in prompt_dictionary mapped to prompt 0, and `_StreamingEncoder.step` passes the configured language to `model.apply_prompt`; no live English-audio transcription was run.
+- DONE: Check the 8-file diff vs PR2 tip (20fd2e2) is ASR-only (no hunyuan-mlx/translation wiring leakage).
+  Exactly 8 files changed (1153 insertions, 2 deletions): backend, backend test, six ASR registration/config/dependency files; no translation files changed.
+- DONE: Check for internal/workflow vocabulary (AC-N, spacedock, ensign, captain, Tier) in the diff — must be none.
+  Case-insensitive diff scan returned no matches; `git diff --check 20fd2e2..HEAD` also passed.
+- DONE: Preserve a clean code worktree (no staged files).
+  Final `git status --porcelain` and `git diff --name-only --cached` were empty.
+
+### Summary
+
+Validation is not approved in cycle 1. The required 4-test command passes and the timestamp/append-only behavior is exercised, but AC-1 is blocked because the CLI's specified language `zh` is rejected even though the model exposes equivalent `zh-CN`/`zh-ZH` prompts. Isolated MLX/MLX-LM/transformers 5.15.1 imports coexist, while the required project sync cannot be demonstrated until the stacked PR2 submodule is initialized; a live Mandarin or English audio run was not performed.
