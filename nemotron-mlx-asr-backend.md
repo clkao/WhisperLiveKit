@@ -3,7 +3,7 @@ title: "nemotron-mlx ASR backend (transducer; AlignAtt time-based frontier)"
 source: PR3 research — _work/nemotron_transducer_alignatt_research.md
 score: 0.8
 id: n5g2sjy16zzy9rhdk8d1zn1p
-status: backlog
+status: ideation
 gates:
     version: 1
     records:
@@ -26,7 +26,7 @@ gates:
                 reason: 'Captain direction: dispatch nemotron. Design is complete in the entity body (port livecaption/asr.py _StreamingEncoder + _decode_chunk; skip the wrapper — transducer has native timestamps; research-enabling backend for the AlignAtt time-based frontier). Advance to ideation to flesh out the implementation plan + ACs.'
               application:
                 target-stage: ideation
-                state: pending
+                state: consumed
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
