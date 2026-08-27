@@ -15,6 +15,17 @@ gates:
                 digest: sha256:f27ce53e5ca2e7f8638a80912e575eb26bf38dc7f3d735b6bc9bc6b0187e8315
                 request-digest: sha256:41f947b510293c408f37c049ec6753d2a0cc6737305baae64c1f5b59d828f61e
                 room-ref: ./simulst-eval-harness/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:backlog:1
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-27T19:46:33.81354Z"
+                decision: approve
+                reason: 'Captain direction: file and dispatch. Emitter is simple (timestamp per emitted word). Baseline anchor + flagship compare is the eval purpose.'
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 A SimulST evaluation harness that runs our MLX ASR+MT cascade over the
