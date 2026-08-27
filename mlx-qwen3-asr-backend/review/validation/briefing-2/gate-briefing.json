@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-2:revision-1",
+  "question": "Validation gate (cycle 2): PR3 mlx-qwen3-asr — AC-3 duplication blocker. Reject to implementation?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/1d84f8ea6725ec495d63d7074f46750ffbc5f180/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:5118f5d92ad6925342f20385f26f1fd00b07c8aee74e9a3f55a444eeb5d75804",
+      "mediaType": "text/markdown",
+      "summary": "Codex validator cycle 2: both cycle-1 blockers fixed (get_hypothesis seam, hunyuan-mlx scope excised; 39 tests pass). New blocker AC-3: _finalize_utterance emits the full re-decoded utterance after streaming already committed the stable prefix → text duplicated. Fix: finalize emits only the uncommitted delta. Reject to implementation."
+    }
+  ]
+}

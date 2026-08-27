@@ -68,6 +68,12 @@ gates:
                 at: "2026-08-27T08:08:27.062853Z"
                 decision: revise
                 reason: 'Reject to implementation. Two blockers: (1) get_buffer contract conflict — StableCommitTransform (asr_commit.py:330) reads inner.get_buffer().text as the full rolling hypothesis, but Finding-1 made get_buffer return only the unstable tail; the transform can''t compute a stable prefix from the tail and emits garbage. Fix: add a get_hypothesis() method (or equivalent) returning the full rolling text for the transform; get_buffer stays the tail (WLK contract). (2) Hunyuan-mlx scope leakage in the carve — config.py/core.py/parse_args.py carry hunyuan-mlx translation wiring (hunyuan_mlx_model, translation_hunyuan_mlx import, hunyuan-mlx choices) which is PR1''s domain. Fix: re-carve those 3 files to keep only ASR-related changes, drop hunyuan-mlx lines. The 38 wrapper tests pass and both finding fixes work in isolation.'
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-validation-2
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-2:revision-1
+                digest: sha256:30af00df07d4d16a748559315fc3e0caa24d6fb45633291de045e88dcc4206af
+                request-digest: sha256:5cd6b3adb197f3967510f6252ed1de233b04eda91083b3372405c76097e823ff
+                room-ref: ./mlx-qwen3-asr-backend/review/validation/briefing-2
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
