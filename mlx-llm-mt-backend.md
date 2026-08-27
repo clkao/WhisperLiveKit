@@ -29,6 +29,12 @@ gates:
               application:
                 target-stage: done
                 state: superseded
+            - id: gate-attempt:5c87da2jhj60dtxmybb72v6p-validation-2
+              briefing:
+                id: briefing:5c87da2jhj60dtxmybb72v6p:validation:attempt-2:revision-1
+                digest: sha256:364fa199ee97fdc18006658cc059335016dcd3685fa0746b6581d110c4a63e70
+                request-digest: sha256:a8ca2758c3e2ebf032066b99dee2a6a744a71ff434ee1321f8bf1026d5717faf
+                room-ref: ./mlx-llm-mt-backend/review/validation/briefing-2
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the
