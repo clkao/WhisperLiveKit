@@ -16,6 +16,17 @@ gates:
                 digest: sha256:6c35c01023fdc2b61f3fea41a241a74c7103313d2b6285bd3d417a585a7a2a69
                 request-digest: sha256:a870d5ef7b2bb1b44305abeb7483f3ac9387778e297fef6b7d9d051bb7ac219e
                 room-ref: ./nemotron-mlx-asr-backend/review/backlog/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:backlog:1
+                briefing: briefing:n5g2sjy16zzy9rhdk8d1zn1p:backlog:attempt-1:revision-1
+                by: person:captain
+                at: "2026-08-27T08:41:45.454006Z"
+                decision: approve
+                reason: 'Captain direction: dispatch nemotron. Design is complete in the entity body (port livecaption/asr.py _StreamingEncoder + _decode_chunk; skip the wrapper — transducer has native timestamps; research-enabling backend for the AlignAtt time-based frontier). Advance to ideation to flesh out the implementation plan + ACs.'
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
