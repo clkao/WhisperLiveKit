@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-3:revision-1",
+  "question": "Validation gate (cycle 4): PR3 mlx-qwen3-asr — all ACs green. Approve to ship?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/9651d65a97aa068935080110eeecf72f7cc6f5c4/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:270ba0d7e98a8c515f62dd0147810a86209042a04b6d27e000f1c11e139b06e4",
+      "mediaType": "text/markdown",
+      "summary": "Codex validator cycle 4: all ACs resolved. AC-2/3/4/6 DONE (deps coexist, dedup fix, warmup, wrapper composable); AC-1/5 SKIPPED (live mic + second-provider out of scope for the 11-file carve); both findings DONE (get_buffer tail, per-session language). 46/46 tests. 11-file ASR-only carve, no workflow vocabulary, clean worktree. Recommend approve to ship."
+    }
+  ]
+}
