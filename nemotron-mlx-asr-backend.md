@@ -311,3 +311,18 @@ Implemented the nemotron-mlx ASR transducer backend as a single new module (`asr
 ### Summary
 
 Validation is not approved in cycle 1. The required 4-test command passes and the timestamp/append-only behavior is exercised, but AC-1 is blocked because the CLI's specified language `zh` is rejected even though the model exposes equivalent `zh-CN`/`zh-ZH` prompts. Isolated MLX/MLX-LM/transformers 5.15.1 imports coexist, while the required project sync cannot be demonstrated until the stacked PR2 submodule is initialized; a live Mandarin or English audio run was not performed.
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: Add language normalization before the validation check (AC-1 fix). NemotronMLXASR.__init__ now calls _normalize_language(lan, known) after loading the model, replacing the direct `lan not in known` check that rejected bare `zh`/`en`. The function mirrors livecaption's normalize_asr_language (livecaption/livecaption/languages.py): case-insensitive exact match → default-tag mapping (zh→zh-CN, en→en-US via _DEFAULT_LANGUAGE_TAGS) → primary-prefix match (unique or default-preferred) → ValueError if no mapping. `auto` → None. Commit f1c24f9.
+- DONE: Add a unit test for the normalization (zh→zh-CN mapping works, unknown language still raises).
+  8 new tests in tests/test_asr_nemotron_mlx.py: zh→zh-CN, en→en-US, exact passthrough, case-insensitivity, auto, unknown-raises, unique-prefix (fr→fr-FR), default-preference-on-ambiguity (pt→pt-PT over pt-BR). All pass.
+- DONE: Run `uv run --no-project --with pytest --with numpy --with mlx --with mlx-audio --directory .worktrees/spacedock-ensign-nemotron-mlx-asr-backend pytest tests/test_asr_nemotron_mlx.py -q` and confirm all tests pass.
+  12/12 passed in 9.45s (4 original + 8 new normalization tests).
+- DONE: Confirm the nemotron extra's own deps are clean (AC-3 note — pre-existing qwen3-streaming vs mlx-llm-mt conflict is NOT this backend's fault).
+  pyproject.toml nemotron-mlx-asr extra = mlx>=0.11.0 + mlx-audio>=0.4.4,<0.5; pure-MLX, no torch/transformers pin. Not this backend's conflict.
+- DONE: Preserve a clean code worktree (no staged files).
+  git status --porcelain and git diff --name-only --cached both empty after commit f1c24f9.
+
+### Summary
+Fixed the AC-1 blocker from cycle-1 validation: NemotronMLXASR.__init__ now normalizes the user-supplied language tag against the model's prompt_dictionary before validation, mirroring livecaption's normalize_asr_language. The _normalize_language function resolves bare 2-letter primaries (zh→zh-CN, en→en-US) via default-tag mapping and primary-prefix fallback, raising ValueError only when no mapping is found. Eight unit tests cover the normalization (zh→zh-CN, en→en-US, exact passthrough, case-insensitivity, auto, unknown-raises, unique-prefix, default-preference-on-ambiguity). All 12 tests pass (4 original + 8 new). The nemotron-mlx-asr extra remains pure-MLX (mlx + mlx-audio, no torch/transformers).
