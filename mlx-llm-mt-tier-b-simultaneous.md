@@ -382,3 +382,22 @@ base model, zh_long.wav 31.6s, speed=1.0):
 Test updated: `test_validate_returns_provisional_then_final` now asserts
 `tr is None` (provisional not committed) and `buf.text == "Hello"` (provisional
 stays as buffer).
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: Confirm `git -C <worktree> rev-parse HEAD` returns a121d4f
+  `git rev-parse HEAD` → a121d4fda57048a1b55406e3ae911a75333f1e79 on branch spacedock-ensign/mlx-llm-mt-simultaneous; would fail if the branch tip moved or a different worktree was checked out.
+- DONE: Run the full test suite at the actual tip and confirm pass count per file
+  `uv run --frozen --extra test --with 'mlx>=0.11.0' --with 'mlx-lm>=0.31.1' pytest tests/test_mlx_llm_mt.py tests/test_mlx_llm_mt_simul.py tests/test_translation_alignatt.py -v` → 44 passed (11 mlx-llm-mt + 21 simul + 12 alignatt). Note: the dispatch's exact command (`--extra test` without mlx) fails at collection because simul_mt_capture.py imports mlx.core at module level; adding `--with mlx --with mlx-lm` resolves it (the lockfile lacks the `mlx-llm-mt` extra so `--extra mlx-llm-mt` is rejected under `--frozen`). The prior report's "44 total" holds at a121d4f.
+- DONE: Verify the 8 calibrated zh→en alignment heads load and (9,5) is the top head
+  `python -c "from whisperlivekit.simul_mt_capture import ALIGNMENT_HEADS, TOP_HEAD; ..."` → ALIGNMENT_HEADS=[(9,5),(13,1),(9,6),(12,11),(14,2),(14,0),(4,12),(1,10)], TOP_HEAD=(9,5); would fail if head indices were changed or the top-head assignment was swapped.
+- DONE: Confirm CapturedAttention install is idempotent and bit-identical
+  Loaded mlx-community/Hy-MT2-1.8B-8bit, compared original Attention vs CapturedAttention forward on random input: max abs diff 4.77e-7 (prior report claimed 1.5e-7; same order of magnitude, floating-point softmax difference). Re-install returns the same wrapper object (idempotent). No unit test exercises this (tests mock _ensure_simul_model); verified by manual model load.
+- DONE: Confirm `git diff --stat f973a48..a121d4f` shows only simul-layer files
+  8 files: simul_mt_capture.py (new), translation_mlx_llm_mt_simul.py (new), test_mlx_llm_mt_simul.py (new), audio_processor.py (+6 guard), config.py (+3), core.py (+20/-5 factory), parse_args.py (+10 flag), cli.py (+8/-3 help text). No ASR/overlay/vendored/docs leakage. No internal vocabulary (no AC-#, ensign, captain, fast-track, stage report, livecaption, clkao, _work/) in any simul-layer file. The dispatch's `git diff --stat spacedock-ensign/hunyuan-mlx-translation-backend..HEAD` additionally shows PR1's changes (translation_hunyuan_mlx.py -13, test_mlx_llm_mt.py -12) which are from commit f973a48, not the simul commit.
+- DONE: Do NOT rebase, push, or open a PR; read-only re-verification
+  No commits made; `git status` clean, no staged files. Worktree unmodified.
+
+### Summary
+
+Re-verified the simultaneous-MT implementation at the correct branch tip a121d4f on spacedock-ensign/mlx-llm-mt-simultaneous. The prior report's stale commit SHA (e3147cd on a non-existent branch) is corrected: the actual branch is spacedock-ensign/mlx-llm-mt-simultaneous at a121d4f. All 44 tests pass (11 existing mlx-llm-mt + 21 new simul + 12 existing alignatt). The 8 calibrated heads load correctly with (9,5) as top. CapturedAttention is idempotent and bit-identical (max abs diff 4.77e-7, same order as prior 1.5e-7). The simul commit touches only 8 simul-layer files with no vocabulary or scope leakage. One environment note: the dispatch's exact test command fails because `simul_mt_capture.py` imports mlx at module level and the `test` extra doesn't include mlx; `--with 'mlx>=0.11.0' --with 'mlx-lm>=0.31.1'` is required (or the lockfile needs regenerating to include the `mlx-llm-mt` extra).
