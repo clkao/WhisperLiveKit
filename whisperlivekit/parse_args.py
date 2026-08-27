@@ -925,10 +925,10 @@ def parse_args():
     nemotron_group.add_argument(
         "--nemotron-mlx-asr-model",
         type=str,
-        default="nvidia/nemotron-3.5-asr-streaming-0.6b",
+        default="mlx-community/nemotron-3.5-asr-streaming-0.6b",
         dest="nemotron_mlx_asr_model",
         help="Nemotron ASR model id (HuggingFace or local path). "
-             "Default nvidia/nemotron-3.5-asr-streaming-0.6b.",
+             "Default mlx-community/nemotron-3.5-asr-streaming-0.6b.",
     )
     nemotron_group.add_argument(
         "--nemotron-mlx-asr-att-context",

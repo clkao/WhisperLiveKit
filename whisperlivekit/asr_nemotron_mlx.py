@@ -245,7 +245,7 @@ class NemotronMLXASR:
 
         lan = kwargs.get("lan", "auto")
 
-        self.model_id = kwargs.get("nemotron_mlx_asr_model", "nvidia/nemotron-3.5-asr-streaming-0.6b")
+        self.model_id = kwargs.get("nemotron_mlx_asr_model", "mlx-community/nemotron-3.5-asr-streaming-0.6b")
         self.att_context = kwargs.get("nemotron_mlx_asr_att_context", [56, 6])
         self.two_pass = kwargs.get("nemotron_mlx_asr_two_pass", False)
 

@@ -744,8 +744,8 @@ def main() -> None:
                    help="path to the audiotee binary (system audio tap); defaults to shutil.which('audiotee')")
     p.add_argument("--language", default="zh")
     p.add_argument("--target-language", default="en")
-    p.add_argument("--backend", choices=["mlx-qwen3-asr", "qwen3-vllm-metal"], default="mlx-qwen3-asr",
-                   help="ASR backend: mlx-qwen3-asr (windowed, pure MLX) or qwen3-vllm-metal (causal, native MLX via the fork)")
+    p.add_argument("--backend", choices=["mlx-qwen3-asr", "qwen3-vllm-metal", "nemotron-mlx-asr"], default="mlx-qwen3-asr",
+                   help="ASR backend: mlx-qwen3-asr (windowed, pure MLX) or qwen3-vllm-metal (causal, native MLX via the fork) or nemotron-mlx-asr (transducer, native timestamps)")
     p.add_argument("--mlx-qwen3-asr-model", default="mlx-community/Qwen3-ASR-0.6B-8bit")
     p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit")
     p.add_argument("--qwen3-vllm-metal-audio-backend", choices=["standard", "causal"], default="causal",
