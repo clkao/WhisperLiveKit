@@ -368,6 +368,7 @@ class NemotronMLXOnlineProcessor:
         self.asr = asr
         self.logfile = logfile
         self.end = 0.0
+        self.heard_speech = False  # VAD has flagged speech (audio_processor watchdog)
         self.audio_buffer = np.array([], dtype=np.float32)  # diagnostic
 
         self._model = asr.model
@@ -535,6 +536,7 @@ class NemotronMLXOnlineProcessor:
             if not is_speech:
                 return []
             # Speech onset: merge the entire pre-roll into this sentence.
+            self.heard_speech = True
             self._active = True
             for f in self._preroll:
                 self._audio.append(f)

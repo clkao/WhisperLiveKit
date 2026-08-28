@@ -288,8 +288,16 @@ class AudioProcessor:
         chunk while its exceptions were only logged as warnings (torch 2.13
         MLX device mismatch #383, CTranslate2 wheels with PTX newer than the
         driver): the server looked healthy and sessions showed empty captions.
+
+        Mic nuance: a healthy backend legitimately produces nothing during
+        initial silence (the user hasn't spoken yet). Backends can report
+        that speech was actually heard via a ``heard_speech`` attribute;
+        backends that don't report it default to True (watchdog armed) so
+        the file-source failure modes above are still caught.
         """
         if self._silent_backend_warned or self._any_asr_output:
+            return
+        if not getattr(self.transcription, "heard_speech", True):
             return
         if audio_seconds < self._SILENT_BACKEND_WARN_SECONDS:
             return
