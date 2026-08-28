@@ -323,8 +323,6 @@ class NemotronMLXASR:
         # determines the cache length, right+1 is the feed chunk size.
         # (Done inside _load_model on the dedicated MLX thread.)
 
-        self.vad = None  # energy-based VAD (no MLX stream issues)
-
     def _warmup(self) -> None:
         """Run each model once on empty input to absorb Metal kernel compilation
         at startup (otherwise the first inference stalls an extra few hundred ms)."""
@@ -372,7 +370,13 @@ class NemotronMLXOnlineProcessor:
         self.audio_buffer = np.array([], dtype=np.float32)  # diagnostic
 
         self._model = asr.model
-        self._vad = None  # energy-based VAD
+        # Silero VAD from the model holder (loaded + warmed on the dedicated MLX
+        # thread, so streams are shared with _process). Falls back to the
+        # energy RMS gate only when Silero failed to load. The earlier
+        # hard-coded None made every mic run rely on rms >= 0.02 — a level
+        # quiet laptop-mic speech never reaches, so VAD never fired and the
+        # backend emitted zero tokens (file audio, being close-mic loud, passed).
+        self._vad = getattr(asr, "vad", None)
         self._vad_state = None
         self._vad_leftover = np.empty(0, dtype=np.float32)
 
