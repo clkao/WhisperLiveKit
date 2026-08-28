@@ -576,3 +576,22 @@ Validated cycle-4 rework at `27089d7`: CLI scope is limited to `--simultaneous`,
 ### Summary
 
 Rework round for the captain-ordered PR #423 rebase + placeholder stop: branch rebased onto PR #422 head `f923d78` (inherits `_placeholder_stop_check` and the base in-loop stop; conflicts resolved by taking the 5c placeholder machinery and keeping simul calibration commits), and the simul commit/release paths now stop decode in-loop and truncate the token stream at the placeholder. Branch tip `95b9bf0`, worktree clean. Commit policy interplay: the policy's committed_len is clamped to the truncated stream so a commit boundary landing on the placeholder cannot emit it.
+
+## Stage Report: validation (rework round — proof of interception)
+
+- DONE: PROOF OF INTERCEPTION: confirm the rework finding (rebase + in-loop placeholder stop in simul paths) was routed, received, and acted on.
+  The dispatch feedback context carried the exact correction; implementation state commit `411e957` acknowledges it item-for-item; code commit `95b9bf0` implements it; this fresh review independently reproduced the behavior. This assignment → acknowledgement → code → independent-exercise chain proves the finding was intercepted rather than dropped.
+- DONE: Rebase `spacedock-ensign/mlx-llm-mt-simultaneous` onto PR #422 head (`f923d78`) and keep simul calibration/registry commits.
+  `git merge-base --is-ancestor f923d78 HEAD` passed; `translation_mlx_llm_mt.py` is byte-identical to `f923d78`; the five post-base commits retain the simul implementation, calibration registry, normalization, strip, and rework tip.
+- DONE: Verify `_translate_simul` stops in-loop via `_placeholder_stop_check` and keeps the release draft placeholder-free.
+  Code inspection confirms the predicate breaks `stream_generate`; `_placeholder_ids` then cuts the token list before commit-policy evaluation and stash, with `committed_len` clamped to the clean stream.
+- DONE: Confirm `_release_held` cannot resurrect the placeholder and `_strip_hy_placeholder` remains fallback.
+  `_release_held` decodes only the clean stashed token list and still strips defensively; an independent stub probe returned `Hello`, consumed only the two pre-stop chunks, and left stash `[500]`.
+- DONE: Run `tests/test_mlx_llm_mt_simul.py` + `tests/test_mlx_llm_mt.py` independently.
+  51 passed in 5.32s; the tests fail if single-id/fragmented streams consume the hallucinated tail or retain placeholder ids in the release stash.
+- DONE: Confirm the rework did not widen scope and leaves no staged files.
+  Commit `95b9bf0` changes only `translation_mlx_llm_mt_simul.py` and `tests/test_mlx_llm_mt_simul.py`; `git diff --check` passed, worktree/index are clean, and fork tip is `95b9bf0`.
+
+### Summary
+
+APPROVED. The rework finding was demonstrably intercepted: its routed requirements are acknowledged in state commit `411e957`, realized in code commit `95b9bf0`, and independently verified by ancestry/file-equivalence checks, 51 focused tests, and a direct release-path probe. No blocker or scope leakage was found; tokenizers whose placeholder encoding exceeds the deliberate 16-id cap retain the existing post-hoc strip fallback.
