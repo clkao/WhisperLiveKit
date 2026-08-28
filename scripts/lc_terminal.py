@@ -543,6 +543,13 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
         loop.call_soon_threadsafe(
             lambda: asyncio.ensure_future(h._processor.process_audio(pcm))
         )
+        if status:
+            print(f"[mic-diag] stream status: {status}", file=sys.stderr, flush=True)
+        # Amplitude probe: silent input (wrong device / missing TCC) delivers
+        # chunks that never trigger VAD -> zero tokens with a live heartbeat.
+        if _mic_chunks[0] % 10 == 0:
+            peak = float(abs(indata).max()) if indata.size else 0.0
+            print(f"[mic-diag] chunk {_mic_chunks[0]} peak={peak:.3f}", file=sys.stderr, flush=True)
 
     async def _heartbeat():
         # Event-loop liveness probe: if this stops printing, the loop is
@@ -560,6 +567,14 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
             # Ready signal on stderr so the StatsTracker status line (also
             # stderr) doesn't clobber it, and so it's unambiguous that the mic
             # stream is open and accepting audio.
+            # Ready signal on stderr so the StatsTracker status line (also
+            # stderr) doesn't clobber it, and so it's unambiguous that the mic
+            # stream is open and accepting audio.
+            _dev_idx = sd.default.device[0]
+            _dev = sd.query_devices(_dev_idx)
+            print(f"[mic-diag] default input device: {_dev['name']} "
+                  f"(host API: {sd.query_hostapis(_dev['hostapi'])['name']}, "
+                  f"{_dev['default_samplerate']:.0f}Hz)", file=sys.stderr, flush=True)
             print("\n✓ Ready — speak now.\n", file=sys.stderr, flush=True)
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
                   flush=True)
