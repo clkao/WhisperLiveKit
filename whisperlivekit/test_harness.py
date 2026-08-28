@@ -542,7 +542,7 @@ class TestHarness:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.warning("Result collector ended: %s", e)
+            logger.warning("Result collector ended: %s", e, exc_info=True)
 
     # ── Properties ──
 

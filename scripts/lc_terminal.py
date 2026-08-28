@@ -356,6 +356,7 @@ class TuiSink:
         self._seen_finals: set[int] = set()
         self._seen_transls: set[int] = set()
         self._final_started_at: dict[int, datetime] = {}
+        self._last_prov = ""   # stash the provisional so the final can diff against it
         self._opencc = opencc_conv
         self._target_opencc = target_opencc
         self._diarization = diarization

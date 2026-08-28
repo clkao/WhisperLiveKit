@@ -231,8 +231,9 @@ class TuiRenderer:
         # e.g. <｜hy_place▁holder▁no▁2｜>) from the provisional so the TUI doesn't
         # show the raw model token; the final translation is clean.
         import re
-        zh_segments = [(spk, re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", zh).strip()) for spk, zh in zh_segments]
-        self._append_segments(line, [(spk, zh) for spk, zh in zh_segments], self._sty["preview"])
+        segs = [(seg[0], re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", seg[1]).strip(),
+                 seg[2] if len(seg) > 2 else None) for seg in zh_segments]
+        self._append_segments(line, segs, self._sty["preview"])
         with self._lock:
             prev = self._partials.get(label)
             if prev and prev[0] == started_at:
@@ -271,11 +272,12 @@ class TuiRenderer:
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         line = Text()
-        # Strip the Hunyuan placeholder artifact (fullwidth pipes) from finals too;
-        # the final is normally clean but strip defensively so the token never shows.
+        # accept both 2-tuples (speaker, text) and 3-tuples (speaker, text, diff); strip
+        # the Hunyuan placeholder artifact defensively so the token never shows.
         import re
-        zh_segments = [(spk, re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", zh).strip()) for spk, zh in zh_segments]
-        self._append_segments(line, [(spk, zh) for spk, zh in zh_segments], self._sty["translation"])
+        segs = [(seg[0], re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", seg[1]).strip(),
+                 seg[2] if len(seg) > 2 else None) for seg in zh_segments]
+        self._append_segments(line, segs, self._sty["translation"])
         with self._lock:
             self._record_latency(started_at, "cap")
             if not self._translate:
