@@ -141,7 +141,12 @@ class HypothesisEmitter:
         self.target_lang_code = target_lang_code
         self.source_lang_code = source_lang_code
         self.chunk_sec = chunk_sec
-        self.asr_model_id = asr_model_id or "mlx-community/Qwen3-ASR-0.6B-8bit"
+        _default_asr = (
+            "mlx-community/nemotron-3.5-asr-streaming-0.6b"
+            if asr_backend == "nemotron-mlx"
+            else "mlx-community/Qwen3-ASR-0.6B-8bit"
+        )
+        self.asr_model_id = asr_model_id or _default_asr
         self.mt_model_id = mt_model_id or "hy-mt2-1.8b-8bit"
         self.second_pass = second_pass
 
@@ -282,18 +287,7 @@ class HypothesisEmitter:
         audio_duration_ms: float,
     ) -> dict[str, Any]:
         """Run ASR + MT; prediction = target-language translation."""
-        from mlx_qwen3_asr import load_model, transcribe
-        from mlx_qwen3_asr.streaming import (
-            feed_audio,
-            finish_streaming,
-            init_streaming,
-        )
-        from mlx_lm import stream_generate
-        from mlx_lm.utils import load
-
-        # --- ASR setup ---
-        asr_model, _cfg = load_model(self.asr_model_id)
-        asr_language = _lang_code_to_name(self.source_lang_code)
+        from whisperlivekit.timed_objects import ASRToken, HypothesisTail
 
         # --- MT setup (PR2 simul-MT) ---
         from whisperlivekit.translation_mlx_llm_mt_simul import MlxLlmTranslationSimul
@@ -304,15 +298,36 @@ class HypothesisEmitter:
             warmup=True,
         )
 
-        from whisperlivekit.timed_objects import ASRToken, HypothesisTail
-
-        state = init_streaming(
-            model=self.asr_model_id,
-            chunk_size_sec=self.chunk_sec,
-            max_context_sec=30.0,
-            language=asr_language,
-            finalization_mode="latency",
-        )
+        # --- ASR setup (backend-specific) ---
+        is_nemotron = self.asr_backend == "nemotron-mlx"
+        if is_nemotron:
+            from whisperlivekit.asr_nemotron_mlx import (
+                NemotronMLXASR,
+                NemotronMLXOnlineProcessor,
+            )
+            _nem_model_id = self.asr_model_id or "mlx-community/nemotron-3.5-asr-streaming-0.6b"
+            asr = NemotronMLXASR(
+                lan=self.source_lang_code,
+                nemotron_mlx_asr_model=_nem_model_id,
+                nemotron_mlx_asr_two_pass=self.second_pass,
+            )
+            proc = NemotronMLXOnlineProcessor(asr)
+        else:
+            from mlx_qwen3_asr import load_model
+            from mlx_qwen3_asr.streaming import (
+                feed_audio,
+                finish_streaming,
+                init_streaming,
+            )
+            asr_model, _cfg = load_model(self.asr_model_id)
+            asr_language = _lang_code_to_name(self.source_lang_code)
+            state = init_streaming(
+                model=self.asr_model_id,
+                chunk_size_sec=self.chunk_sec,
+                max_context_sec=30.0,
+                language=asr_language,
+                finalization_mode="latency",
+            )
 
         chunk_size = int(SAMPLE_RATE * self.chunk_sec)
         word_delays: list[float] = []
@@ -324,29 +339,34 @@ class HypothesisEmitter:
 
         for start_sample in range(0, len(audio), chunk_size):
             chunk = audio[start_sample : start_sample + chunk_size]
-            state = feed_audio(chunk, state, model=asr_model)
-
-            stable_text = (getattr(state, "stable_text", "") or "").strip()
-            rolling_text = (getattr(state, "text", "") or "").strip()
             audio_processed_ms = min(start_sample + chunk_size, len(audio)) * 1000.0 / SAMPLE_RATE
             wallclock_ms = (perf_counter() - start) * 1000.0
 
-            # Feed committed ASR tokens to MT
-            if stable_text and stable_text != prev_stable:
-                # Build ASRToken for the newly committed text
-                new_text = stable_text[len(prev_stable):].strip()
-                if new_text:
-                    tok = ASRToken(
-                        start=audio_processed_ms / 1000.0,
-                        end=audio_processed_ms / 1000.0,
-                        text=new_text,
-                        speaker=-1,
-                    )
-                    mt.insert_tokens([tok])
-                prev_stable = stable_text
+            # --- ASR feed (backend-specific) → committed tokens + tail ---
+            if is_nemotron:
+                proc.insert_audio_chunk(chunk, audio_processed_ms / 1000.0)
+                committed_tokens, _ = proc.process_iter()
+                _buf = proc.get_buffer()
+                tail_text = (_buf.text or "").strip() if _buf else ""
+            else:
+                state = feed_audio(chunk, state, model=asr_model)
+                stable_text = (getattr(state, "stable_text", "") or "").strip()
+                rolling_text = (getattr(state, "text", "") or "").strip()
+                committed_tokens = []
+                if stable_text and stable_text != prev_stable:
+                    new_text = stable_text[len(prev_stable):].strip()
+                    if new_text:
+                        committed_tokens = [ASRToken(
+                            start=audio_processed_ms / 1000.0,
+                            end=audio_processed_ms / 1000.0,
+                            text=new_text, speaker=-1,
+                        )]
+                    prev_stable = stable_text
+                tail_text = rolling_text[len(stable_text):].strip() if rolling_text else ""
 
-            # Feed unstable tail
-            tail_text = rolling_text[len(stable_text):].strip() if rolling_text else ""
+            # Feed committed + tail to MT (shared)
+            if committed_tokens:
+                mt.insert_tokens(committed_tokens)
             if tail_text:
                 mt.insert_tokens([HypothesisTail(
                     start=audio_processed_ms / 1000.0,
@@ -384,31 +404,31 @@ class HypothesisEmitter:
                 )
                 prev_mt_text = current_mt
 
-        # Finalize ASR. A sub-frame tail (< ~640 samples) would crash
-        # log-mel extraction ("Audio too short ... produced -1 STFT frame(s)");
-        # zero-pad to a safe length so finish_streaming's decode succeeds
-        # (the trailing ~2ms contributes nothing meaningful).
-        _min_mel_samples = 1600
-        if 0 < len(state.buffer) < _min_mel_samples:
-            import numpy as _np
-            pad = _np.zeros(_min_mel_samples - len(state.buffer), dtype=state.buffer.dtype)
-            state.buffer = _np.concatenate([state.buffer, pad])
-        state = finish_streaming(state, model=asr_model)
-        final_stable = (getattr(state, "stable_text", "") or "").strip()
-        if not final_stable:
-            final_stable = (getattr(state, "text", "") or "").strip()
-
-        # Feed final ASR text to MT and flush
-        if final_stable and final_stable != prev_stable:
-            new_text = final_stable[len(prev_stable):].strip()
-            if new_text:
-                tok = ASRToken(
-                    start=audio_duration_ms / 1000.0,
-                    end=audio_duration_ms / 1000.0,
-                    text=new_text,
-                    speaker=-1,
-                )
-                mt.insert_tokens([tok])
+        # --- Finalize ASR (backend-specific) → feed final tokens to MT ---
+        if is_nemotron:
+            final_tokens, _ = proc.finish()
+            if final_tokens:
+                mt.insert_tokens(final_tokens)
+        else:
+            # A sub-frame tail (< ~640 samples) would crash log-mel extraction;
+            # zero-pad to a safe length so finish_streaming's decode succeeds.
+            _min_mel_samples = 1600
+            if 0 < len(state.buffer) < _min_mel_samples:
+                import numpy as _np
+                pad = _np.zeros(_min_mel_samples - len(state.buffer), dtype=state.buffer.dtype)
+                state.buffer = _np.concatenate([state.buffer, pad])
+            state = finish_streaming(state, model=asr_model)
+            final_stable = (getattr(state, "stable_text", "") or "").strip()
+            if not final_stable:
+                final_stable = (getattr(state, "text", "") or "").strip()
+            if final_stable and final_stable != prev_stable:
+                new_text = final_stable[len(prev_stable):].strip()
+                if new_text:
+                    mt.insert_tokens([ASRToken(
+                        start=audio_duration_ms / 1000.0,
+                        end=audio_duration_ms / 1000.0,
+                        text=new_text, speaker=-1,
+                    )])
 
         # Flush MT: append the final segment to full_mt_text.
         final_translation, _ = mt.validate_buffer_and_reset()
