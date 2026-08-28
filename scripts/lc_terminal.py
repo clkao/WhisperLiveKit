@@ -505,6 +505,13 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
             lambda: asyncio.ensure_future(h._processor.process_audio(pcm))
         )
 
+    async def _heartbeat():
+        # Event-loop liveness probe: if this stops printing, the loop is
+        # blocked (not the mic). Prints every 5s to stderr.
+        for i in range(1, 100000):
+            await asyncio.sleep(5)
+            print(f"[hb] loop alive {i*5}s · mic_cb={_mic_chunks[0]} chunks", file=sys.stderr, flush=True)
+
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
@@ -517,6 +524,7 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
             print("\n✓ Ready — speak now.\n", file=sys.stderr, flush=True)
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
                   flush=True)
+            hb_task = asyncio.ensure_future(_heartbeat())
             if stop_event is not None:
                 # Bridge the threading stop_event (set by the signal handler on the
                 # main thread) to the asyncio stop event (awaited here) so Ctrl-C

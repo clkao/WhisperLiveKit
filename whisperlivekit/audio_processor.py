@@ -1138,8 +1138,9 @@ class AudioProcessor:
             return
 
         self.metrics.n_chunks_received += 1
-        if self.metrics.n_chunks_received % 40 == 0:
-            print(f"[mic-diag] {self.metrics.n_chunks_received} chunks processed", file=sys.stderr, flush=True)
+        n = self.metrics.n_chunks_received
+        if n <= 3 or n % 20 == 0:
+            print(f"[mic-diag] {n} chunks ({n*0.5:.0f}s audio)", file=sys.stderr, flush=True)
 
         if self.is_pcm_input:
             self.pcm_buffer.extend(message)
