@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import re
+import sys
 import traceback
 from time import perf_counter, time
 from typing import Any, AsyncGenerator, List, Optional, Union
@@ -1112,12 +1113,12 @@ class AudioProcessor:
 
     async def process_audio(self, message: Optional[bytes]) -> None:
         """Process incoming audio data."""
-
         if not self.beg_loop:
             self.beg_loop = time()
             self.metrics.session_start = self.beg_loop
             self.current_silence = Silence(start=0.0, is_starting=True)
             self.tokens_alignment.beg_loop = self.beg_loop
+            print("[mic-diag] first audio reached processor", file=sys.stderr, flush=True)
 
         if not message:
             logger.info("Empty audio message received, initiating stop sequence.")
@@ -1137,6 +1138,8 @@ class AudioProcessor:
             return
 
         self.metrics.n_chunks_received += 1
+        if self.metrics.n_chunks_received % 40 == 0:
+            print(f"[mic-diag] {self.metrics.n_chunks_received} chunks processed", file=sys.stderr, flush=True)
 
         if self.is_pcm_input:
             self.pcm_buffer.extend(message)

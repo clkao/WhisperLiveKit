@@ -36,10 +36,48 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import threading
 import time
 from datetime import datetime
+
+# Silence startup noise BEFORE importing anything that pulls HF/transformers/mlx_audio:
+#  - huggingface_hub re-checks cached-file etags over the network and prints
+#    "Fetching N files" progress bars even on full cache hits; HF_HUB_OFFLINE=1
+#    makes it use the cache with zero network and zero progress bars.
+#  - transformers prints rope/rope_parameters warnings for Hy-MT2's dynamic rope.
+#  - mlx_audio prints "MLX Whisper not found" (a harmless optional-dep notice).
+#  - joblib warns "Operation not permitted ... serial mode" under the sandbox.
+import warnings as _warnings
+_warnings.filterwarnings("ignore", message=".*joblib will operate in serial mode.*")
+_warnings.filterwarnings("ignore", message=".*Unrecognized keys in .rope_parameters.*")
+_warnings.filterwarnings("ignore", message=".*clean_up_tokenization_spaces.*")
+_warnings.filterwarnings("ignore", message=".*destructive for BPE.*")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+logging.getLogger("transformers").setLevel(logging.ERROR)
+# Set the specific child loggers that emit the rope + BPE-cleanup warnings
+# directly (the parent 'transformers' level gets reset on transformers import).
+logging.getLogger("transformers.modeling_rope_utils").setLevel(logging.ERROR)
+logging.getLogger("transformers.tokenization_utils_tokenizers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+# The optional-dep notice from backend_support ("MLX Whisper not found ...") fires
+# on every startup via the simul_whisper import; irrelevant for the mlx-qwen3/
+# nemotron backends we actually use, so silence it without hiding real
+# whisperlivekit warnings from other modules.
+logging.getLogger("whisperlivekit.backend_support").setLevel(logging.ERROR)
+try:
+    import mlx_audio  # noqa: F401  (import to attach the filter below)
+except Exception:  # noqa: BLE001
+    pass
+# Suppress the "MLX Whisper not found" notice from mlx_audio.stt (it's a
+# harmless optional-dependency hint, not an error).
+for _n in ("mlx_audio.stt", "mlx_audio"):
+    logging.getLogger(_n).setLevel(logging.WARNING)
 
 from whisperlivekit.test_harness import TestHarness
 from whisperlivekit.tui import TuiRenderer, MultiRenderer
@@ -455,11 +493,13 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
     key_thread = threading.Thread(target=_key_reader, daemon=True, name="lc-keys")
     key_thread.start()
 
+    _mic_chunks = [0]  # diagnostic: count chunks reaching the processor
     def audio_cb(indata, frames, time_info, status):
         if stop.is_set():
             raise sd.CallbackStop
         if paused.is_set():
             return  # drop the chunk; ASR keeps its state, nothing is fed
+        _mic_chunks[0] += 1
         pcm = (indata[:, 0] * 32767).astype("int16").tobytes()
         loop.call_soon_threadsafe(
             lambda: asyncio.ensure_future(h._processor.process_audio(pcm))
@@ -471,6 +511,10 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
             _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                            blocksize=CHUNK, callback=audio_cb):
+            # Ready signal on stderr so the StatsTracker status line (also
+            # stderr) doesn't clobber it, and so it's unambiguous that the mic
+            # stream is open and accepting audio.
+            print("\n✓ Ready — speak now.\n", file=sys.stderr, flush=True)
             print(f"Listening ({args.language} -> {args.target_language}). Ctrl-C to stop.",
                   flush=True)
             if stop_event is not None:
