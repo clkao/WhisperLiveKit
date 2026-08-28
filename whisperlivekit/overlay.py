@@ -29,7 +29,10 @@ from __future__ import annotations
 import re
 import sys
 import threading
+import time
 from datetime import datetime
+
+from whisperlivekit.overlay_model import PROVISIONAL
 
 # AppKit is imported lazily at instantiation (see _create_window) so this module
 # imports cleanly even on a headless host or without pyobjc installed. The level /
@@ -106,18 +109,22 @@ class OverlayRenderer:
         self._lat_alpha = 0.3
         # current displayed state
         self._zh: str = ""        # finalized source (top, small)
-        self._en: str = ""        # translation (middle, large)
+        self._en: str = ""        # last finalized translation text (legacy, display is model-driven)
         self._partial: str = ""   # in-progress partial (bottom, dimmer)
         # window + fields (created in __enter__ on the main thread)
         self._win: AppKit.NSWindow | None = None
         self._field_zh: AppKit.NSTextField | None = None
         self._field_en: AppKit.NSTextField | None = None
         self._field_partial: AppKit.NSTextField | None = None
-        # Minimum-hold caption queue: finalized EN captions enqueue here with their commit
-        # time; a daemon drainer releases the newest to the field once _MIN_HOLD_SEC has
-        # passed since the last shown caption. Stops the flash of fast-succession finals.
-        self._en_queue: list[tuple[str, bool]] = []  # [(en_text, is_preview)]
-        self._en_shown_at: float = 0.0  # monotonic time the current EN was shown
+        # Display model: the pure, AppKit-free state machine (hold-drain, provisional
+        # -> final replacement, scroll-up-to-history, expiry) in overlay_model.py. The
+        # renderer feeds events in; the drainer ticks the model and this view
+        # reconciles the returned DisplayState onto the NSTextFields. Tests drive the
+        # model directly with a fake clock (tests/test_overlay_model.py).
+        from whisperlivekit.overlay_model import OverlayDisplayModel
+        self._model = OverlayDisplayModel(hold_sec=MIN_HOLD_SEC)
+        self._shown_current: str = ""   # text last rendered on the current row
+        self._shown_prev: str = ""      # text last rendered on the prev row
         self._en_drain_stop = threading.Event()
         self._en_drain_thread: threading.Thread | None = None
 
@@ -180,6 +187,10 @@ class OverlayRenderer:
         w = sf.size.width
         if self._overlay_mode == "both":
             h = 160
+        elif self._overlay_mode == "target":
+            # two rows: prev (history) 50px (28pt) + current 100px (42pt, ~3 wrap lines
+            # for the provisional). The committed caption scrolls up to the prev row.
+            h = 150
         else:
             h = 60  # single field, vertically centered
         x = 0
@@ -250,9 +261,12 @@ class OverlayRenderer:
             self._field_zh = make_field(38, 26, 19, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.78, 0.95))
             self._field_en = make_field(68, 84, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True)
         elif self._overlay_mode == "target":
+            # two-row layout: current (large) + prev (dimmer, history)
+            prev_h = 50
             self._field_partial = None
             self._field_zh = None
-            self._field_en = make_field(0, h, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True, vcenter=True)
+            self._field_en = make_field(0, h - prev_h, 42, AppKit.NSColor.whiteColor(), bold=True, wrap=True, vcenter=True)
+            self._field_en_prev = make_field(h - prev_h, prev_h, 28, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 0.8), bold=True, wrap=True, vcenter=True)
         else:  # "source"
             self._field_partial = make_field(12, 22, 16, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.6, 0.9), italic=True)
             self._field_zh = make_field(38, h - 40, 19, AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.78, 0.95))
@@ -287,50 +301,44 @@ class OverlayRenderer:
             if event is not None:
                 app.sendEvent_(event)
 
-    # ---- latency (mirror of render.Renderer._record_latency) ----
     def _drain_en(self) -> None:
-        """Daemon thread: release queued EN sentences to the field one at a time, each held
-        for MIN_HOLD_SEC. After the hold, if no new sentence is queued, clear the field
-        so the overlay does not show stale text. FIFO order so split sentences read in
-        order. A new utterance clears pending unshown sentences (newest-utterance wins),
-        but the currently-shown sentence stays for its hold so the line never flashes.
-        Preview (provisional) sentences render dimmer; finals render white."""
-        import time
+        """Daemon thread: tick the display model on a 100ms cadence and reconcile the
+        returned DisplayState onto the AppKit fields. All hold/expiry/scroll-up policy
+        lives in the model (overlay_model.py, unit-tested); this thread only moves
+        state to the screen."""
         while not self._en_drain_stop.wait(0.1):
-            with self._lock:
-                if self._en_queue:
-                    if time.monotonic() - self._en_shown_at < MIN_HOLD_SEC:
-                        continue
-                    en, is_preview = self._en_queue.pop(0)
-                    self._en = en
-                    self._en_shown_at = time.monotonic()
-                else:
-                    # No queued sentence. If the current one has been held long enough,
-                    # clear it so stale text does not linger on the overlay.
-                    if self._en and time.monotonic() - self._en_shown_at >= MIN_HOLD_SEC:
-                        self._en = ""
-                        en, is_preview = "", False
-                    else:
-                        continue
-            self._set_en(self._field_en, en, preview=is_preview)
+            state = self._model.tick()
+            if state is not None:
+                self._reconcile(state)
 
-    def _enqueue_en(self, en: str, preview: bool = False) -> None:
-        """Split a finalized/preview EN caption into sentences and queue them for the
-        hold-drain (FIFO, each held MIN_HOLD_SEC so a long multi-sentence translation paces
-        readably instead of flashing by as one block). A new utterance clears pending
-        unshown sentences so the latest utterance wins; the currently-shown sentence is
-        not cleared (it stays for its hold). Preview sentences render dimmer (provisional).
-        Strips the Hunyuan placeholder token (fullwidth pipes) from both finals and
-        previews so the raw model artifact never reaches the overlay."""
-        import re, time
-        en = re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", en).strip()
-        sents = _split_sentences(en)
+    def _reconcile(self, state) -> None:
+        """Apply a DisplayState to the fields. The streaming effect lives here (the
+        reconciler), not in the model: when the new current text EXTENDS what is
+        already shown, reveal just the delta with a micro-delay (perceived continuity);
+        on a rewrite or first show, hard-swap to the latest (stays current, never
+        frozen). The model holds no animation state, so tests assert on states only."""
         with self._lock:
-            self._en_queue.clear()
-            self._en_queue.extend((s, preview) for s in sents)
-            # Reset the shown timestamp so the drainer releases the first new sentence
-            # immediately (not gated on the previous sentence's hold timer).
-            self._en_shown_at = -MIN_HOLD_SEC
+            cur = "".join(sp.text for sp in state.current)
+            prev = "".join(s.text for s in state.prev)
+            style = state.current[0].style if state.current else None
+            if cur != self._shown_current:
+                if not cur:
+                    self._set(self._field_en, "")
+                elif (self._shown_current and cur.startswith(self._shown_current)
+                      and len(cur) > len(self._shown_current)):
+                    # extends: stream the delta word-by-word with a micro-delay
+                    is_prev = style == PROVISIONAL
+                    grown = self._shown_current
+                    for w in cur[len(self._shown_current):].split(" "):
+                        grown = (grown + " " + w) if grown and w else (grown + w if w else grown)
+                        self._set_en(self._field_en, grown, preview=is_prev)
+                        time.sleep(0.05)
+                else:
+                    self._set_en(self._field_en, cur, preview=(style == PROVISIONAL))
+                self._shown_current = cur
+            if self._shown_prev != prev:
+                self._set_en(self._field_en_prev, prev, preview=True)
+                self._shown_prev = prev
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -392,16 +400,17 @@ class OverlayRenderer:
             return
         en = _segments_text(zh_segments)
         self._record_latency(started_at, "cap")
-        self._enqueue_en(en)
+        # utterance identity: (label, started_at) — lets the model tell a same-utterance
+        # final (in-place draft correction) from a new utterance (scroll-up).
+        self._model.translation(en, (label, started_at))
 
     def preview(self, label: str, zh_segments: list, started_at: datetime) -> None:
-        """Live provisional translation of the in-progress utterance (P2): shown under the
-        partial line, replaced by the final translation later. Mirrors render.Renderer.preview.
-        Queued through the same hold-drain as finals so a draft can't flicker over a held
-        final — but a draft never drops a held final (it only shows if the hold is already
-        over, and a later final supersedes it in the queue)."""
+        """Live provisional translation of the in-progress utterance: enqueued through
+        the display model's hold-drain so a draft can't flicker over a held final, and
+        a draft never expires on its own (it persists until the final replaces it —
+        a vanishing draft reads as a dropped caption)."""
         en = _segments_text(zh_segments)
-        self._enqueue_en(en, preview=True)
+        self._model.preview(en, (label, started_at))
 
     def flush_pending(self) -> None:
         """Release any buffered finals when translation is disabled at runtime (model load
