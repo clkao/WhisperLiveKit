@@ -205,6 +205,7 @@ def _make_processor(model, frame_sec=0.08):
     proc._last_token = model.blank_id
     proc._decoder_hidden = None
     proc._hypothesis = []
+    proc._emitted_upto = 0
     proc._text = ""
     proc._active = True
     proc._n_samples = 0

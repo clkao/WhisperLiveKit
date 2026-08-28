@@ -153,6 +153,11 @@ _MEL_LCTX = 4
 # split); "?" / "!" always count.  Allows trailing closing quotes/brackets.
 _SENT_END_RE = re.compile(r"(?:[A-Za-z]{3,}\.|[!?])[\"'”’)\]]*\s*$")
 
+# Punctuation that bounds the mid-utterance commit frontier (superset of the
+# soft-max cut's sentence-end set: commas/enumeration marks advance the
+# committed source between MT segment finals).
+_EMIT_PUNCT = set(".,!?;:。！？，、；：")
+
 # Audio back-off for the soft-max cut.  RNNT token timestamps lag acoustics
 # (emission delay, worst for punctuation), so cutting at the punctuation
 # token's own timestamp bleeds the next sentence's first word into the head.
@@ -407,6 +412,7 @@ class NemotronMLXOnlineProcessor:
         self._last_token = self._model.blank_id
         self._decoder_hidden = None
         self._hypothesis: list = []
+        self._emitted_upto = 0  # hypothesis tokens already returned as committed
         self._global_time = 0
         self._text = ""
         self._preroll: deque[np.ndarray] = deque(maxlen=self._n_preroll)
@@ -477,10 +483,50 @@ class NemotronMLXOnlineProcessor:
         for i, is_speech in enumerate(flags):
             committed += self._on_frame(frames[i], is_speech)
 
+        # Time-based accessible boundary (AccessibleBoundary adapter): emit
+        # hypothesis tokens the ASR has decoded at already-processed audio
+        # times as committed ASRTokens, punctuation-bounded, so the simul-MT
+        # commit policy gets real committed source mid-utterance. The
+        # un-emitted remainder stays the unstable tail (get_buffer).
+        committed += self._emit_accessible()
+
         if is_last and self._active:
             committed += self._finalize()
 
         return committed, self.end
+
+    def _emit_accessible(self) -> list[ASRToken]:
+        """Emit newly-accessible hypothesis tokens as committed ASRTokens.
+
+        Accessible = the token's audio span has been fully ingested
+        (``tok.end + utt_offset <= self.end``) AND it sits at or before the
+        last punctuation token (commas included: they advance the committed
+        source for the AlignAtt commit policy without touching the soft-max
+        cut, which keeps its own sentence-end rule). Tracks ``_emitted_upto``
+        so tokens are emitted exactly once; ``_finalize`` skips them.
+        Two-pass re-decode rebuilds the whole utterance, so it disables
+        mid-utterance emission (finalize emits everything).
+        """
+        if self._two_pass or not self._hypothesis:
+            return []
+        limit = None
+        for i in range(len(self._hypothesis) - 1, self._emitted_upto - 1, -1):
+            if any(c in _EMIT_PUNCT for c in self._hypothesis[i].text):
+                limit = i
+                break
+        if limit is None:
+            return []
+        offset = self._utt_offset()
+        out: list[ASRToken] = []
+        while self._emitted_upto <= limit:
+            tok = self._hypothesis[self._emitted_upto]
+            if tok.end + offset > self.end + 1e-6:
+                break  # audio not fully ingested yet — conservative stop
+            out.append(
+                ASRToken(start=tok.start + offset, end=tok.end + offset, text=tok.text)
+            )
+            self._emitted_upto += 1
+        return out
 
     def _on_frame(self, frame: np.ndarray, is_speech: bool) -> list[ASRToken]:
         """VAD state machine: IDLE → ACTIVE → finalize."""
@@ -565,6 +611,16 @@ class NemotronMLXOnlineProcessor:
             self._drive(final=True)
             tokens = self._hypothesis
             text = self._text
+
+        # Skip tokens already committed mid-utterance (_emit_accessible) so
+        # finalize emits only the un-emitted delta (qwen3 _emitted_stable
+        # pattern). Two-pass runs leave _emitted_upto at 0 (emission disabled).
+        already = min(self._emitted_upto, len(tokens))
+        new_tokens = tokens[already:]
+        new_text = sentences_to_result(tokens_to_sentences(new_tokens)).text.strip() \
+            if new_tokens else ""
+        tokens = new_tokens
+        text = new_text
 
         # Two-pass re-decode (optional accuracy lever; default off).
         if self._two_pass and not split_token:
@@ -707,12 +763,20 @@ class NemotronMLXOnlineProcessor:
     # -- interface methods --
 
     def get_buffer(self) -> Transcript:
-        if self._active and self._text:
-            return Transcript(
-                start=self._utt_offset(),
-                end=self.end,
-                text=self._text,
-            )
+        # Return only the UNSTABLE tail: hypothesis tokens not yet emitted as
+        # committed ASRTokens by _emit_accessible. WLK's contract: process_iter
+        # returns committed tokens; get_buffer returns the in-flight tail the
+        # AlignAtt translator drafts over (HypothesisTail). Same contract as
+        # the qwen3 backend's stable_text tail.
+        if self._active and len(self._hypothesis) > self._emitted_upto:
+            tail = self._hypothesis[self._emitted_upto :]
+            text = "".join(t.text for t in tail).strip()
+            if text:
+                return Transcript(
+                    start=tail[0].start + self._utt_offset(),
+                    end=self.end,
+                    text=text,
+                )
         return Transcript(start=None, end=None, text="")
 
     def finish(self) -> Tuple[List[ASRToken], float]:
