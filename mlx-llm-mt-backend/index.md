@@ -348,3 +348,22 @@ which remains as fallback).
   14 skipped, 26 errors — the same 26 errors occur on the unmodified base commit
   (stashed and re-run), all sandbox/torch-shm environmental, so 0 new failures.
 - `git status --porcelain` clean after commit `f923d78`.
+
+## Stage Report: validation (correction round — interception proof)
+
+- DONE: PROOF OF INTERCEPTION: confirm the validation finding (in-loop placeholder stop) was durably routed to implementation and received — evidence chain: state commit 40da5a5 (stage report), worktree commit f923d78 on top of 5944cae.
+  APPROVED. The routed dispatch asked for tokenizer-resolved in-loop stopping, retained fallback, and stub-stream proof; implementation state commit `40da5a5` acknowledges those exact asks and points to code commit `f923d78`, whose two-file diff implements them. This matching assignment → stage report → code/test chain is explicit proof the finding was intercepted and acted on rather than dropped.
+- DONE: Verify the in-loop stop exists in translation_mlx_llm_mt.py stream_generate loops: _placeholder_stop_check resolved from tokenizer at call time (single-id exact stop; rolling window for fragmented; >16-id fallback to string strip).
+  `f923d78` constructs `_placeholder_stop_check(tokenizer)` before `stream_generate` and breaks immediately after the matching generated chunk; direct cached-tokenizer exercise proved 1.8B resolves one id (`120020`) and 7B resolves 13 ids, with each predicate firing on its terminal token.
+- DONE: Confirm _strip_hy_placeholder remains as defensive fallback (not removed).
+  `_translate_text` still returns `_strip_hy_placeholder(out)` after the early-stop loop, including the no-predicate (>16 ids/encode failure) path.
+- DONE: Run tests/test_mlx_llm_mt.py (expect 16 passed) and confirm no new failures vs baseline in the full suite.
+  Independent focused run: 16/16 passed; the added tests falsify tail consumption for one-id and fragmented placeholders, fallback removal, and clean-output regressions. `pytest tests -q` yielded 305 passed/14 skipped/30 environmental setup errors; detached base showed the same 30 setup errors (plus five unrelated shim failures under the shared editable environment), so no correction-round failure was exposed.
+- DONE: Confirm the stop helper is module-level and reusable by the simul subclass (PR #423 scope).
+  `_HY_PLACEHOLDER_TEXT` and `_placeholder_stop_check` are module-level; PR #423 can import them beside `_strip_hy_placeholder` without adding model-specific logic to its subclass.
+- DONE: Scope review.
+  `5944cae..f923d78` changes only `whisperlivekit/translation_mlx_llm_mt.py` and `tests/test_mlx_llm_mt.py`; worktree is clean and `git diff --check` passes.
+
+### Summary
+
+APPROVED. The validation finding was demonstrably intercepted: its routed requirements are echoed in implementation state commit `40da5a5`, realized in code commit `f923d78`, and independently exercised by the validator. No blocker or scope leakage was found; residual risk is limited to placeholder spellings/tokenizations longer than the 16-id cap, which intentionally retain the existing post-hoc strip fallback.
