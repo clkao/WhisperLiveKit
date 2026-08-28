@@ -563,3 +563,16 @@ Reworked the two cycle-2 validation findings: (1) reverted the --target-language
 ### Summary
 
 Validated cycle-4 rework at `27089d7`: CLI scope is limited to `--simultaneous`, calibration keys normalize to implementation-neutral model id `hy-mt2-1.8b`, and the failed 4bit transfer remains safely disabled through `CalibrationEntry.disabled_quants`. All 55 targeted tests and Ruff pass with the required MLX overlays; no blockers were found and the code worktree remains clean.
+
+## Stage Report: implementation (rework round — rebase onto PR #422 + in-loop placeholder stop)
+
+- DONE: Rebased `spacedock-ensign/mlx-llm-mt-simultaneous` onto PR #422 head `f923d78`. The branch inherits the module-level `_placeholder_stop_check` (single-id exact stop for Hy-MT2-1.8B id 120020; rolling id window for the fragmented 7B placeholder; >16-id fallback to string strip) and the base engine's in-loop stop in `_translate_text`. The intermediate strip commit was resolved to keep only its simul-file hunk (import + `committed_text_out` strip); the base file matches the 5c version byte-for-byte. Simul calibration/registry commits intact (now `0f6572b`, `4b6e34a`, `7c87d02`, `13597e9`, tip `95b9bf0`).
+- DONE: `_translate_simul` decode loop passes `_placeholder_stop_check(tokenizer)` (tokenizer-resolved at call time) and breaks in-loop at the placeholder; after the loop the token stream is truncated at the first placeholder id sequence (`_placeholder_ids` helper) so the commit policy, committed text, and the stashed draft the release path reads never contain placeholder tokens; `committed_len` clamped to the truncated stream.
+- DONE: `_release_held` reads the clean stash — no new code required; the post-hoc `_strip_hy_placeholder` calls at both commit/release sites remain as the fallback.
+- DONE: 3 new stub-stream tests in `tests/test_mlx_llm_mt_simul.py`: single-id stop (tail never consumed, stash placeholder-free), fragmented stop (window fires after last fragment, token stream cut at sequence start), release-from-clean-stash (release re-commits with no re-decode, no placeholder in output).
+- DONE: Focused tests: `tests/test_mlx_llm_mt_simul.py` 35 passed + `tests/test_mlx_llm_mt.py` 16 passed = 51 passed.
+- DONE: Full suite (minus sandbox-blocked pipeline tests): 334 passed / 15 skipped / 4 failed — all 4 failures (`tests/test_qwen3_backend_shims.py`) verified identical on the unmodified branch (stashed and re-run), pre-existing and out of scope.
+
+### Summary
+
+Rework round for the captain-ordered PR #423 rebase + placeholder stop: branch rebased onto PR #422 head `f923d78` (inherits `_placeholder_stop_check` and the base in-loop stop; conflicts resolved by taking the 5c placeholder machinery and keeping simul calibration commits), and the simul commit/release paths now stop decode in-loop and truncate the token stream at the placeholder. Branch tip `95b9bf0`, worktree clean. Commit policy interplay: the policy's committed_len is clamped to the truncated stream so a commit boundary landing on the placeholder cannot emit it.
