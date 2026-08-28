@@ -239,6 +239,12 @@ class HypothesisEmitter:
                 )
                 prev_text = current_text
 
+            # Pace to realtime (see _run_asr_mt for rationale).
+            _slack = (audio_processed_ms / 1000.0) - (perf_counter() - start)
+            if _slack > 0:
+                from time import sleep as _sleep
+                _sleep(_slack)
+
         # Finalize streaming (may fail on very short trailing buffer)
         try:
             state = finish_streaming(state, model=model)
@@ -403,6 +409,19 @@ class HypothesisEmitter:
                     target_lang_code=self.target_lang_code,
                 )
                 prev_mt_text = current_mt
+
+            # Pace to realtime: sleep the slack so wallclock tracks audio-time.
+            # If the system is slower than realtime (RTF>1), no sleep is possible
+            # and the backlog grows — honestly showing it cannot run live. This
+            # makes CU (wallclock) latency reflect a real live session, and keeps
+            # CA honest for RTF>1 systems (without pacing, unpaced CA is
+            # optimistic because audio-time advances faster than wallclock).
+            _elapsed_s = perf_counter() - start
+            _audio_s = audio_processed_ms / 1000.0
+            _slack = _audio_s - _elapsed_s
+            if _slack > 0:
+                from time import sleep as _sleep
+                _sleep(_slack)
 
         # --- Finalize ASR (backend-specific) → feed final tokens to MT ---
         if is_nemotron:
