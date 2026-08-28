@@ -156,12 +156,27 @@ class TuiRenderer:
         return Group(*lines) if lines else Text("")
 
     def _append_segments(self, line: Text, segments: list, text_style: str) -> None:
+        # segments are (speaker, text[, diff]); the optional diff is the inline-diff
+        # spans vs the provisional (struck-out gray old + bold green new), baked into
+        # per-span text so spans concatenate with no separator.
         for i, (speaker, text, *rest) in enumerate(segments):
             if i:
                 line.append("  ")
             if speaker is not None:
                 line.append(f"[S{speaker + 1}] ", style=self._speaker_style(f"S{speaker + 1}"))
-            line.append(text, style=text_style)
+            diff = rest[0] if rest else None
+            if diff:
+                # spans are concatenated verbatim: inline_diff bakes spacing into each
+                # span, so joining with no separator keeps Latin spacing + spaceless CJK
+                for kind, words in diff:
+                    if kind == "same":
+                        line.append(words, style=text_style)
+                    elif kind == "del":
+                        line.append(words, style=self._sty["diff_del"])
+                    elif kind == "add":
+                        line.append(words, style=self._sty["diff_add"])
+            else:
+                line.append(text, style=text_style)
 
     def _mem_line(self) -> Text:
         g = 1 / 1e9

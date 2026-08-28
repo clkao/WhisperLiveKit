@@ -160,6 +160,7 @@ class OverlaySink:
         self._r = renderer
         self._last_final = ""
         self._last_transl = ""
+        self._last_prov = ""   # stash the provisional so the final can diff against it
         self._opencc = opencc_conv      # source-side converter (display)
         self._opencc_mt = opencc_mt_conv  # whether MT gets converted text
         self._target_opencc = target_opencc  # target-side converter (zh-tw output)
@@ -176,9 +177,10 @@ class OverlaySink:
         if partial:
             self._r.partial("", self._cc_src(partial), datetime.now())
         # Provisional translation (simul MT draft): forward as preview so the
-        # overlay shows it before the final arrives.
+        # overlay shows it before the final arrives; stash it for the final's diff.
         prov = (state.buffer_translation or "").strip()
         if prov:
+            self._last_prov = prov
             self._r.preview("", [(None, self._cc_target(prov))], datetime.now())
         # committed lines: finalized zh + translation
         for line in state.lines:
@@ -189,7 +191,11 @@ class OverlaySink:
                 self._r.final("", [(None, self._cc_src(txt))], datetime.now())
             if tr and tr != self._last_transl:
                 self._last_transl = tr
-                self._r.translation("", [(None, self._cc_target(tr))], datetime.now())
+                # inline diff vs the stashed provisional: struck gray old + green new
+                from whisperlivekit.inline_diff import inline_diff
+                shown = self._cc_target(tr)
+                diff = inline_diff(self._last_prov, [shown])[0] if self._last_prov else None
+                self._r.translation("", [(None, shown, diff)], datetime.now())
 
 
 class StatsTracker:
@@ -368,9 +374,10 @@ class TuiSink:
         if partial:
             self._r.partial("mic", self._cc_src(partial), datetime.now(), speaker=None)
         # Provisional translation (simul MT draft): forward as preview so the
-        # TUI shows it under the partial before the final arrives.
+        # TUI shows it under the partial before the final arrives; stash for diff.
         prov = (state.buffer_translation or "").strip()
         if prov:
+            self._last_prov = self._cc_target(prov)
             self._r.preview("mic", [(None, self._cc_target(prov))], datetime.now())
         for i, line in enumerate(state.lines):
             txt = (line.get("text") or "").strip()
@@ -390,7 +397,14 @@ class TuiSink:
             if tr and i not in self._seen_transls:
                 self._seen_transls.add(i)
                 started_at = self._final_started_at.get(i, datetime.now())
-                self._r.translation("mic", [(spk, self._cc_target(tr))], started_at)
+                shown = self._cc_target(tr)
+                # inline diff vs the stashed provisional: struck gray old + bold green
+                # new, same rendering as the ASR two-pass diff.
+                from whisperlivekit.inline_diff import inline_diff
+                diff = (inline_diff(self._last_prov, [shown])[0]
+                        if self._last_prov else None)
+                self._last_prov = ""  # consumed
+                self._r.translation("mic", [(spk, shown, diff)], started_at)
 
 
 # ---------------------------------------------------------------------------
