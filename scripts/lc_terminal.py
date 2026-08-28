@@ -475,13 +475,31 @@ def _start_ocr_loop(args, engine, on_hotwords=None, log=None):
 # Runners
 # ---------------------------------------------------------------------------
 
-async def run_file(args, sink, ocr_loop=None, on_hotwords=None):
+async def run_file(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
+    import contextlib
     kwargs = _make_engine_kwargs(args)
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
         if ocr_loop is not None:
             _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
-        await h.feed(args.audio, speed=1.0)
+        if stop_event is not None:
+            # ^C-clean: race the feed against the stop event; on ^C, close up
+            # quickly instead of finishing the whole feed + 180s drain.
+            stopper = asyncio.ensure_future(asyncio.to_thread(stop_event.wait))
+            feed_task = asyncio.ensure_future(h.feed(args.audio, speed=1.0))
+            done, _ = await asyncio.wait({feed_task, stopper}, return_when=asyncio.FIRST_COMPLETED)
+            if stopper in done and not feed_task.done():
+                print("\n[file] interrupt: flushing and exiting", file=sys.stderr, flush=True)
+                feed_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await feed_task
+                await h.drain(1.0)
+                await h.finish(timeout=15)
+                return
+            stopper.cancel()
+            await feed_task
+        else:
+            await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
         await h.finish(timeout=180)
 
@@ -968,12 +986,25 @@ def main() -> None:
                          show_ocr=(ocr_loop is not None)) as renderer:
             sink = TuiSink(renderer, opencc_conv=opencc_conv, target_opencc=target_opencc, diarization=args.diarize)
             on_hotwords = renderer.set_ocr_text if ocr_loop else None
-            coro = (run_file(args, sink, ocr_loop, on_hotwords=on_hotwords)
+            # Ctrl-C must exit CLEANLY: install a SIGINT handler that sets a
+            # stop_event the run_* coros bridge to their internal asyncio stop.
+            # Without it, asyncio.run's default SIGINT cancels the task mid-await
+            # and the harness teardown (drain/finish, mic close, TUI exit) never
+            # runs — an ugly traceback and a wedged audio thread.
+            stop_event = threading.Event()
+            coro = (run_file(args, sink, ocr_loop, stop_event=stop_event, on_hotwords=on_hotwords)
                     if args.source == "file"
-                    else run_system(args, sink, ocr_loop, on_hotwords=on_hotwords)
+                    else run_system(args, sink, ocr_loop, stop_event=stop_event, on_hotwords=on_hotwords)
                     if args.source == "system"
-                    else run_mic(args, sink, ocr_loop, on_hotwords=on_hotwords))
-            asyncio.run(coro)
+                    else run_mic(args, sink, ocr_loop, stop_event=stop_event, on_hotwords=on_hotwords))
+            import signal
+            def _on_sigint(signum, frame):
+                stop_event.set()
+            _prev = signal.signal(signal.SIGINT, _on_sigint)
+            try:
+                asyncio.run(coro)
+            finally:
+                signal.signal(signal.SIGINT, _prev)
         return
 
     # overlay mode: NSWindow run loop must be on the main thread.
