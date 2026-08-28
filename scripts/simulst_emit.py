@@ -289,7 +289,6 @@ class HypothesisEmitter:
             init_streaming,
         )
         from mlx_lm import stream_generate
-        from mlx_lm.tokenizers_utils import load_tokenizer
         from mlx_lm.utils import load
 
         # --- ASR setup ---
@@ -301,6 +300,7 @@ class HypothesisEmitter:
         mt = MlxLlmTranslationSimul(
             model_id=self.mt_model_id,
             target_language=self.target_lang_code,
+            source_language=self.source_lang_code,
             warmup=True,
         )
 
@@ -317,7 +317,8 @@ class HypothesisEmitter:
         chunk_size = int(SAMPLE_RATE * self.chunk_sec)
         word_delays: list[float] = []
         word_elapsed: list[float] = []
-        prev_mt_text = ""
+        prev_mt_text = ""       # cumulative MT output registered so far
+        full_mt_text = ""       # accumulated segment finals (cumulative across segments)
         prev_stable = ""
         start = perf_counter()
 
@@ -353,13 +354,22 @@ class HypothesisEmitter:
                     text=tail_text,
                 )])
 
-            # Run MT
+            # Run MT. The simul-MT produces per-segment finals (translation) and
+            # a per-segment provisional buffer. Neither is cumulative across
+            # segments, so accumulate finals into full_mt_text and build the
+            # cumulative current_mt = full_mt_text + provisional. Register deltas
+            # against the cumulative so word delays are correct (matches the
+            # asr-only path's stable_text accumulation pattern).
             translation, buffer = mt.process()
-            current_mt = ""
-            if buffer and buffer.text:
-                current_mt = buffer.text.strip()
-            elif translation and translation.text:
-                current_mt = translation.text.strip()
+            if translation and translation.text:
+                seg = translation.text.strip()
+                full_mt_text = (full_mt_text + " " + seg).strip() if full_mt_text else seg
+
+            prov = (buffer.text if buffer else "").strip()
+            if full_mt_text and prov:
+                current_mt = (full_mt_text + " " + prov).strip()
+            else:
+                current_mt = full_mt_text or prov
 
             if current_mt and current_mt != prev_mt_text:
                 register_translation_words(
@@ -374,7 +384,15 @@ class HypothesisEmitter:
                 )
                 prev_mt_text = current_mt
 
-        # Finalize ASR
+        # Finalize ASR. A sub-frame tail (< ~640 samples) would crash
+        # log-mel extraction ("Audio too short ... produced -1 STFT frame(s)");
+        # zero-pad to a safe length so finish_streaming's decode succeeds
+        # (the trailing ~2ms contributes nothing meaningful).
+        _min_mel_samples = 1600
+        if 0 < len(state.buffer) < _min_mel_samples:
+            import numpy as _np
+            pad = _np.zeros(_min_mel_samples - len(state.buffer), dtype=state.buffer.dtype)
+            state.buffer = _np.concatenate([state.buffer, pad])
         state = finish_streaming(state, model=asr_model)
         final_stable = (getattr(state, "stable_text", "") or "").strip()
         if not final_stable:
@@ -392,34 +410,34 @@ class HypothesisEmitter:
                 )
                 mt.insert_tokens([tok])
 
-        # Flush MT
+        # Flush MT: append the final segment to full_mt_text.
         final_translation, _ = mt.validate_buffer_and_reset()
-        final_mt_text = ""
         if final_translation and final_translation.text:
-            final_mt_text = final_translation.text.strip()
-
-        # Also check for any pending finals
+            seg = final_translation.text.strip()
+            full_mt_text = (full_mt_text + " " + seg).strip() if full_mt_text else seg
+        # Drain any remaining pending finals.
         tr, _ = mt.process()
         if tr and tr.text:
-            final_mt_text = (final_mt_text + " " + tr.text).strip()
+            seg = tr.text.strip()
+            full_mt_text = (full_mt_text + " " + seg).strip() if full_mt_text else seg
 
         final_wallclock_ms = (perf_counter() - start) * 1000.0
 
-        if final_mt_text and final_mt_text != prev_mt_text:
+        if full_mt_text and full_mt_text != prev_mt_text:
             register_translation_words(
-                prev_mt_text, final_mt_text,
+                prev_mt_text, full_mt_text,
                 audio_duration_ms, word_delays,
                 target_lang_code=self.target_lang_code,
             )
             register_translation_timestamps(
-                prev_mt_text, final_mt_text,
+                prev_mt_text, full_mt_text,
                 final_wallclock_ms, word_elapsed,
                 target_lang_code=self.target_lang_code,
             )
 
         normalized_elapsed = normalize_computation_aware_timestamps(word_delays, word_elapsed)
         prediction = prediction_text_from_target_surface(
-            final_mt_text, target_lang_code=self.target_lang_code,
+            full_mt_text, target_lang_code=self.target_lang_code,
         )
 
         return {
