@@ -115,6 +115,7 @@ class OverlayRenderer:
         self._win: AppKit.NSWindow | None = None
         self._field_zh: AppKit.NSTextField | None = None
         self._field_en: AppKit.NSTextField | None = None
+        self._field_en_prev: AppKit.NSTextField | None = None  # two-row target mode only
         self._field_partial: AppKit.NSTextField | None = None
         # Display model: the pure, AppKit-free state machine (hold-drain, provisional
         # -> final replacement, scroll-up-to-history, expiry) in overlay_model.py. The

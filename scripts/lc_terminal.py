@@ -37,6 +37,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -147,6 +148,16 @@ def _make_engine_kwargs(args) -> dict:
 # Sinks (terminal + overlay)
 # ---------------------------------------------------------------------------
 
+
+def _fix_sentence_spacing(text: str) -> str:
+    """Insert a space between a sentence terminator and a following Latin letter.
+
+    Hunyuan MT joins consecutive sentences without one ("...tissue.Reduce
+    damage..."). Display-path only; the transcript keeps the raw MT bytes."""
+    return re.sub(r"([.!?])([A-Z])", r"\1 \2", text)
+
+
+
 class OverlaySink:
     """Drives the OverlayRenderer from WLK stream state.
 
@@ -169,7 +180,13 @@ class OverlaySink:
         return self._opencc.convert(text) if (self._opencc and text) else text
 
     def _cc_target(self, text):
-        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
+        if not text:
+            return text
+        out = self._target_opencc.convert(text) if self._target_opencc else text
+        # Hunyuan MT joins consecutive sentences without a space after the period
+        # ("...tissue.Reduce damage..."). Insert one on the display path when a
+        # sentence terminator is followed directly by a Latin letter.
+        return _fix_sentence_spacing(out)
 
     def __call__(self, state):
         # live partial: the rolling ASR buffer (converted for display)
@@ -316,13 +333,17 @@ class TerminalSink:
         return self._opencc.convert(text) if (self._opencc and text) else text
 
     def _cc_target(self, text):
-        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
+        if not text:
+            return text
+        out = self._target_opencc.convert(text) if self._target_opencc else text
+        return _fix_sentence_spacing(out)
 
     def __call__(self, state):
         partial = (state.buffer_transcription or "").strip()
         if partial:
             if self._stats is not None:
                 self._stats.on_partial(partial)
+            print(f"\r[zh*] {self._cc_src(partial)[:100]}", end="", flush=True)
             print(f"\r[zh*] {self._cc_src(partial)[:100]}", end="", flush=True)
         for line in state.lines:
             txt = (line.get("text") or "").strip()
@@ -365,7 +386,10 @@ class TuiSink:
         return self._opencc.convert(text) if (self._opencc and text) else text
 
     def _cc_target(self, text):
-        return self._target_opencc.convert(text) if (self._target_opencc and text) else text
+        if not text:
+            return text
+        out = self._target_opencc.convert(text) if self._target_opencc else text
+        return _fix_sentence_spacing(out)
 
     def set_ocr_text(self, text):
         self._r.set_ocr_text(text)
