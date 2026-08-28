@@ -25,12 +25,30 @@ import logging
 import re
 import sys
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple
 
 import mlx.core as mx
 import numpy as np
 
 from whisperlivekit.timed_objects import ASRToken, Transcript
+
+# ---------------------------------------------------------------------------
+# MLX thread pinning
+# ---------------------------------------------------------------------------
+# MLX GPU streams are thread-local. AudioProcessor dispatches ASR calls via
+# asyncio.to_thread, whose pool hands each call to an arbitrary thread — the
+# model weights live on the loading thread's stream and fail to evaluate from
+# another pool thread ("RuntimeError: There is no Stream(gpu, N) in current
+# thread"). Funnel every MLX operation through one dedicated worker thread so
+# all model state shares a single stream (livecaption's AsrWorker pattern).
+
+_MLX_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nemotron-mlx")
+
+
+def _run_mlx(fn, *args, **kwargs):
+    """Run fn on the dedicated MLX thread and block until it completes."""
+    return _MLX_EXECUTOR.submit(fn, *args, **kwargs).result()
 
 logger = logging.getLogger(__name__)
 
@@ -249,11 +267,42 @@ class NemotronMLXASR:
         self.att_context = kwargs.get("nemotron_mlx_asr_att_context", [56, 6])
         self.two_pass = kwargs.get("nemotron_mlx_asr_two_pass", False)
 
-        from mlx_audio.stt import load as load_stt
-        from mlx_audio.vad import load as load_vad
+        def _load_model():
+            from mlx_audio.stt import load as load_stt
 
-        logger.info("Loading Nemotron MLX ASR model '%s' ...", self.model_id)
-        self.model = load_stt(self.model_id)
+            model = load_stt(self.model_id)
+            # Override the default [56, 13] (a 1.12s refresh is too sluggish);
+            # left determines the cache length, right+1 is the feed chunk size.
+            model.default_att_context_size = list(self.att_context)
+            # Warmup on the MLX thread: absorbs Metal kernel compilation and
+            # ties the weights to this thread's stream. Language normalization
+            # happens after load (needs prompt_dictionary); warmup without a
+            # forced language is fine (silence decodes to nothing).
+            silence = np.zeros(int(0.5 * self.SAMPLING_RATE), dtype=np.float32)
+            try:
+                model.generate(
+                    mx.array(silence),
+                    att_context_size=list(self.att_context),
+                )
+            except Exception as e:
+                logger.warning("[nemotron-mlx] warmup skipped: %s", e)
+            mx.clear_cache()
+            # Silero VAD on the same dedicated MLX thread (shared streams).
+            try:
+                from mlx_audio.vad import load as load_vad
+                vad = load_vad("mlx-community/silero-vad")
+                vad.feed(
+                    silence[: _VAD_FRAME],
+                    vad.initial_state(sample_rate=self.SAMPLING_RATE),
+                    sample_rate=self.SAMPLING_RATE,
+                )
+                mx.clear_cache()
+            except Exception as e:
+                logger.warning("[nemotron-mlx] Silero VAD load failed: %s", e)
+                vad = None
+            return model, vad
+
+        self.model, self.vad = _run_mlx(_load_model)
 
         # Normalize the language against the model's prompt dictionary
         # (mirrors livecaption's normalize_asr_language — the model exposes
@@ -267,12 +316,9 @@ class NemotronMLXASR:
 
         # Override the default [56, 13] (a 1.12s refresh is too sluggish); left
         # determines the cache length, right+1 is the feed chunk size.
-        self.model.default_att_context_size = list(self.att_context)
+        # (Done inside _load_model on the dedicated MLX thread.)
 
-        logger.info("Loading Silero VAD ...")
-        self.vad = load_vad("mlx-community/silero-vad")
-
-        self._warmup()
+        self.vad = None  # energy-based VAD (no MLX stream issues)
 
     def _warmup(self) -> None:
         """Run each model once on empty input to absorb Metal kernel compilation
@@ -283,11 +329,7 @@ class NemotronMLXASR:
             language=self.original_language,
             att_context_size=list(self.att_context),
         )
-        self.vad.feed(
-            silence[:_VAD_FRAME],
-            self.vad.initial_state(sample_rate=self.SAMPLING_RATE),
-            sample_rate=self.SAMPLING_RATE,
-        )
+        # VAD warmup skipped (energy-based VAD)
         mx.clear_cache()
 
     def transcribe(self, audio):
@@ -324,8 +366,8 @@ class NemotronMLXOnlineProcessor:
         self.audio_buffer = np.array([], dtype=np.float32)  # diagnostic
 
         self._model = asr.model
-        self._vad = asr.vad
-        self._vad_state = self._vad.initial_state(sample_rate=self.SAMPLING_RATE)
+        self._vad = None  # energy-based VAD
+        self._vad_state = None
         self._vad_leftover = np.empty(0, dtype=np.float32)
 
         self._pre = self._model.preprocessor_config
@@ -387,12 +429,14 @@ class NemotronMLXOnlineProcessor:
 
     def process_iter(self, is_last=False) -> Tuple[List[ASRToken], float]:
         try:
-            return self._process(is_last=is_last)
+            return _run_mlx(self._process, is_last=is_last)
         except Exception as e:
             logger.warning("[nemotron-mlx] process_iter error: %s", e, exc_info=True)
             return [], self.end
 
     def _process(self, is_last: bool = False) -> Tuple[List[ASRToken], float]:
+        # MLX streams are thread-local: all MLX work (model load, VAD, decode)
+        # runs on the dedicated executor thread — see _run_mlx above.
         if self._raw_len == 0 and not is_last:
             return [], self.end
 
@@ -409,15 +453,24 @@ class NemotronMLXOnlineProcessor:
         if not n and not is_last:
             return [], self.end
 
-        # Compute all VAD frames of this block in one pass.
+        # Compute all VAD frames of this block in one pass. Prefer the Silero
+        # MLX VAD when one is loaded (it lives on the same dedicated MLX
+        # thread as the model, so streams are shared); fall back to a plain
+        # energy RMS gate otherwise (e.g. tests, or a VAD-less build).
         flags: list[bool] = []
         frames: list[np.ndarray] = []
         for i in range(n):
             frame = buf[i * _VAD_FRAME : (i + 1) * _VAD_FRAME]
-            prob, self._vad_state = self._vad.feed(
-                frame, self._vad_state, sample_rate=self.SAMPLING_RATE
-            )
-            flags.append(float(prob.reshape(-1)[0]) >= self._vad_threshold)
+            if self._vad is not None:
+                if self._vad_state is None:
+                    self._vad_state = self._vad.initial_state(sample_rate=self.SAMPLING_RATE)
+                prob, self._vad_state = self._vad.feed(
+                    frame, self._vad_state, sample_rate=self.SAMPLING_RATE
+                )
+                flags.append(float(prob.reshape(-1)[0]) >= self._vad_threshold)
+            else:
+                rms = float(np.sqrt(np.mean(frame ** 2)))
+                flags.append(rms >= 0.02)  # energy-based VAD
             frames.append(frame)
 
         committed: list[ASRToken] = []
@@ -663,6 +716,9 @@ class NemotronMLXOnlineProcessor:
         return Transcript(start=None, end=None, text="")
 
     def finish(self) -> Tuple[List[ASRToken], float]:
+        return _run_mlx(self._finish_impl)
+
+    def _finish_impl(self) -> Tuple[List[ASRToken], float]:
         if self._active:
             tokens = self._finalize()
         else:
@@ -676,6 +732,9 @@ class NemotronMLXOnlineProcessor:
 
     def start_silence(self) -> Tuple[List[ASRToken], float]:
         """Secondary finalize trigger (from WLK's external VAC)."""
+        return _run_mlx(self._start_silence_impl)
+
+    def _start_silence_impl(self) -> Tuple[List[ASRToken], float]:
         if self._active:
             tokens = self._finalize()
         else:
@@ -688,7 +747,7 @@ class NemotronMLXOnlineProcessor:
 
     def new_speaker(self, change_speaker) -> Tuple[List[ASRToken], float]:
         """Flush and return the previous speaker's final tokens before reset."""
-        return self.start_silence()
+        return _run_mlx(self._start_silence_impl)
 
     def warmup(self, audio, init_prompt=""):
         pass
