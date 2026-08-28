@@ -307,3 +307,44 @@ Validation FAILED at `39a23d6`: all 12 focused tests pass, the restored `hunyuan
 ### Summary
 
 Validation passed at `eef6a1a`: all 12 focused tests pass, the `hunyuan-mlx` import and parser paths work, baseline comparison shows zero new non-async failures, and the cycle-4 internal `AC-4` label is gone. The only unverified criterion is AC-1, which still requires CL's live Metal/model environment.
+
+## Stage Report: implementation (correction round — in-loop placeholder stop)
+
+- DONE: The `stream_generate` loop stops in-loop the moment the Hunyuan placeholder
+  is emitted, instead of decoding the hallucinated tail and truncating afterwards.
+  `_placeholder_stop_check(tokenizer)` (module-level in `translation_mlx_llm_mt.py`)
+  resolves the stop condition from the tokenizer at call time: a single-id
+  placeholder (Hy-MT2-1.8B, id 120020, measured this round) stops exactly on that
+  id; a fragmented placeholder (Hunyuan-MT-7B, ~13 byte-level BPE ids) uses a
+  rolling id window; tokenizers fragmenting it beyond a 16-id window get no
+  in-loop stop and fall back to the post-hoc string strip alone.
+- DONE: `_strip_hy_placeholder` kept as the defensive fallback (all consumers:
+  terminal, overlay, transcript file, simul commit policy).
+- DONE: The helper is module-level so the simul-MT subclass (PR #423 branch,
+  `translation_mlx_llm_mt_simul.py`) can reuse the same mechanism at its
+  commit/release sites. That file does not exist on this branch (clean carve off
+  `origin/main`; the simul path is the sibling PR's scope) — the shared helper is
+  the cross-PR mechanism.
+- DONE: 4 new stub-stream tests: single-id stop (tail never consumed), fragmented
+  stop, no-stop-id fallback (full decode + string strip still truncates), clean
+  output unaffected. `tests/test_mlx_llm_mt.py` now 16/16 pass.
+- DONE: No regressions vs baseline: full suite without my change = 301 passed /
+  26 errors (pre-existing sandbox torch shared-memory errors in
+  test_pipeline/test_asr_coalescing_pipeline); with the change = 305 passed, same
+  14 skipped, same 26 environmental errors.
+
+### Summary
+
+Correction round for the captain-authorized placeholder finding: decode now stops
+in-loop at the placeholder (compute win — the hallucinated tail is no longer
+decoded). Branch tip `f923d78` on `spacedock-ensign/hunyuan-mlx-translation-backend`
+(PR #422 head), one commit on top of `5944cae` (the string-truncate-at-source fix,
+which remains as fallback).
+
+### Verification (run on the worktree)
+
+- `uv run --no-sync --with pytest python -m pytest tests/test_mlx_llm_mt.py -q` -> 16 passed.
+- Full suite (minus the sandbox-blocked test_asr_coalescing_pipeline): 305 passed,
+  14 skipped, 26 errors — the same 26 errors occur on the unmodified base commit
+  (stashed and re-run), all sandbox/torch-shm environmental, so 0 new failures.
+- `git status --porcelain` clean after commit `f923d78`.
