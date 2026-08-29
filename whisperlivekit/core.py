@@ -384,7 +384,7 @@ from whisperlivekit.asr_wrapper import (  # noqa: E402,F401
 )
 
 
-def online_factory(args, asr, language=None):
+def online_factory(args, asr, language=None, context=None):
     """Create an online ASR processor for a session.
 
     Args:
@@ -393,8 +393,16 @@ def online_factory(args, asr, language=None):
         language: Optional per-session language override (e.g. "en", "fr", "auto").
             If provided and the backend supports it, transcription will use
             this language instead of the server-wide default.
+        context: Optional terminology, names, or other text conditioning for
+            this session. Unsupported backends reject it explicitly.
     """
+    from whisperlivekit.session_asr_proxy import (
+        SessionASRProxy,
+        validate_session_context,
+    )
+
     backend = getattr(args, 'backend', None)
+    context = validate_session_context(args, asr, context)
     # Canary carries its own per-session wrapper (CanarySessionASR with auto-detect),
     # so it returns here before the generic SessionASRProxy wrap to avoid double-wrapping.
     if backend == "canary":
@@ -410,8 +418,10 @@ def online_factory(args, asr, language=None):
         )
         return OnlineASRProcessor(wrapped)
 
-    # Wrap the shared ASR with a per-session language if requested
-    if language is not None:
+    # Wrap the shared ASR with per-session language and decoder context. For
+    # SimulStreaming, the proxy also exposes an isolated cfg copy consumed by
+    # SimulStreamingOnlineProcessor at construction time.
+    if language is not None or context is not None:
         if getattr(args, "backend", None) == "funasr":
             from whisperlivekit.config import FUNASR_LANGUAGES
 
@@ -420,8 +430,14 @@ def online_factory(args, asr, language=None):
                 raise ValueError(
                     f"FunASR SenseVoiceSmall supports only: {supported}."
                 )
-        from whisperlivekit.session_asr_proxy import SessionASRProxy
-        asr = SessionASRProxy(asr, language)
+        asr = SessionASRProxy(
+            asr,
+            language,
+            context=context,
+            simulstreaming=(
+                getattr(args, "backend_policy", None) == "simulstreaming"
+            ),
+        )
 
     if backend == "qwen3-streaming":
         from whisperlivekit.qwen3_streaming import Qwen3StreamingOnlineProcessor
@@ -468,10 +484,18 @@ def online_factory(args, asr, language=None):
         return VoxtralHFStreamingOnlineProcessor(asr)
     if backend == "funasr":
         from whisperlivekit.funasr_backend import FunASROnlineASRProcessor
+        if not isinstance(asr, SessionASRProxy):
+            asr = SessionASRProxy(asr)
         return FunASROnlineASRProcessor(asr)
-    if args.backend_policy == "simulstreaming":
+    if getattr(args, "backend_policy", None) == "simulstreaming":
         from whisperlivekit.simul_whisper import SimulStreamingOnlineProcessor
         return SimulStreamingOnlineProcessor(asr)
+    if not isinstance(asr, SessionASRProxy):
+        # Every shared LocalAgreement backend participates in the same lock,
+        # including sessions that use the server-wide language. Otherwise a
+        # plain session could race with a language-overriding proxy and observe
+        # its temporary ``original_language`` value.
+        asr = SessionASRProxy(asr)
     return OnlineASRProcessor(asr)
 
 
@@ -494,10 +518,10 @@ def online_translation_factory(args, translation_model):
     from whisperlivekit.translation_alignatt import AlignAttRemoteEngine
     if isinstance(translation_model, AlignAttRemoteEngine):
         return translation_model.new_session(args.target_language)
-    # mlx-llm-mt is a per-session instance; return it directly.
+    # mlx-llm-mt: create a per-session client (fresh state) sharing the model cache.
     from whisperlivekit.translation_mlx_llm_mt import MlxLlmTranslation
     if isinstance(translation_model, MlxLlmTranslation):
-        return translation_model
+        return translation_model.new_session(args.target_language)
     #should be at speaker level in the future:
     #one shared nllb model for all speaker
     #one tokenizer per speaker/language
