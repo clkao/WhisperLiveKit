@@ -44,9 +44,6 @@ import time
 from datetime import datetime
 
 # Silence startup noise BEFORE importing anything that pulls HF/transformers/mlx_audio:
-#  - huggingface_hub re-checks cached-file etags over the network and prints
-#    "Fetching N files" progress bars even on full cache hits; HF_HUB_OFFLINE=1
-#    makes it use the cache with zero network and zero progress bars.
 #  - transformers prints rope/rope_parameters warnings for Hy-MT2's dynamic rope.
 #  - mlx_audio prints "MLX Whisper not found" (a harmless optional-dep notice).
 #  - joblib warns "Operation not permitted ... serial mode" under the sandbox.
@@ -55,7 +52,6 @@ _warnings.filterwarnings("ignore", message=".*joblib will operate in serial mode
 _warnings.filterwarnings("ignore", message=".*Unrecognized keys in .rope_parameters.*")
 _warnings.filterwarnings("ignore", message=".*clean_up_tokenization_spaces.*")
 _warnings.filterwarnings("ignore", message=".*destructive for BPE.*")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
