@@ -346,7 +346,10 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 self._mt_total_time_s += time.perf_counter() - _t0
             self._reset_simul_draft()
             tr = Translation(start=start, end=end, text=mt)
+            # Reset the buffer to the FINAL text (not the stale provisional) so the
+            # display doesn't re-emit the old provisional after the final arrives.
             self._last_buffer = TimedText(start=start, end=end, text=mt)
+            self._emitted_partial = ""
             return tr, self._last_buffer
 
         # 2. Open utterance: simultaneous provisional over committed + tail.
