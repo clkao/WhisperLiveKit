@@ -126,6 +126,8 @@ class OverlayRenderer:
         self._model = OverlayDisplayModel(hold_sec=MIN_HOLD_SEC)
         self._event_log = None  # optional OverlayEventLog for replay/tuning
         self._en_drain_stop = threading.Event()
+        self._append_stop = threading.Event()  # cancels a stale streaming thread
+        self._shown_en_plain: str = ""  # plain text currently rendered on the current row
         self._en_drain_thread: threading.Thread | None = None
 
     # ---- lifecycle (context manager, same shape as render.Renderer) ----
@@ -312,15 +314,56 @@ class OverlayRenderer:
                 self._reconcile(state)
 
     def _reconcile(self, state) -> None:
-        """Apply a DisplayState to the fields. The model handles all pacing/hold/scroll
-        logic; this just renders the model's spans as attributed strings (green adds,
-        bright same, dimmed provisional) on the main thread."""
-        cur_attr = self._spans_to_attributed(state.current)
-        prev_attr = self._spans_to_attributed(state.prev)
-        if cur_attr is not None:
-            self._set_attr(self._field_en, cur_attr)
+        """Apply a DisplayState to the fields. The streaming effect lives HERE (the
+        view), not in the model: when the new current text EXTENDS what's already
+        rendered, reveal the delta word-by-word with a micro-delay (perceived
+        continuity); on a rewrite or first show, hard-swap to the latest.
+
+        The model handles hold/scroll/expiry/queue logic; the view handles the
+        visual animation. All AppKit updates are dispatched to the main thread."""
+        cur_plain = "".join(sp.text for sp in state.current)
+        prev_plain = "".join(s.text for s in state.prev)
+        is_provisional = bool(state.current) and state.current[0].style == PROVISIONAL
+
+        # Current row: stream on extends, hard-swap on rewrite
+        if cur_plain != self._shown_en_plain:
+            if not cur_plain:
+                self._set(self._field_en, "")
+                self._shown_en_plain = ""
+            elif (self._shown_en_plain and cur_plain.startswith(self._shown_en_plain)
+                  and len(cur_plain) > len(self._shown_en_plain)):
+                # extends: stream the delta word-by-word
+                delta = cur_plain[len(self._shown_en_plain):]
+                self._append_stop.set()  # cancel any stale streaming thread
+                self._append_stop = threading.Event()
+                stop = self._append_stop
+                shown = self._shown_en_plain
+                is_prov = is_provisional
+                def _stream():
+                    cur = shown
+                    for w in delta.split(" "):
+                        if stop.is_set():
+                            return
+                        cur = (cur + " " + w) if cur and w else (cur + w if w else cur)
+                        attr = self._spans_to_attributed_simple(cur, is_prov)
+                        self._set_attr(self._field_en, attr)
+                        time.sleep(0.05)
+                    self._shown_en_plain = cur
+                threading.Thread(target=_stream, daemon=True, name="ov-append").start()
+            else:
+                # rewrite or first: hard-swap
+                self._append_stop.set()  # cancel streaming
+                attr = self._spans_to_attributed(state.current)
+                self._set_attr(self._field_en, attr)
+                self._shown_en_plain = cur_plain
+
+        # Prev row: hard-swap (no streaming — it's history)
+        prev_attr = self._spans_to_attributed(state.prev) if state.prev else None
         if prev_attr is not None:
             self._set_attr(self._field_en_prev, prev_attr)
+        elif not state.prev and self._field_en_prev is not None:
+            self._set(self._field_en_prev, "")
+
         if state.partial is not None and self._field_partial is not None:
             self._set(self._field_partial, state.partial)
 
@@ -458,6 +501,19 @@ class OverlayRenderer:
                 AppKit.NSAttributedString.alloc().initWithString_attributes_(sp.text, attrs)
             )
         return mut
+
+    def _spans_to_attributed_simple(self, text: str, is_provisional: bool) -> "AppKit.NSAttributedString":
+        """Build a single-style attributed string for the streaming thread (plain
+        text, one color: dimmed for provisional, white for final)."""
+        if AppKit is None:
+            return None
+        font = AppKit.NSFont.systemFontOfSize_weight_(42, AppKit.NSFontWeightBold)
+        para = AppKit.NSMutableParagraphStyle.alloc().init()
+        para.setAlignment_(AppKit.NSCenterTextAlignment)
+        color = (AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
+                 if is_provisional else AppKit.NSColor.whiteColor())
+        attrs = {"NSFont": font, "NSColor": color, "NSParagraphStyle": para}
+        return AppKit.NSAttributedString.alloc().initWithString_attributes_(text, attrs)
 
     def _set_attr(self, field: AppKit.NSTextField | None, attr) -> None:
         """Update a field with an attributed string on the MAIN thread."""
