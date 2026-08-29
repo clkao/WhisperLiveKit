@@ -314,10 +314,11 @@ def test_final_translation_at_punctuation():
 
 
 def test_validate_returns_provisional_then_final():
-    """At silence, ``validate_buffer_and_reset`` keeps the on-screen
-    provisional as the buffer (NOT committed as a Translation), and queues
-    the utterance for a final on the next ``process()``. This prevents
-    duplication: the only committed Translation is the final quality pass."""
+    """At silence, ``validate_buffer_and_reset`` clears the provisional buffer
+    (so the stale draft doesn't reappear after the final) and queues the
+    utterance for a final on the next ``process()``. This prevents duplication:
+    the only committed Translation is the final quality pass, and the display
+    doesn't see a dimmed replay of the old provisional."""
     b = _make_simul()
     b._translate_simul = lambda source, committed: "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
@@ -325,7 +326,7 @@ def test_validate_returns_provisional_then_final():
     assert b._emitted_partial == "Hello"
     tr, buf = b.validate_buffer_and_reset()
     assert tr is None  # provisional is NOT committed as a Translation
-    assert buf.text == "Hello"  # provisional stays as the buffer
+    assert buf.text == ""  # buffer cleared (no stale provisional replay)
     # The utterance is queued as a final.
     assert b._pending_finals
     tr, _ = b.process()

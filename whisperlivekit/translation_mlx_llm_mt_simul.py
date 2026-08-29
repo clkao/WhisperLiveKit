@@ -429,29 +429,17 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             self._committed_start = None
         self._tail = None
         self._reset_simul_draft()
-        emitted = self._emitted_partial
         self._emitted_partial = ""
-        if emitted:
-            self._last_buffer = TimedText(
-                start=start, end=end, text=emitted
-            )
-            # Keep the provisional as the buffer (shown on screen) but do
-            # NOT commit it as a Translation — the pending final (quality
-            # pass) will be the only committed Translation for this utterance.
-            return None, self._last_buffer
-        # Nothing was emitted; fall back to a base-class flush of any buffered
-        # tokens (mirrors the base class behaviour for a non-simul flush).
-        if self._pending_finals:
-            text, start, end = self._pending_finals.pop(0)
-            try:
-                mt = self._translate_text(text)
-            except Exception as exc:
-                logger.warning("mlx-llm-mt-simul validate translate failed: %s", exc)
-                mt = ""
-            tr = Translation(start=start, end=end, text=mt)
-            self._last_buffer = TimedText(start=start, end=end, text=mt)
-            return tr, self._last_buffer
-        return TimedText(), TimedText()
+        # Clear the buffer so the stale provisional doesn't reappear after the
+        # final is emitted. The final (pending in _pending_finals) will be the
+        # only committed Translation; the display should show the final, not a
+        # dimmed replay of the old provisional.
+        self._last_buffer = TimedText()
+        # Return (None, empty buffer): the provisional is NOT committed as a
+        # Translation; the pending final (quality pass) is emitted on the next
+        # process() call. The empty buffer means the display won't see a stale
+        # dimmed draft after the final arrives.
+        return None, self._last_buffer
 
     def insert_silence(self, duration: float = None) -> None:
         pass
