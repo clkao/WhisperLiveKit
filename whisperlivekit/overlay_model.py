@@ -191,7 +191,14 @@ class OverlayDisplayModel:
                 self._prev_spans = []
                 prev_changed = True
         if not cur_changed and not prev_changed:
-            return None
+            # A translation/preview call may have updated the state directly (via
+            # _show) without enqueuing. Surface it if the state differs from what
+            # was last rendered — otherwise the overlay never shows new finals
+            # until something expires (3.5s later), and only the last one shows.
+            if self._last_state is None and (self._en_spans or self._prev_spans):
+                cur_changed = True
+            else:
+                return None
         state = self.state()
         if self._last_state is not None and state == self._last_state:
             return None
