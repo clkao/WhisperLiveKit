@@ -377,3 +377,18 @@ The cycle-2 text-duplication blocker is behaviorally fixed: cumulative streaming
 ### Summary
 
 Cycle 4 independently confirms the cycle-3 vocabulary leak is removed while all prior fixes remain intact at `e24b2b3`: the full-hypothesis seam, session-language precedence, finalization deduplication, and ASR-only carve all validate. All 46 focused tests pass and no blocking findings remain; live Mandarin/microphone behavior and the out-of-carve second-provider conversion remain intentionally skipped.
+
+## Stage Report: implementation (cycle 5 — pre-emptive fixes)
+
+- DONE: Add [tool.uv].conflicts for mlx-qwen3-asr vs qwen3-streaming/qwen3-vllm/qwen3-vllm-metal (transformers>=5 vs ==4.57.6); run uv lock; uv lock --check passes.
+  pyproject.toml adds 3 conflict entries mirroring the mlx-llm-mt pattern; uv.lock conflicts section updated to match. `uv lock --check` resolves 406 packages in ~130ms. Note: full `uv lock` regeneration fails due to pre-existing canary/diarization-diart incompatibility on py3.13 cross-platform — the conflicts-section-only update is sufficient for `--check` since mlx-qwen3-asr is a "free" extra (no per-package resolution markers needed, same as mlx-llm-mt).
+- DONE: Add two-session ASR isolation regression test: two MlxQwen3AsrOnlineProcessor from shared model, independent state, shared cache.
+  TestSessionIsolation: 3 tests — (1) model cache shared (same object, loaded once), (2) per-instance state independent (mutating _text/_stable_text/_emitted_stable/_utt_audio/_state on one doesn't affect the other), (3) insert_audio_chunk on one doesn't leak to the other. Falsifiable: removing the _MODEL_CACHE check or making state class-level would fail.
+- DONE: Add per-session language override test: session with language override reaches the processor.
+  TestSessionLanguageOverride: 3 tests — (1) SessionASRProxy(language="ja") → processor.language == "Japanese", (2) no override → server-wide "zh" → "Chinese", (3) override wins over server-wide "en" → "Chinese" not "English". Falsifiable: reverting to getattr(asr, "language") without _session_language precedence would resolve to the server default.
+- DONE: ruff check clean, uv lock --check passes, 52 tests pass (46 prior + 6 new), pytest --collect-only works without MLX.
+  All checks pass on the venv (with mlx-qwen3-asr 0.3.5); 52 tests collected and passed in ~1.1s. `pytest --collect-only` without mlx-qwen3-asr collects 52 tests in ~1.1s.
+
+### Summary
+
+Added 3 pre-emptive fixes on top of the rebased branch (572bb05 → a8b4fe3): (1) uv conflict declarations for mlx-qwen3-asr vs the three qwen3-asr-causal extras, matching the mlx-llm-mt pattern; (2) two-session isolation regression test proving independent per-session state with shared model cache; (3) per-session language override regression test proving SessionASRProxy._session_language reaches the processor. All 52 tests pass, ruff clean, uv lock --check passes, collect-only works without MLX. Committed as a8b4fe3 on spacedock-ensign/mlx-qwen3-asr-backend.
