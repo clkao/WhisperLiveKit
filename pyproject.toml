@@ -187,6 +187,18 @@ conflicts = [
         { extra = "nemotron-mlx-asr" },
     ],
     [
+        { extra = "qwen3-streaming" },
+        { extra = "diarization-mlx-sortformer" },
+    ],
+    [
+        { extra = "diarization-mlx-sortformer" },
+        { extra = "qwen3-vllm" },
+    ],
+    [
+        { extra = "diarization-mlx-sortformer" },
+        { extra = "qwen3-vllm-metal" },
+    ],
+    [
         { extra = "nemotron-mlx-asr" },
         { extra = "qwen3-vllm" },
     ],

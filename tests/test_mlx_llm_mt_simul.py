@@ -391,8 +391,8 @@ def test_core_factory_creates_simul_when_flag_set():
 
 
 def test_online_translation_factory_returns_simul_directly():
-    """``online_translation_factory`` returns the simul instance directly
-    (it is a ``MlxLlmTranslation`` subclass)."""
+    """``online_translation_factory`` returns a per-session simul client
+    (a ``MlxLlmTranslationSimul`` instance, not the base class)."""
     from argparse import Namespace
 
     from whisperlivekit.core import online_translation_factory
@@ -403,7 +403,7 @@ def test_online_translation_factory_returns_simul_directly():
     )
     args = Namespace(target_language="en", lan="zh")
     result = online_translation_factory(args, simul)
-    assert result is simul
+    assert isinstance(result, MlxLlmTranslationSimul)
 
 
 # ---------------------------------------------------------------------------
