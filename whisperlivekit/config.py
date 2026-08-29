@@ -59,6 +59,8 @@ class WhisperLiveKitConfig:
     # Simultaneous-MT variant of mlx-llm-mt: drafts over the unstable ASR tail
     # with the AlignAtt commit policy (calibrated zh→en Hunyuan heads).
     mlx_llm_mt_simultaneous: bool = False
+    mlx_llm_mt_simul_commit: str = "argmax"  # argmax | mass
+    mlx_llm_mt_simul_mass_threshold: float = 0.5
 
     # mlx-qwen3-asr backend (pure-MLX qwen3-asr; coexists with mlx-lm on transformers 5.x)
     mlx_qwen3_asr_model: str = "Qwen/Qwen3-ASR-0.6B"

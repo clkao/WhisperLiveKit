@@ -130,6 +130,8 @@ def _make_engine_kwargs(args) -> dict:
             kw["mlx_qwen3_asr_context"] = args.hotwords
     elif args.backend == "nemotron-mlx-asr":
         kw["nemotron_mlx_asr_model"] = args.nemotron_mlx_asr_model
+    if getattr(args, "simultaneous", False) and getattr(args, "simul_commit", None):
+        kw["mlx_llm_mt_simul_commit"] = args.simul_commit
     elif args.backend == "qwen3-vllm-metal":
         kw["qwen3_vllm_metal_audio_backend"] = args.qwen3_vllm_metal_audio_backend
         kw["qwen3_vllm_metal_tower_checkpoint"] = args.qwen3_vllm_metal_tower_checkpoint
@@ -934,6 +936,10 @@ def main() -> None:
     # --- Simultaneous MT ---
     p.add_argument("--simultaneous", action="store_true", default=False,
                    help="Use the simultaneous-MT variant (AlignAtt commit policy, calibrated zh→en Hunyuan heads)")
+    p.add_argument("--simul-commit", choices=["argmax", "mass"], default="argmax",
+                   help="Simul commit policy: argmax (default, brittle — single spike on unstable tail holds the token) "
+                        "or mass (commit if majority of attention mass is on committed source, more provisional content). "
+                        "mass measured best in livecaption A/B.")
 
     args = p.parse_args()
 

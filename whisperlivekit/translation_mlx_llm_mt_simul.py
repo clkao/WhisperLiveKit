@@ -53,6 +53,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         target_language: str = "en",
         source_language: str = "",
         warmup: bool = True,
+        commit_mode: str = "argmax",
+        mass_threshold: float = 0.5,
     ):
         super().__init__(
             model_id=model_id,
@@ -60,6 +62,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             source_language=source_language,
             warmup=warmup,
         )
+        self._commit_mode = commit_mode
+        self._mass_threshold = mass_threshold
         # Per-instance simultaneous state.
         self._tail: Optional[HypothesisTail] = None
         self._committed_simul: List[ASRToken] = []  # committed tokens (open utterance)
@@ -196,7 +200,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                     tokens.pop()
                     break
         committed_len = apply_commit_policy(
-            self._capture, self._simul_top_head, len(tokens), src_start, src_end, cend
+            self._capture, self._simul_top_head, len(tokens), src_start, src_end, cend,
+            mode=self._commit_mode, mass_threshold=self._mass_threshold,
         )
         committed_tokens = tokens[:committed_len]
         committed_text_out = _strip_hy_placeholder(tokenizer.decode(committed_tokens))
@@ -235,7 +240,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         cend = committed_src_end_from_text(tokenizer, src_ids, committed_text)
         # The capture still holds the last call's attentions (not cleared).
         committed_len = apply_commit_policy(
-            self._capture, self._simul_top_head, len(draft["tokens"]), src_start, src_end, cend
+            self._capture, self._simul_top_head, len(draft["tokens"]), src_start, src_end, cend,
+            mode=self._commit_mode, mass_threshold=self._mass_threshold,
         )
         committed_tokens = draft["tokens"][:committed_len]
         return _strip_hy_placeholder(tokenizer.decode(committed_tokens))
