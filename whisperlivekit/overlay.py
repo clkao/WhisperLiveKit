@@ -157,6 +157,8 @@ class OverlayRenderer:
         self._en_drain_stop = threading.Event()
         self._append_stop = threading.Event()  # cancels a stale streaming thread
         self._shown_en_plain: str = ""  # plain text currently rendered on the current row
+        self._streaming_target: str = ""  # what the streaming thread is streaming toward
+        self._streaming_active = False  # is a streaming thread running
         self._en_drain_thread: threading.Thread | None = None
 
     # ---- lifecycle (context manager, same shape as render.Renderer) ----
@@ -498,27 +500,30 @@ class OverlayRenderer:
         Tokenization is CJK-aware: each CJK char is its own token, Latin runs
         stay whole (reuses inline_diff._DIFF_TOKEN_RE so the streaming units
         match the diff units)."""
+        # Don't re-trigger if already streaming toward the same target — the
+        # drainer ticks at 100ms and would restart the streaming every tick,
+        # creating a stuttering char-by-char effect.
+        if self._streaming_active and self._streaming_target == target:
+            return
         from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
         delta = target[len(shown):] if shown and target.startswith(shown) else target
         self._append_stop.set()
         self._append_stop = threading.Event()
         stop = self._append_stop
         is_prov = is_provisional
-        def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov):
+        self._streaming_target = target
+        self._streaming_active = True
+        def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov, target=target):
             import time as _t
             cur = shown if (shown and target.startswith(shown)) else ""
             if not target.startswith(shown):
                 self._set(self._field_en, "")
-            # CJK-aware tokenization: group CJK chars into pairs for readability
             tokens = _DIFF_TOKEN_RE.findall(delta)
-            # Merge consecutive single CJK chars into pairs so the streaming
-            # reveals 2 chars at a time (1 char at 0.05s is too slow to read).
             words = _merge_cjk_pairs(tokens)
             for w in words:
                 if stop.is_set():
+                    self._streaming_active = False
                     return
-                # preserve spacing: if the token doesn't start with space and cur
-                # doesn't end with space, add one (Latin); CJK tokens have no space.
                 needs_space = (cur and w and not w.startswith(" ")
                               and not cur.endswith(" ")
                               and not _is_cjk(w[0]))
@@ -527,6 +532,7 @@ class OverlayRenderer:
                 attr = self._spans_to_attributed_simple(cur, is_prov)
                 self._set_attr(self._field_en, attr)
                 _t.sleep(0.05)
+            self._streaming_active = False
         threading.Thread(target=_stream, daemon=True, name="ov-append").start()
 
     def _spans_to_attributed(self, spans: list) -> "AppKit.NSAttributedString | None":
