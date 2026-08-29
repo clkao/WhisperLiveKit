@@ -595,3 +595,22 @@ Rework round for the captain-ordered PR #423 rebase + placeholder stop: branch r
 ### Summary
 
 APPROVED. The rework finding was demonstrably intercepted: its routed requirements are acknowledged in state commit `411e957`, realized in code commit `95b9bf0`, and independently verified by ancestry/file-equivalence checks, 51 focused tests, and a direct release-path probe. No blocker or scope leakage was found; tokenizers whose placeholder encoding exceeds the deliberate 16-id cap retain the existing post-hoc strip fallback.
+
+## Stage Report: implementation (rework round 2 — PR #423 reviewer blockers)
+
+- DONE: Lazy-guard mlx.core/mlx.nn imports in simul_mt_capture.py (move to CapturedAttention.__call__; remove nn.Module base + super().__init__).
+  Already applied in prior commit `efd3c93`; verified: `grep "import mlx" simul_mt_capture.py` shows no module-level imports; `CapturedAttention` does not inherit `nn.Module` (dynamic `_CapturedAttentionNN` wrapper in `install_capture` adds it at call time). Module imports cleanly with `sys.modules['mlx'] = None`.
+- DONE: Add non-MLX collection regression test (pytest --collect-only works without MLX).
+  Verified: `pytest --collect-only tests/test_mlx_llm_mt_simul.py` with `sys.modules['mlx'] = None` collects 35 tests successfully.
+- DONE: Ruff: remove unused 'released' (F841) in test_mlx_llm_mt_simul.py; fix import sort (I001) in translation_mlx_llm_mt_simul.py.
+  Already applied in `efd3c93`; `ruff check` clean across `whisperlivekit/` and `tests/`.
+- DONE: Rebase onto corrected PR #422 head (9209316 on spacedock-ensign/hunyuan-mlx-translation-backend).
+  Already rebased: `9209316` is ancestor of HEAD; simul commits replay cleanly on top.
+- DONE: Resolve rebase conflicts: core.py (keep simul factory + new_session from #422), translation_mlx_llm_mt.py (take #422 version).
+  core.py retains simul factory (`--simultaneous` → `MlxLlmTranslationSimul`) + `new_session()` per-session isolation; translation_mlx_llm_mt.py is #422's version. Post-rebase fix: `MlxLlmTranslationSimul.new_session()` override (commit `57f18c4`) so per-session client preserves simul type — base `new_session` returned `MlxLlmTranslation`, breaking `test_online_translation_factory_returns_simul_directly`.
+- DONE: Run: ruff check clean, uv lock --check passes, 35+ simul tests pass, pytest --collect-only works without MLX.
+  ruff: All checks passed. uv lock --check: Resolved 405 packages. 35/35 simul tests pass. 68/68 (mlx-llm-mt + simul + alignatt) pass. Collect-only without MLX: 35 tests collected.
+
+### Summary
+
+Fixed the 1 remaining test failure from the PR #422 rebase: `MlxLlmTranslationSimul` inherited the base `new_session()` which returned a `MlxLlmTranslation`, losing the simul type/state. Added `new_session()` override returning `MlxLlmTranslationSimul` and updated the factory test from identity (`is`) to type (`isinstance`). The 2 reviewer blockers (lazy MLX import, ruff F841/I001) and the rebase onto `9209316` were already applied in commit `efd3c93`; this round verified them and fixed the post-rebase `new_session` regression.
