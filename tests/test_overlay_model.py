@@ -2,17 +2,23 @@
 
 Drives OverlayDisplayModel with a deterministic event stream + fake clock and
 asserts on the DisplayState DOM — the same events the OverlayRenderer receives,
-without AppKit or real time.
+without AppKit or real time. Uses the segment-based API (list of (speaker, text)
+tuples) matching the live callback contract.
 """
+from datetime import datetime
 import pytest
 
 from whisperlivekit.overlay_model import (
-    FINAL,
+    FINAL_SAME,
+    FINAL_ADD,
     PROVISIONAL,
     DisplayState,
     OverlayDisplayModel,
     Span,
 )
+
+U1 = datetime(2026, 1, 1, 0, 0, 1)
+U2 = datetime(2026, 1, 1, 0, 0, 2)
 
 
 class FakeClock:
@@ -31,6 +37,11 @@ def make(hold=3.5):
     return OverlayDisplayModel(hold_sec=hold, clock=clk), clk
 
 
+def segs(text, diff=None):
+    """Build a single-speaker segment list (None speaker = no marker)."""
+    return [(None, text, diff)] if diff else [(None, text)]
+
+
 def plain(state):
     return "".join(s.text for s in state.current)
 
@@ -43,9 +54,8 @@ def prev_plain(state):
 
 def test_preview_is_dimmed_and_does_not_expire():
     m, clk = make()
-    m.preview("Hello there", utt=("u1", 1))
-    st = m.tick()
-    assert plain(st := st) if False else True
+    m.preview(segs("Hello there"), started_at=U1)
+    m.tick()
     state = m.state()
     assert state.current and state.current[0].style == PROVISIONAL
 
@@ -53,30 +63,28 @@ def test_preview_is_dimmed_and_does_not_expire():
 def test_preview_persists_after_hold_no_final():
     """A provisional never expires on its own — a vanishing draft reads as dropped."""
     m, clk = make()
-    m.preview("draft text", ("u1", 1))
+    m.preview(segs("draft text"), started_at=U1)
     m.tick()
     clk.advance(10 * 3.5)
-    m.tick()  # hold elapsed, nothing queued — provisional must persist
+    m.tick()
     assert plain(m.state()) == "draft text"
 
 
 def test_preview_rewrite_replaces_frozen_draft():
-    """The MT re-commits a different prefix — the display must hard-replace and stay
-    current (the frozen-34s bug)."""
+    """The MT re-commits a different prefix — the display must hard-replace."""
     m, clk = make()
-    m.preview("We are here today to discuss laser", ("u1", 1))
+    m.preview(segs("We are here today to discuss laser"), started_at=U1)
     m.tick()
-    m.preview("Today we will discuss laser", ("u1", 1))  # rewrite (different prefix)
+    m.preview(segs("Today we will discuss laser"), started_at=U1)
     m.tick()
     assert plain(m.state()) == "Today we will discuss laser"
 
 
 def test_preview_unchanged_skips():
     m, _ = make()
-    m.preview("same text", ("u1", 1))
+    m.preview(segs("same text"), started_at=U1)
     m.tick()
-    st = m.state()
-    m.preview("same text", ("u1", 1))
+    m.preview(segs("same text"), started_at=U1)
     assert m.tick() is None  # no churn
 
 
@@ -84,93 +92,98 @@ def test_preview_unchanged_skips():
 
 def test_final_single_sentence_shows_immediately():
     m, clk = make()
-    m.preview("draft", ("u1", 1))
+    m.preview(segs("draft"), started_at=U1)
     m.tick()
-    m.translation("The real sentence.", ("u1", 1))
+    m.translation(segs("The real sentence."), started_at=U1)
+    m.tick()  # drain the queued delta
     state = m.state()
     assert plain(state) == "The real sentence."
-    assert state.current[0].style == FINAL
+    assert state.current[0].style == FINAL_SAME
     assert state.prev == []  # own provisional never scrolls up
 
 
-def test_final_multi_sentence_last_on_current_second_on_prev():
+def test_two_consecutive_finals_scroll_up():
+    """Speak two sentences; when the second shows, the first must be on prev."""
     m, clk = make()
-    m.translation("Sentence one. Sentence two. Sentence three.", ("u1", 1))
-    state = m.state()
-    assert plain(state) == "Sentence three."
-    assert "".join(s.text for s in state.prev) == "Sentence two."
-
-
-def test_two_consecutive_sentences_top_row_gets_first():
-    """The live-report scenario: speak two sentences; when the second shows, the
-    first must be on the prev row."""
-    m, clk = make()
-    m.translation("First caption here.", ("u1", 1))
-    assert plain(m.state()) == "First caption here."
-    m.translation("Second caption arrives.", ("u2", 2))
+    m.translation(segs("First caption here."), started_at=U1)
+    m.tick()
+    m.translation(segs("Second caption arrives."), started_at=U1)
+    m.tick()  # drain the queued delta
     state = m.state()
     assert plain(state) == "Second caption arrives."
-    assert "".join(s.text for s in state.prev) == "First caption here."
+    assert prev_plain(state) == "First caption here."
 
 
-def test_final_replaces_queue_provisional():
+def test_final_replaces_provisional_in_place():
+    """A same-utterance final correcting a provisional: the common-prefix amend keeps
+    the shown prefix (flips to final style) and only enqueues the delta. The committed
+    prefix scrolls up when the delta shows (multi-sentence pacing). No cross-utterance
+    scroll — the prev row holds the committed prefix, not an old caption."""
     m, clk = make()
-    m.preview("draft grows", ("u1", 1))
+    m.preview(segs("draft grows"), started_at=U1)
     m.tick()
-    m.preview("draft grows more", ("u1", 1))  # still queued
-    m.translation("The committed line.", ("u1", 1))
-    assert plain(m.state()) == "The committed line."
+    m.preview(segs("draft grows more"), started_at=U1)
+    m.tick()
+    m.translation(segs("draft grows more now final"), started_at=U1)
+    m.tick()  # drain
+    state = m.state()
+    # delta "now final" on current; committed prefix scrolled to prev
+    assert "now final" in plain(state)
+    assert prev_plain(state) == "draft grows more"  # committed prefix, not old caption
 
 
-# ---- drainer / hold ----
-
-def test_queue_releases_after_hold_and_scrolls_up():
+def test_final_expires_after_hold():
     m, clk = make()
-    m.preview("first draft", ("u1", 1))
+    m.translation(segs("Temporary caption."), started_at=U1)
     m.tick()
-    m.preview("first draft longer", ("u1", 1))  # queued, newest wins
     clk.advance(3.6)
-    m.tick()
-    assert plain(m.state()) == "first draft longer"
-
-
-def test_final_expires_after_hold_when_idle():
-    m, clk = make()
-    m.translation("A caption.", ("u1", 1))
-    assert plain(m.state()) == "A caption."
-    clk.advance(4.0)
-    m.tick()
-    assert plain(m.state()) == ""  # expired
+    m.tick()  # hold elapsed
+    assert plain(m.state()) == ""
 
 
 def test_prev_expires_on_own_timer():
     m, clk = make()
-    m.translation("One. Two.", ("u1", 1))  # current="Two.", prev="One."
-    clk.advance(3.0)
-    m.tick()  # nothing expires yet
-    assert m.state().prev, "prev should still show"
-    clk.advance(1.0)
+    m.translation(segs("First."), started_at=U1)
     m.tick()
-    assert m.state().prev == []  # 4.0s > 3.5s hold — expired
+    m.translation(segs("Second."), started_at=U1)
+    m.tick()
+    assert prev_plain(m.state()) == "First."
+    clk.advance(3.6)
+    m.tick()  # prev hold elapsed
+    assert prev_plain(m.state()) == ""
 
 
-def test_new_utterance_provisional_scrolls_committed_final_up():
+# ---- diff rendering ----
+
+def test_final_with_diff_shows_add_green():
+    """A final with diff spans renders 'add' as FINAL_ADD, 'same' as FINAL_SAME,
+    'del' omitted."""
     m, clk = make()
-    m.translation("Committed caption.", ("u1", 1))
-    clk.advance(4.0)
-    m.tick()  # final expires (empty current)
-    # new utterance's final arrives
-    m.translation("New caption here.", ("u2", 2))
+    diff = [("same", "Hello "), ("del", "world"), ("add", "there")]
+    m.translation([(None, "Hello there", diff)], started_at=U1)
+    m.tick()
     state = m.state()
-    assert plain(state) == "New caption here."
-    # the expired current was cleared; prev shows the new utterance's history only
-    # via scroll-up — an expired final leaves nothing behind.
-    assert state.prev == []
+    styles = [s.style for s in state.current]
+    texts = [s.text for s in state.current]
+    assert FINAL_ADD in styles
+    assert "there" in texts
+    assert "world" not in texts  # del omitted
 
 
-def test_tick_returns_none_when_unchanged():
+def test_provisional_with_diff_renders_all_dimmed():
     m, clk = make()
-    m.preview("hello", ("u1", 1))
-    first = m.tick()
-    assert first is not None
-    assert m.tick() is None  # identical state → skip render
+    diff = [("same", "Hello "), ("add", "world")]
+    m.preview([(None, "Hello world", diff)], started_at=U1)
+    m.tick()
+    state = m.state()
+    assert all(s.style == PROVISIONAL for s in state.current)
+
+
+# ---- partial ----
+
+def test_partial_in_state():
+    m, clk = make()
+    m.set_partial("源语言 partial")
+    m.tick()
+    state = m.state()
+    assert state.partial == "源语言 partial"

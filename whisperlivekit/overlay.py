@@ -32,7 +32,7 @@ import threading
 import time
 from datetime import datetime
 
-from whisperlivekit.overlay_model import PROVISIONAL
+from whisperlivekit.overlay_model import PROVISIONAL, FINAL_SAME, FINAL_ADD
 
 # AppKit is imported lazily at instantiation (see _create_window) so this module
 # imports cleanly even on a headless host or without pyobjc installed. The level /
@@ -124,8 +124,7 @@ class OverlayRenderer:
         # model directly with a fake clock (tests/test_overlay_model.py).
         from whisperlivekit.overlay_model import OverlayDisplayModel
         self._model = OverlayDisplayModel(hold_sec=MIN_HOLD_SEC)
-        self._shown_current: str = ""   # text last rendered on the current row
-        self._shown_prev: str = ""      # text last rendered on the prev row
+        self._event_log = None  # optional OverlayEventLog for replay/tuning
         self._en_drain_stop = threading.Event()
         self._en_drain_thread: threading.Thread | None = None
 
@@ -313,36 +312,17 @@ class OverlayRenderer:
                 self._reconcile(state)
 
     def _reconcile(self, state) -> None:
-        """Apply a DisplayState to the fields. The streaming effect lives here (the
-        reconciler), not in the model: when the new current text EXTENDS what is
-        already shown, reveal just the delta with a micro-delay (perceived continuity);
-        on a rewrite or first show, hard-swap to the latest (stays current, never
-        frozen). The model holds no animation state, so tests assert on states only.
-
-        The lock is NOT held during the streaming sleeps — _shown_current/_shown_prev
-        are drainer-only (no race), and holding the lock for ~1s of word-by-word
-        streaming would stall partial/final callbacks that also acquire it."""
-        cur = "".join(sp.text for sp in state.current)
-        prev = "".join(s.text for s in state.prev)
-        style = state.current[0].style if state.current else None
-        if cur != self._shown_current:
-            if not cur:
-                self._set(self._field_en, "")
-            elif (self._shown_current and cur.startswith(self._shown_current)
-                  and len(cur) > len(self._shown_current)):
-                # extends: stream the delta word-by-word with a micro-delay
-                is_prev = style == PROVISIONAL
-                grown = self._shown_current
-                for w in cur[len(self._shown_current):].split(" "):
-                    grown = (grown + " " + w) if grown and w else (grown + w if w else grown)
-                    self._set_en(self._field_en, grown, preview=is_prev)
-                    time.sleep(0.05)
-            else:
-                self._set_en(self._field_en, cur, preview=(style == PROVISIONAL))
-            self._shown_current = cur
-        if self._shown_prev != prev:
-            self._set_en(self._field_en_prev, prev, preview=True)
-            self._shown_prev = prev
+        """Apply a DisplayState to the fields. The model handles all pacing/hold/scroll
+        logic; this just renders the model's spans as attributed strings (green adds,
+        bright same, dimmed provisional) on the main thread."""
+        cur_attr = self._spans_to_attributed(state.current)
+        prev_attr = self._spans_to_attributed(state.prev)
+        if cur_attr is not None:
+            self._set_attr(self._field_en, cur_attr)
+        if prev_attr is not None:
+            self._set_attr(self._field_en_prev, prev_attr)
+        if state.partial is not None and self._field_partial is not None:
+            self._set(self._field_partial, state.partial)
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -384,8 +364,7 @@ class OverlayRenderer:
 
     # ---- callback contract (same as render.Renderer) ----
     def partial(self, label: str, text: str, started_at: datetime, speaker: int | None = None) -> None:
-        with self._lock:
-            self._partial = text
+        self._model.set_partial(text)
         if self._overlay_mode != "target":
             self._set(self._field_partial, text)
 
@@ -393,7 +372,7 @@ class OverlayRenderer:
         zh = _segments_text(segments)
         with self._lock:
             self._zh = zh
-            self._partial = ""  # this utterance finalized; clear the partial line
+        self._model.clear_partial()
         self._record_latency(started_at, "asr")
         if self._overlay_mode != "target":
             self._set(self._field_zh, zh)
@@ -402,19 +381,18 @@ class OverlayRenderer:
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         if self._overlay_mode == "source":
             return
-        en = _segments_text(zh_segments)
+        if self._event_log is not None:
+            self._event_log.record_final(zh_segments, started_at)
         self._record_latency(started_at, "cap")
-        # utterance identity: (label, started_at) — lets the model tell a same-utterance
-        # final (in-place draft correction) from a new utterance (scroll-up).
-        self._model.translation(en, (label, started_at))
+        self._model.translation(zh_segments, started_at)
 
     def preview(self, label: str, zh_segments: list, started_at: datetime) -> None:
-        """Live provisional translation of the in-progress utterance: enqueued through
-        the display model's hold-drain so a draft can't flicker over a held final, and
-        a draft never expires on its own (it persists until the final replaces it —
-        a vanishing draft reads as a dropped caption)."""
-        en = _segments_text(zh_segments)
-        self._model.preview(en, (label, started_at))
+        """Live provisional translation of the in-progress utterance."""
+        if self._overlay_mode == "source":
+            return
+        if self._event_log is not None:
+            self._event_log.record_preview(zh_segments, started_at)
+        self._model.preview(zh_segments, started_at)
 
     def flush_pending(self) -> None:
         """Release any buffered finals when translation is disabled at runtime (model load
@@ -435,11 +413,8 @@ class OverlayRenderer:
         )
 
     def _set_en(self, field: AppKit.NSTextField | None, value: str, *, preview: bool = False) -> None:
-        """Update the EN field's text + color on the MAIN thread. Finals render
-        white (bold); provisional (simul-MT draft) sentences render dimmer so the
-        user can tell an uncommitted draft from a finalized translation. Strips
-        Hunyuan placeholder tokens from provisional text so the overlay never
-        shows the raw model artifact."""
+        """Update the EN field's text + color on the MAIN thread (plain-text fallback;
+        the diff-aware path uses _set_attr + _spans_to_attributed)."""
         if field is None:
             return
         text = value
@@ -454,4 +429,40 @@ class OverlayRenderer:
         )
         field.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setStringValue:", text, False
+        )
+
+    def _spans_to_attributed(self, spans: list) -> "AppKit.NSAttributedString | None":
+        """Build a styled NSAttributedString from the model's DisplayState spans.
+        Style → color: PROVISIONAL → dimmed, FINAL_SAME → white, FINAL_ADD → green.
+        Returns None for empty spans (the caller skips the field update)."""
+        if not spans:
+            return None
+        if AppKit is None:
+            return None
+        font = AppKit.NSFont.systemFontOfSize_weight_(42, AppKit.NSFontWeightBold)
+        para = AppKit.NSMutableParagraphStyle.alloc().init()
+        para.setAlignment_(AppKit.NSCenterTextAlignment)
+        white = AppKit.NSColor.whiteColor()
+        green = AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.3, 0.85, 0.4, 1.0)
+        dimmed = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
+        mut = AppKit.NSMutableAttributedString.alloc().init()
+        for sp in spans:
+            if sp.style == FINAL_ADD:
+                color = green
+            elif sp.style == PROVISIONAL:
+                color = dimmed
+            else:  # FINAL_SAME or anything else
+                color = white
+            attrs = {"NSFont": font, "NSColor": color, "NSParagraphStyle": para}
+            mut.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(sp.text, attrs)
+            )
+        return mut
+
+    def _set_attr(self, field: AppKit.NSTextField | None, attr) -> None:
+        """Update a field with an attributed string on the MAIN thread."""
+        if field is None or attr is None:
+            return
+        field.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setAttributedStringValue:", attr, False
         )
