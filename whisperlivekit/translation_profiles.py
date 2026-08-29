@@ -127,7 +127,9 @@ _HUNYUAN_NAMES_EN = {
 
 _HUNYUAN_MODELS = {
     "hy-mt2-1.8b-8bit": "mlx-community/Hy-MT2-1.8B-8bit",
+    "hy-mt2.1.8b-8bit": "mlx-community/Hy-MT2-1.8B-8bit",  # alias (dot form)
     "hy-mt2-1.8b-4bit": "mlx-community/Hy-MT2-1.8B-4bit",
+    "hy-mt2.1.8b-4bit": "mlx-community/Hy-MT2-1.8B-4bit",  # alias (dot form)
     "hy-mt2-7b-4bit": "mlx-community/Hy-MT2-7B-4bit",
     "hy-mt2-7b-8bit": "mlx-community/Hy-MT2-7B-8bit",
     "hunyuan-mt-7b-4bit": "mlx-community/Hunyuan-MT-7B-4bit",

@@ -182,12 +182,21 @@ def _normalize_model_id(repo: str) -> str:
     then lowercase. Calibration entries are keyed by model id only, so the
     same architecture across quants (8bit/4bit/bf16) and implementations
     (MLX ``mlx-community/…``, vLLM ``tencent/…``) shares a single entry.
+
+    Also normalizes dots to dashes in version segments (``hy-mt2.1.8b`` →
+    ``hy-mt2-1.8b``) so both naming conventions resolve to the same key.
     """
     name = (repo or "").rsplit("/", 1)[-1].lower()
     for suffix in _QUANT_SUFFIXES:
         if name.endswith(suffix):
             name = name[: -len(suffix)]
             break
+    # Normalize the dot-form version separator (hy-mt2.1.8b → hy-mt2-1.8b)
+    # without touching dots inside version numbers (1.8b stays 1.8b).
+    import re
+    name = re.sub(r'(\d)\.(\d)', r'\1-\2', name) if '.1.' in name or '.7.' in name else name
+    # simpler: just replace the specific known pattern
+    name = name.replace('mt2.1.8b', 'mt2-1.8b').replace('mt2.7b', 'mt2-7b')
     return name
 
 
