@@ -128,6 +128,8 @@ def _make_engine_kwargs(args) -> dict:
         # initial context comes from this kwarg.
         if args.hotwords:
             kw["mlx_qwen3_asr_context"] = args.hotwords
+    elif args.backend == "nemotron-mlx-asr":
+        kw["nemotron_mlx_asr_model"] = args.nemotron_mlx_asr_model
     elif args.backend == "qwen3-vllm-metal":
         kw["qwen3_vllm_metal_audio_backend"] = args.qwen3_vllm_metal_audio_backend
         kw["qwen3_vllm_metal_tower_checkpoint"] = args.qwen3_vllm_metal_tower_checkpoint
@@ -870,7 +872,16 @@ def main() -> None:
     p.add_argument("--target-language", default="en")
     p.add_argument("--backend", choices=["mlx-qwen3-asr", "qwen3-vllm-metal", "nemotron-mlx-asr"], default="mlx-qwen3-asr",
                    help="ASR backend: mlx-qwen3-asr (windowed, pure MLX) or qwen3-vllm-metal (causal, native MLX via the fork) or nemotron-mlx-asr (transducer, native timestamps)")
-    p.add_argument("--mlx-qwen3-asr-model", default="mlx-community/Qwen3-ASR-0.6B-8bit")
+    p.add_argument("--mlx-qwen3-asr-model", default="mlx-community/Qwen3-ASR-0.6B-8bit",
+                   help="ASR model id for mlx-qwen3-asr. Tested: mlx-community/Qwen3-ASR-0.6B-8bit (default, RTF ~0.04), "
+                        "mlx-community/Qwen3-ASR-0.6B-4bit (RTF ~0.06, ~16% smaller, slightly better zh-tw vocab in samples).")
+    p.add_argument("--nemotron-mlx-asr-model",
+                   default="mlx-community/nemotron-3.5-asr-streaming-0.6b",
+                   help="ASR model id for nemotron-mlx-asr (transducer, native per-token timestamps). "
+                        "Tested: mlx-community/nemotron-3.5-asr-streaming-0.6b (bf16, default), "
+                        "mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit (8bit, streaming-only — one-shot generate() crashes in mlx-audio), "
+                        "MarkChen1214/nemotron-3.5-asr-streaming-0.6b-MLX-Mixed-6bit8bit (mixed 6/8bit, 16.75%% smaller than 8bit, equal quality). "
+                        "All produce garbage zh quality (0.6b model ceiling); use qwen3 for zh-tw production.")
     p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit")
     p.add_argument("--qwen3-vllm-metal-audio-backend", choices=["standard", "causal"], default="causal",
                    help="qwen3-vllm-metal audio backend: 'causal' (append-only KV, flat-cost) or 'standard' (re-encode window)")
