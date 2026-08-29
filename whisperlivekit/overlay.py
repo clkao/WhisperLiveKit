@@ -339,16 +339,18 @@ class OverlayRenderer:
                 stop = self._append_stop
                 shown = self._shown_en_plain
                 is_prov = is_provisional
-                def _stream():
+                def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov):
+                    import time as _t
                     cur = shown
                     for w in delta.split(" "):
                         if stop.is_set():
                             return
                         cur = (cur + " " + w) if cur and w else (cur + w if w else cur)
+                        self._shown_en_plain = cur  # update incrementally so the
+                        # next tick's extends check sees the growth and shrinks the delta
                         attr = self._spans_to_attributed_simple(cur, is_prov)
                         self._set_attr(self._field_en, attr)
-                        time.sleep(0.05)
-                    self._shown_en_plain = cur
+                        _t.sleep(0.05)
                 threading.Thread(target=_stream, daemon=True, name="ov-append").start()
             else:
                 # rewrite or first: hard-swap
