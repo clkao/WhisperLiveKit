@@ -356,24 +356,29 @@ class OverlayRenderer:
         prev_plain = "".join(s.text for s in state.prev)
         is_provisional = bool(state.current) and state.current[0].style == PROVISIONAL
 
-        # Current row: stream on extends, stream-from-empty on new caption
+        # Current row: stream on first appearance, hard-swap on subsequent
         if cur_plain != self._shown_en_plain:
             if not cur_plain:
                 self._set(self._field_en, "")
                 self._shown_en_plain = ""
-            elif (self._shown_en_plain and cur_plain.startswith(self._shown_en_plain)
-                  and len(cur_plain) > len(self._shown_en_plain)):
-                # extends: stream the delta word-by-word
+            elif not self._shown_en_plain:
+                # first appearance: stream the whole text word-by-word (the typing effect)
                 import os
                 if os.environ.get("OV_DEBUG"):
-                    print(f"[ov] extends: {self._shown_en_plain!r} -> {cur_plain!r} delta={cur_plain[len(self._shown_en_plain):]!r}", file=sys.stderr, flush=True)
-                self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
-            else:
-                # new caption or rewrite: clear + stream the whole text word-by-word
-                import os
-                if os.environ.get("OV_DEBUG"):
-                    print(f"[ov] stream-new: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
+                    print(f"[ov] stream-first: {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
                 self._stream_delta("", cur_plain, is_provisional)
+            else:
+                # subsequent update (provisional→final, sentence-to-sentence): hard-swap
+                # the attributed string (no clear+retype flicker). The final's green
+                # diff spans show the correction.
+                import os
+                if os.environ.get("OV_DEBUG"):
+                    print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
+                self._append_stop.set()  # cancel any streaming
+                self._streaming_active = False
+                attr = self._spans_to_attributed(state.current)
+                self._set_attr(self._field_en, attr)
+                self._shown_en_plain = cur_plain
 
         # Prev row: hard-swap (no streaming — it's history)
         prev_attr = self._spans_to_attributed(state.prev) if state.prev else None
