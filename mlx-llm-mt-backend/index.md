@@ -367,3 +367,26 @@ which remains as fallback).
 ### Summary
 
 APPROVED. The validation finding was demonstrably intercepted: its routed requirements are echoed in implementation state commit `40da5a5`, realized in code commit `f923d78`, and independently exercised by the validator. No blocker or scope leakage was found; residual risk is limited to placeholder spellings/tokenizations longer than the 16-id cap, which intentionally retain the existing post-hoc strip fallback.
+
+## Stage Report: implementation (rework round — PR #422 reviewer blockers)
+
+- DONE: Fix uv.lock: define [tool.uv].conflicts for mlx-llm-mt vs qwen3-streaming/qwen3-vllm/qwen3-vllm-metal (transformers>=5 vs ==4.57.6 pin); refresh uv.lock; uv lock --check passes; remove --no-deps install comment.
+  pyproject.toml: 3 new conflict entries + comment fix; uv.lock: regenerated, 405 packages resolved, --check passes.
+- DONE: Split per-session translation state: MlxLlmTranslation.new_session() creates a per-session client sharing _MODEL_CACHE but with fresh _buffer_tokens/_pending_finals/_last_buffer; online_translation_factory uses new_session instead of returning the shared instance.
+  translation_mlx_llm_mt.py: new_session method (warmup=False, shares cache); core.py: online_translation_factory calls new_session; test_new_session_shares_model_cache_not_state + test_new_session_shares_model_cache assert isolation + cache sharing.
+- DONE: Fix per-session target-language override: session_translation_factory routes MlxLlmTranslation through new_session (not nllw fallback).
+  translation.py: added MlxLlmTranslation isinstance check before nllw; test_session_translation_factory_mlx + test_session_translation_factory_mlx_default_target assert override + default.
+- DONE: Ruff clean: remove duplicate 'import sys' (F811) in tests/test_mlx_llm_mt.py; move logger after imports (I001) in translation_mlx_llm_mt.py.
+  test file: removed local 'import sys' (line 203); backend file: logger moved after translation_profiles imports.
+- DONE: Fix benchmark has_wer: make it a @property (was a method — 'if report.has_wer' was always truthy); tests cover all-N/A, mixed-reference, and all-applicable.
+  metrics.py: @property decorator on has_wer; test_has_wer_is_property asserts 3 cases (all-N/A → False, mixed → True, all-applicable → True).
+- DONE: Remove mlx-qwen3-asr auto-detection from benchmark/compat.py (unrelated to this PR).
+  compat.py: removed mlx-qwen3-asr from BACKEND_LANGUAGES, detect_available_backends, and resolve_backend priority list.
+- DONE: Rebase on current origin/main (b781ce9).
+  git rebase origin/main: 4 commits replayed cleanly onto b781ce9.
+- DONE: Run full focused test suite; report counts.
+  21/21 passed (tests/test_mlx_llm_mt.py); uv lock --check passes.
+
+### Summary
+
+All 6 PR #422 reviewer blockers addressed in commit 9b98a66 (rebased on origin/main b781ce9). The branch now has 4 commits on top of main: the original backend, the hy-eos source strip, the in-loop placeholder stop, and the rework fix. 21 tests pass (16 original + 5 new: 2 isolation, 2 session-translation, 1 has_wer). uv.lock regenerated and --check passes. Tree clean.
