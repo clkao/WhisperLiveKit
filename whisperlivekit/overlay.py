@@ -317,29 +317,32 @@ class OverlayRenderer:
         reconciler), not in the model: when the new current text EXTENDS what is
         already shown, reveal just the delta with a micro-delay (perceived continuity);
         on a rewrite or first show, hard-swap to the latest (stays current, never
-        frozen). The model holds no animation state, so tests assert on states only."""
-        with self._lock:
-            cur = "".join(sp.text for sp in state.current)
-            prev = "".join(s.text for s in state.prev)
-            style = state.current[0].style if state.current else None
-            if cur != self._shown_current:
-                if not cur:
-                    self._set(self._field_en, "")
-                elif (self._shown_current and cur.startswith(self._shown_current)
-                      and len(cur) > len(self._shown_current)):
-                    # extends: stream the delta word-by-word with a micro-delay
-                    is_prev = style == PROVISIONAL
-                    grown = self._shown_current
-                    for w in cur[len(self._shown_current):].split(" "):
-                        grown = (grown + " " + w) if grown and w else (grown + w if w else grown)
-                        self._set_en(self._field_en, grown, preview=is_prev)
-                        time.sleep(0.05)
-                else:
-                    self._set_en(self._field_en, cur, preview=(style == PROVISIONAL))
-                self._shown_current = cur
-            if self._shown_prev != prev:
-                self._set_en(self._field_en_prev, prev, preview=True)
-                self._shown_prev = prev
+        frozen). The model holds no animation state, so tests assert on states only.
+
+        The lock is NOT held during the streaming sleeps — _shown_current/_shown_prev
+        are drainer-only (no race), and holding the lock for ~1s of word-by-word
+        streaming would stall partial/final callbacks that also acquire it."""
+        cur = "".join(sp.text for sp in state.current)
+        prev = "".join(s.text for s in state.prev)
+        style = state.current[0].style if state.current else None
+        if cur != self._shown_current:
+            if not cur:
+                self._set(self._field_en, "")
+            elif (self._shown_current and cur.startswith(self._shown_current)
+                  and len(cur) > len(self._shown_current)):
+                # extends: stream the delta word-by-word with a micro-delay
+                is_prev = style == PROVISIONAL
+                grown = self._shown_current
+                for w in cur[len(self._shown_current):].split(" "):
+                    grown = (grown + " " + w) if grown and w else (grown + w if w else grown)
+                    self._set_en(self._field_en, grown, preview=is_prev)
+                    time.sleep(0.05)
+            else:
+                self._set_en(self._field_en, cur, preview=(style == PROVISIONAL))
+            self._shown_current = cur
+        if self._shown_prev != prev:
+            self._set_en(self._field_en_prev, prev, preview=True)
+            self._shown_prev = prev
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -421,30 +424,34 @@ class OverlayRenderer:
 
     # ---- helpers ----
     def _set(self, field: AppKit.NSTextField | None, value: str) -> None:
-        """Update a field's text. Direct setStringValue_ from a worker thread is the
-        pragmatic choice for a simple caption display (PyObjC text fields handle this
-        in practice); if redraw ever flakes, wrap in
-        performSelectorOnMainThread_withObject_waitUntilDone_("setStringValue:", value, False)."""
+        """Update a field's text on the MAIN thread. AppKit is not thread-safe;
+        setStringValue_ from a worker thread causes flicker, stale renders, and
+        out-of-order updates. Dispatch async (waitUntilDone=False) so the
+        drainer never blocks on the main run loop."""
         if field is None:
             return
-        field.setStringValue_(value)
+        field.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setStringValue:", value, False
+        )
 
     def _set_en(self, field: AppKit.NSTextField | None, value: str, *, preview: bool = False) -> None:
-        """Update the EN field's text + color. Finals render white (bold); provisional
-        (simul-MT draft) sentences render dimmer so the user can tell an uncommitted
-        draft from a finalized translation. Strips Hunyuan placeholder tokens from
-        provisional text so the overlay never shows the raw model artifact."""
+        """Update the EN field's text + color on the MAIN thread. Finals render
+        white (bold); provisional (simul-MT draft) sentences render dimmer so the
+        user can tell an uncommitted draft from a finalized translation. Strips
+        Hunyuan placeholder tokens from provisional text so the overlay never
+        shows the raw model artifact."""
         if field is None:
             return
         text = value
         if preview:
-            # Strip the Hunyuan placeholder artifact from the provisional so it
-            # never reaches the overlay (the final translation is clean). The
-            # token uses fullwidth pipes (｜ U+FF5C), e.g. <｜hy_place▁holder▁no▁2｜>.
             import re
             text = re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", value).strip()
             color = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.6, 0.9)
         else:
             color = AppKit.NSColor.whiteColor()
-        field.setTextColor_(color)
-        field.setStringValue_(text)
+        field.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setTextColor:", color, False
+        )
+        field.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setStringValue:", text, False
+        )
