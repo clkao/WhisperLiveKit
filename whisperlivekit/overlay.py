@@ -60,6 +60,35 @@ MIN_HOLD_SEC = 3.5
 # (.!?) and CJK (。！？) terminators; a no-punctuation caption stays one unit.
 _SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+")
 
+# CJK range for tokenization (mirrors inline_diff._CJK subset).
+_CJK_CHARS = set("　-〿㐀-翿一-鿿豈-﫿＀-￯")
+
+
+def _is_cjk(ch: str) -> bool:
+    return ch in _CJK_CHARS
+
+
+def _merge_cjk_pairs(tokens: list) -> list:
+    """Merge consecutive single-CJK-char tokens into pairs so the streaming
+    reveals 2 chars at a time (1 char at 0.05s is too slow to read; a 4-char
+    word at 0.05s is fast but CJK has no spaces to group by)."""
+    out = []
+    cjk_buf = ""
+    for tok in tokens:
+        if len(tok) == 1 and _is_cjk(tok):
+            cjk_buf += tok
+            if len(cjk_buf) >= 2:
+                out.append(cjk_buf)
+                cjk_buf = ""
+        else:
+            if cjk_buf:
+                out.append(cjk_buf)
+                cjk_buf = ""
+            out.append(tok)
+    if cjk_buf:
+        out.append(cjk_buf)
+    return out
+
 
 def _split_sentences(text: str) -> list[str]:
     sents = [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
@@ -464,7 +493,12 @@ class OverlayRenderer:
     def _stream_delta(self, shown: str, target: str, is_provisional: bool) -> None:
         """Stream from `shown` to `target` word-by-word at 0.05s intervals via a
         daemon thread. Cancels any stale streaming thread first. Updates
-        _shown_en_plain incrementally so the next tick's check sees the growth."""
+        _shown_en_plain incrementally so the next tick's check sees the growth.
+
+        Tokenization is CJK-aware: each CJK char is its own token, Latin runs
+        stay whole (reuses inline_diff._DIFF_TOKEN_RE so the streaming units
+        match the diff units)."""
+        from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
         delta = target[len(shown):] if shown and target.startswith(shown) else target
         self._append_stop.set()
         self._append_stop = threading.Event()
@@ -474,12 +508,21 @@ class OverlayRenderer:
             import time as _t
             cur = shown if (shown and target.startswith(shown)) else ""
             if not target.startswith(shown):
-                # rewrite: clear the field first
                 self._set(self._field_en, "")
-            for w in delta.split(" "):
+            # CJK-aware tokenization: group CJK chars into pairs for readability
+            tokens = _DIFF_TOKEN_RE.findall(delta)
+            # Merge consecutive single CJK chars into pairs so the streaming
+            # reveals 2 chars at a time (1 char at 0.05s is too slow to read).
+            words = _merge_cjk_pairs(tokens)
+            for w in words:
                 if stop.is_set():
                     return
-                cur = (cur + " " + w) if cur and w else (cur + w if w else cur)
+                # preserve spacing: if the token doesn't start with space and cur
+                # doesn't end with space, add one (Latin); CJK tokens have no space.
+                needs_space = (cur and w and not w.startswith(" ")
+                              and not cur.endswith(" ")
+                              and not _is_cjk(w[0]))
+                cur = (cur + " " + w) if needs_space else (cur + w)
                 self._shown_en_plain = cur
                 attr = self._spans_to_attributed_simple(cur, is_prov)
                 self._set_attr(self._field_en, attr)
