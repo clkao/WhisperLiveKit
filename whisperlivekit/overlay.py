@@ -325,7 +325,7 @@ class OverlayRenderer:
         prev_plain = "".join(s.text for s in state.prev)
         is_provisional = bool(state.current) and state.current[0].style == PROVISIONAL
 
-        # Current row: stream on extends, hard-swap on rewrite
+        # Current row: stream on extends, stream-from-empty on new caption
         if cur_plain != self._shown_en_plain:
             if not cur_plain:
                 self._set(self._field_en, "")
@@ -336,34 +336,13 @@ class OverlayRenderer:
                 import os
                 if os.environ.get("OV_DEBUG"):
                     print(f"[ov] extends: {self._shown_en_plain!r} -> {cur_plain!r} delta={cur_plain[len(self._shown_en_plain):]!r}", file=sys.stderr, flush=True)
-                delta = cur_plain[len(self._shown_en_plain):]
-                self._append_stop.set()  # cancel any stale streaming thread
-                self._append_stop = threading.Event()
-                stop = self._append_stop
-                shown = self._shown_en_plain
-                is_prov = is_provisional
-                def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov):
-                    import time as _t
-                    cur = shown
-                    for w in delta.split(" "):
-                        if stop.is_set():
-                            return
-                        cur = (cur + " " + w) if cur and w else (cur + w if w else cur)
-                        self._shown_en_plain = cur  # update incrementally so the
-                        # next tick's extends check sees the growth and shrinks the delta
-                        attr = self._spans_to_attributed_simple(cur, is_prov)
-                        self._set_attr(self._field_en, attr)
-                        _t.sleep(0.05)
-                threading.Thread(target=_stream, daemon=True, name="ov-append").start()
+                self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
             else:
-                # rewrite or first: hard-swap
+                # new caption or rewrite: clear + stream the whole text word-by-word
                 import os
                 if os.environ.get("OV_DEBUG"):
-                    print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
-                self._append_stop.set()  # cancel streaming
-                attr = self._spans_to_attributed(state.current)
-                self._set_attr(self._field_en, attr)
-                self._shown_en_plain = cur_plain
+                    print(f"[ov] stream-new: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
+                self._stream_delta("", cur_plain, is_provisional)
 
         # Prev row: hard-swap (no streaming — it's history)
         prev_attr = self._spans_to_attributed(state.prev) if state.prev else None
@@ -481,6 +460,31 @@ class OverlayRenderer:
         field.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setStringValue:", text, False
         )
+
+    def _stream_delta(self, shown: str, target: str, is_provisional: bool) -> None:
+        """Stream from `shown` to `target` word-by-word at 0.05s intervals via a
+        daemon thread. Cancels any stale streaming thread first. Updates
+        _shown_en_plain incrementally so the next tick's check sees the growth."""
+        delta = target[len(shown):] if shown and target.startswith(shown) else target
+        self._append_stop.set()
+        self._append_stop = threading.Event()
+        stop = self._append_stop
+        is_prov = is_provisional
+        def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov):
+            import time as _t
+            cur = shown if (shown and target.startswith(shown)) else ""
+            if not target.startswith(shown):
+                # rewrite: clear the field first
+                self._set(self._field_en, "")
+            for w in delta.split(" "):
+                if stop.is_set():
+                    return
+                cur = (cur + " " + w) if cur and w else (cur + w if w else cur)
+                self._shown_en_plain = cur
+                attr = self._spans_to_attributed_simple(cur, is_prov)
+                self._set_attr(self._field_en, attr)
+                _t.sleep(0.05)
+        threading.Thread(target=_stream, daemon=True, name="ov-append").start()
 
     def _spans_to_attributed(self, spans: list) -> "AppKit.NSAttributedString | None":
         """Build a styled NSAttributedString from the model's DisplayState spans.
