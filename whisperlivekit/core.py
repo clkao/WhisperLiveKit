@@ -323,6 +323,10 @@ class TranscriptionEngine:
             elif config.diarization_backend == "sortformer":
                 from whisperlivekit.diarization.sortformer_backend import SortformerDiarization
                 self.diarization_model = SortformerDiarization(model_path=config.sortformer_model_path)
+            elif config.diarization_backend == "mlx-sortformer":
+                from whisperlivekit.diarization.sortformer_mlx_backend import SortformerMLXDiarization
+                model_name = getattr(config, "sortformer_mlx_model", "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16")
+                self.diarization_model = SortformerMLXDiarization(model_name=model_name, model_path=config.sortformer_model_path)
 
         self.translation_model = None
         if config.target_language:
@@ -506,6 +510,12 @@ def online_diarization_factory(args, diarization_backend):
     elif args.diarization_backend == "sortformer":
         from whisperlivekit.diarization.sortformer_backend import SortformerDiarizationOnline
         online = SortformerDiarizationOnline(
+            shared_model=diarization_backend,
+            max_speakers=getattr(args, "sortformer_max_speakers", None),
+        )
+    elif args.diarization_backend == "mlx-sortformer":
+        from whisperlivekit.diarization.sortformer_mlx_backend import SortformerMLXDiarizationOnline
+        online = SortformerMLXDiarizationOnline(
             shared_model=diarization_backend,
             max_speakers=getattr(args, "sortformer_max_speakers", None),
         )

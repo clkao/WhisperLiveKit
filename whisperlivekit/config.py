@@ -93,6 +93,7 @@ class WhisperLiveKitConfig:
     pcm_input: bool = False
     disable_punctuation_split: bool = False
     diarization_backend: str = "sortformer"
+    sortformer_mlx_model: str = "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16"
     sortformer_model_path: Optional[str] = None
     backend_policy: str = "simulstreaming"
     backend: str = "auto"

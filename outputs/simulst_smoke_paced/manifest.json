@@ -1,0 +1,28 @@
+{
+  "schema_version": "cascade_v1",
+  "generated_at_utc": "2026-08-28T14:22:20+00:00",
+  "kind": "inference",
+  "wav_path": "/Users/clkao/git/asr/AlignAtt4LLM/data/devset/audio/ccpXHNfaoy.wav",
+  "chunk_ms": 2000,
+  "translation_variant": null,
+  "source_language": "en",
+  "target_language": "zh",
+  "source_language_code": "en",
+  "target_language_code": "zh",
+  "latency_unit": "char",
+  "audio_duration_ms": 360002.1875,
+  "files": {
+    "hypothesis_jsonl": "hypothesis.jsonl"
+  },
+  "runtime_config": {
+    "hypothesis_elapsed_semantics": "ca_compatible_incremental",
+    "stream_update_elapsed_semantics": "wallclock_elapsed_since_run_start",
+    "mode": "asr-mt",
+    "asr_backend": "mlx-qwen3-asr",
+    "asr_model_id": "mlx-community/Qwen3-ASR-0.6B-8bit",
+    "mt_model_id": "hy-mt2-1.8b-8bit",
+    "chunk_sec": 2.0,
+    "second_pass": false
+  },
+  "run_provenance": {}
+}

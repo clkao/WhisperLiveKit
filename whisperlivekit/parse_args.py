@@ -111,7 +111,7 @@ def parse_args():
         "--diarization-backend",
         type=str,
         default="sortformer",
-        choices=["sortformer", "diart"],
+        choices=["sortformer", "diart", "mlx-sortformer"],
         help="The diarization backend to use.",
     )
 

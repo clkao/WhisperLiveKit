@@ -120,6 +120,7 @@ def _make_engine_kwargs(args) -> dict:
         # Single-presenter use case: disable speaker diarization so the TUI
         # does not render [S1]/[S2] speaker markers on the partial line.
         "diarization": args.diarize,
+        "diarization_backend": getattr(args, "diarization_backend", "mlx-sortformer"),
     }
     if args.backend == "mlx-qwen3-asr":
         kw["mlx_qwen3_asr_model"] = args.mlx_qwen3_asr_model
@@ -893,6 +894,9 @@ def main() -> None:
                    help="display captions in a native always-on-top macOS overlay window")
     p.add_argument("--diarize", action="store_true", default=False,
                    help="enable speaker diarization (off by default; the TUI shows [S1]/[S2] markers only when on)")
+    p.add_argument("--diarization-backend", choices=["sortformer", "diart", "mlx-sortformer"], default="mlx-sortformer",
+                   help="Diarization backend. mlx-sortformer (default) is pure MLX via mlx-audio (Apple Silicon, no NeMo); "
+                        "sortformer uses NeMo (.nemo download); diart uses the diart package.")
     p.add_argument("--overlay-mode", choices=["both", "target", "source"], default="both",
                    help="overlay only: which text to show. 'both' = source + target, 'target' = translation only, 'source' = source only")
     p.add_argument("--overlay-hold", type=float, default=3.5,
