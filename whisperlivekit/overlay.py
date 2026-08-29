@@ -333,6 +333,9 @@ class OverlayRenderer:
             elif (self._shown_en_plain and cur_plain.startswith(self._shown_en_plain)
                   and len(cur_plain) > len(self._shown_en_plain)):
                 # extends: stream the delta word-by-word
+                import os
+                if os.environ.get("OV_DEBUG"):
+                    print(f"[ov] extends: {self._shown_en_plain!r} -> {cur_plain!r} delta={cur_plain[len(self._shown_en_plain):]!r}", file=sys.stderr, flush=True)
                 delta = cur_plain[len(self._shown_en_plain):]
                 self._append_stop.set()  # cancel any stale streaming thread
                 self._append_stop = threading.Event()
@@ -354,6 +357,9 @@ class OverlayRenderer:
                 threading.Thread(target=_stream, daemon=True, name="ov-append").start()
             else:
                 # rewrite or first: hard-swap
+                import os
+                if os.environ.get("OV_DEBUG"):
+                    print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
                 self._append_stop.set()  # cancel streaming
                 attr = self._spans_to_attributed(state.current)
                 self._set_attr(self._field_en, attr)
