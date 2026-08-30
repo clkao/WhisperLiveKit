@@ -70,13 +70,21 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         self._committed_start: Optional[float] = None
         # Cached draft from the last MT call (for the release-without-call path).
         self._last_source_text: str = ""
-        self._last_draft: Optional[dict] = None  # {tokens, src_start, src_end}
-        # Minimum source char growth to warrant a fresh draft. Below this,
+        self._last_draft: Optional[dict] = None  # {tokens, src_start, src_end, src_token_count}
+        # Rolling chars-per-token ratio (from the last draft) used to estimate
+        # source-token growth without re-tokenizing on the hysteresis check.
+        # Seeded with the language-typical ratio (CJK ≈ 2.0, Latin ≈ 4.0) and
+        # corrected after the first real draft. This is the model-suggested
+        # unit: the threshold is in source BPE tokens (the MT's own unit),
+        # not chars — so CJK and Latin converge to the same token budget.
+        self._chars_per_token: float = 2.0 if (self._source_language or "").startswith(("zh", "ja")) else 4.0
+        # Minimum source TOKEN growth to warrant a fresh draft. Below this,
         # the release path re-applies the commit policy on the cached
-        # attention (no MT call). For CJK each char ≈ 1 token; 15 chars ≈ one
-        # sentence, keeping provisional calls to ~1 per sentence instead of
-        # one per tail update.
-        self._MIN_SOURCE_DELTA: int = 15
+        # attention (no MT call). 15 source tokens ≈ one short sentence for
+        # both CJK (≈30 chars) and Latin (≈60 chars). Tuned per direction from
+        # the calibration TS (higher TS → model commits more decisively →
+        # smaller threshold is safe); for now a fixed 15.
+        self._MIN_SOURCE_TOKENS: int = 15
         # Stable, append-only provisional target emitted so far this utterance.
         self._emitted_partial: str = ""
         self._capture: Optional[dict] = None
@@ -219,11 +227,18 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         committed_tokens = tokens[:committed_len]
         committed_text_out = _strip_hy_placeholder(tokenizer.decode(committed_tokens))
         # Stash the draft for the release path (same source, bigger boundary).
+        src_token_count = src_end - src_start
         self._last_draft = {
             "tokens": tokens,
             "src_start": src_start,
             "src_end": src_end,
+            "src_token_count": src_token_count,
         }
+        # Refresh the rolling chars-per-token ratio from this draft so the
+        # hysteresis check can estimate source-token growth without
+        # re-tokenizing. Guards against div-by-zero on empty source.
+        if source_text:
+            self._chars_per_token = max(1.0, len(source_text) / max(1, src_token_count))
         return committed_text_out
 
     def _release_held(self, committed_text: str) -> str:
@@ -376,16 +391,22 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
 
         # Decide new MT call vs release (no call).
         # A new draft is warranted only when the total source (committed +
-        # tail) grew by >= MIN_SOURCE_DELTA chars since the last draft, or
-        # no draft exists yet. Below that, the release path re-applies the
-        # commit policy on the cached attention (no MT call) — the committed
-        # prefix is still valid in the cached draft.
+        # tail) grew by >= MIN_SOURCE_TOKENS source BPE tokens since the last
+        # draft, or no draft exists yet. Below that, the release path
+        # re-applies the commit policy on the cached attention (no MT call) —
+        # the committed prefix is still valid in the cached draft.
+        #
+        # The threshold is in source TOKENS (the MT's own unit), not chars,
+        # so CJK and Latin converge to the same token budget. Char growth is
+        # converted to an estimate via the rolling chars-per-token ratio
+        # updated on each draft (no re-tokenize on the check path).
         #
         # _last_source_text is only updated when a new draft is made, so the
         # hysteresis accumulates across releases within one utterance.
         if self._last_draft is not None:
-            source_delta = len(source) - len(self._last_source_text)
-            if source_delta < self._MIN_SOURCE_DELTA:
+            char_delta = len(source) - len(self._last_source_text)
+            token_delta = char_delta / self._chars_per_token
+            if token_delta < self._MIN_SOURCE_TOKENS:
                 # Source unchanged or grew but not enough: release held
                 # tokens from the cached draft without a new MT call.
                 if committed:
