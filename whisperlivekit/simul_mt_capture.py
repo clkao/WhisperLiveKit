@@ -22,8 +22,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import mlx.core as mx
-import mlx.nn as nn
+# MLX is macOS-arm64-only; importing at module level breaks test collection on
+# Linux (ModuleNotFoundError: No module named 'mlx'). The imports are deferred
+# to call time — CapturedAttention.__call__ and install_capture import mlx.core /
+# mlx.nn when they actually need them, not at module import time.
 
 # 8 calibrated production head indices (layer, head) for tencent/Hy-MT2-1.8B
 # zh→en. Top head (L9, H5, TS=0.79) is the primary alignment signal; the
@@ -182,21 +184,12 @@ def _normalize_model_id(repo: str) -> str:
     then lowercase. Calibration entries are keyed by model id only, so the
     same architecture across quants (8bit/4bit/bf16) and implementations
     (MLX ``mlx-community/…``, vLLM ``tencent/…``) shares a single entry.
-
-    Also normalizes dots to dashes in version segments (``hy-mt2.1.8b`` →
-    ``hy-mt2-1.8b``) so both naming conventions resolve to the same key.
     """
     name = (repo or "").rsplit("/", 1)[-1].lower()
     for suffix in _QUANT_SUFFIXES:
         if name.endswith(suffix):
             name = name[: -len(suffix)]
             break
-    # Normalize the dot-form version separator (hy-mt2.1.8b → hy-mt2-1.8b)
-    # without touching dots inside version numbers (1.8b stays 1.8b).
-    import re
-    name = re.sub(r'(\d)\.(\d)', r'\1-\2', name) if '.1.' in name or '.7.' in name else name
-    # simpler: just replace the specific known pattern
-    name = name.replace('mt2.1.8b', 'mt2-1.8b').replace('mt2.7b', 'mt2-7b')
     return name
 
 
@@ -237,7 +230,7 @@ def lookup_calibration(
     return entry
 
 
-class CapturedAttention(nn.Module):
+class CapturedAttention:
     """Wraps ``hunyuan_v1_dense.Attention``; replicates the forward with a
     manual ``softmax(QK^T)`` so attention weights are capturable for the
     alignment heads.
@@ -246,16 +239,20 @@ class CapturedAttention(nn.Module):
     calibrated heads); other layers compute attention manually but discard
     it (small overhead). Shares the original projections/norms/rope — no
     weight duplication.
+
+    Does NOT inherit from ``nn.Module`` at import time — ``install_capture``
+    dynamically creates the real class with ``nn.Module`` as base when MLX
+    is available, so the module is collectable without MLX installed.
     """
 
     def __init__(self, orig, layer_idx, capture, selected_layers):
-        super().__init__()
         self.orig = orig
         self.layer_idx = layer_idx
         self.capture = capture
         self.selected_layers = selected_layers
 
     def __call__(self, x, mask=None, cache=None):
+        import mlx.core as mx
         a = self.orig
         B, L, D = x.shape
         q, k, v = a.q_proj(x), a.k_proj(x), a.v_proj(x)
@@ -308,6 +305,17 @@ def install_capture(model, heads=ALIGNMENT_HEADS):
     Returns a ``dict[layer_idx -> list of attn tensors]`` that fills on each
     forward pass; clear it between runs.
     """
+    import mlx.nn as nn
+
+    # Dynamically create the nn.Module-backed class so __call__ dispatch
+    # works correctly with mlx-lm's model layers (the TYPE dispatch
+    # requirement). The base class is nn.Module; CapturedAttention's methods
+    # are copied onto it. This keeps the module collectable without MLX.
+    class _CapturedAttentionNN(CapturedAttention, nn.Module):
+        def __init__(self, orig, layer_idx, capture, selected_layers):
+            nn.Module.__init__(self)
+            CapturedAttention.__init__(self, orig, layer_idx, capture, selected_layers)
+
     selected_layers = {h[0] for h in heads}
     capture: Dict[int, list] = {}
     for i, block in enumerate(model.model.layers):
@@ -315,7 +323,7 @@ def install_capture(model, heads=ALIGNMENT_HEADS):
             # Already patched (shared model); point at the existing capture dict.
             capture = block.self_attn.capture
             continue
-        block.self_attn = CapturedAttention(
+        block.self_attn = _CapturedAttentionNN(
             block.self_attn, i, capture, selected_layers
         )
     return capture
@@ -383,8 +391,7 @@ def apply_commit_policy(
       - ``"mass"``: commit if the fraction of attention mass on committed
         source tokens exceeds ``mass_threshold`` (default 0.5). More
         tolerant — commits tokens whose majority of attention is safe,
-        giving the viewer more provisional content during speech. Measured
-        best in livecaption A/B (more provisional content + less final lag).
+        giving more provisional content during speech.
 
     Returns the number of committed target tokens (a contiguous prefix
     length). If no attention was captured for the top head's layer, all

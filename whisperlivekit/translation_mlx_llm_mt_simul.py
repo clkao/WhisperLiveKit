@@ -33,9 +33,31 @@ from whisperlivekit.simul_mt_capture import (
     source_span,
 )
 from whisperlivekit.timed_objects import ASRToken, HypothesisTail, TimedText, Translation
-from whisperlivekit.translation_mlx_llm_mt import MlxLlmTranslation, _strip_hy_placeholder
+from whisperlivekit.translation_mlx_llm_mt import (
+    _HY_PLACEHOLDER_TEXT,
+    MlxLlmTranslation,
+    _placeholder_stop_check,
+    _strip_hy_placeholder,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _placeholder_ids(tokenizer) -> list:
+    """Id sequence of the Hunyuan placeholder for this tokenizer (may be empty).
+
+    Mirrors the id-resolution inside ``_placeholder_stop_check``; the simul
+    paths use it to truncate the token stream itself (not just the decoded
+    string) so the stashed draft the release path reads is placeholder-free.
+    """
+    try:
+        try:
+            ids = tokenizer.encode(_HY_PLACEHOLDER_TEXT, add_special_tokens=False)
+        except TypeError:
+            ids = tokenizer.encode(_HY_PLACEHOLDER_TEXT)
+    except Exception:
+        return []
+    return list(ids) if 0 < len(ids) <= 16 else []
 
 
 class MlxLlmTranslationSimul(MlxLlmTranslation):
@@ -123,8 +145,12 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
 
     def new_session(self, target_language: str = "") -> "MlxLlmTranslationSimul":
         """Create a per-session simul client sharing the loaded model/cache
-        but with fresh simultaneous state. Overrides the base new_session so
-        the per-session client preserves the simultaneous-MT behaviour."""
+        but with fresh simultaneous state (tail, committed tokens, draft).
+
+        Overrides the base ``new_session`` so the per-session client is a
+        ``MlxLlmTranslationSimul`` (not the base class), preserving the
+        simultaneous-MT behaviour across session boundaries.
+        """
         return MlxLlmTranslationSimul(
             model_id=self._model_id,
             target_language=target_language or self._target_language,
@@ -212,6 +238,10 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         )
         tokens: List[int] = []
         eos = self._eos_token
+        # In-loop early stop: end decode the moment the placeholder is emitted
+        # instead of paying for the hallucinated tail and cutting it afterwards
+        # (same predicate the base engine uses in _translate_text).
+        stop_at_placeholder = _placeholder_stop_check(tokenizer)
         for chunk in gen:
             tokens.append(chunk.token)
             # Stop at EOS for efficiency; the policy commits a prefix anyway.
@@ -220,9 +250,23 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 if eos in det:
                     tokens.pop()
                     break
-        committed_len = apply_commit_policy(
-            self._capture, self._simul_top_head, len(tokens), src_start, src_end, cend,
-            mode=self._commit_mode, mass_threshold=self._mass_threshold,
+            if stop_at_placeholder is not None and stop_at_placeholder(chunk):
+                break
+        # Cut the token stream itself at the first placeholder occurrence so
+        # the commit policy, the committed text, and the stashed draft the
+        # release path reads never contain placeholder tokens.
+        ph_ids = _placeholder_ids(tokenizer)
+        if ph_ids:
+            for i in range(len(tokens) - len(ph_ids) + 1):
+                if tuple(tokens[i:i + len(ph_ids)]) == tuple(ph_ids):
+                    del tokens[i:]
+                    break
+        committed_len = min(
+            apply_commit_policy(
+                self._capture, self._simul_top_head, len(tokens), src_start, src_end, cend,
+                mode=self._commit_mode, mass_threshold=self._mass_threshold,
+            ),
+            len(tokens),
         )
         committed_tokens = tokens[:committed_len]
         committed_text_out = _strip_hy_placeholder(tokenizer.decode(committed_tokens))
@@ -374,10 +418,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 self._mt_total_time_s += time.perf_counter() - _t0
             self._reset_simul_draft()
             tr = Translation(start=start, end=end, text=mt)
-            # Reset the buffer to the FINAL text (not the stale provisional) so the
-            # display doesn't re-emit the old provisional after the final arrives.
             self._last_buffer = TimedText(start=start, end=end, text=mt)
-            self._emitted_partial = ""
             return tr, self._last_buffer
 
         # 2. Open utterance: simultaneous provisional over committed + tail.
@@ -463,17 +504,29 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             self._committed_start = None
         self._tail = None
         self._reset_simul_draft()
+        emitted = self._emitted_partial
         self._emitted_partial = ""
-        # Clear the buffer so the stale provisional doesn't reappear after the
-        # final is emitted. The final (pending in _pending_finals) will be the
-        # only committed Translation; the display should show the final, not a
-        # dimmed replay of the old provisional.
-        self._last_buffer = TimedText()
-        # Return (None, empty buffer): the provisional is NOT committed as a
-        # Translation; the pending final (quality pass) is emitted on the next
-        # process() call. The empty buffer means the display won't see a stale
-        # dimmed draft after the final arrives.
-        return None, self._last_buffer
+        if emitted:
+            self._last_buffer = TimedText(
+                start=start, end=end, text=emitted
+            )
+            # Keep the provisional as the buffer (shown on screen) but do
+            # NOT commit it as a Translation — the pending final (quality
+            # pass) will be the only committed Translation for this utterance.
+            return None, self._last_buffer
+        # Nothing was emitted; fall back to a base-class flush of any buffered
+        # tokens (mirrors the base class behaviour for a non-simul flush).
+        if self._pending_finals:
+            text, start, end = self._pending_finals.pop(0)
+            try:
+                mt = self._translate_text(text)
+            except Exception as exc:
+                logger.warning("mlx-llm-mt-simul validate translate failed: %s", exc)
+                mt = ""
+            tr = Translation(start=start, end=end, text=mt)
+            self._last_buffer = TimedText(start=start, end=end, text=mt)
+            return tr, self._last_buffer
+        return TimedText(), TimedText()
 
     def insert_silence(self, duration: float = None) -> None:
         pass
