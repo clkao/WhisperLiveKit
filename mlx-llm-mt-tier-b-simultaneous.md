@@ -614,3 +614,22 @@ APPROVED. The rework finding was demonstrably intercepted: its routed requiremen
 ### Summary
 
 Fixed the 1 remaining test failure from the PR #422 rebase: `MlxLlmTranslationSimul` inherited the base `new_session()` which returned a `MlxLlmTranslation`, losing the simul type/state. Added `new_session()` override returning `MlxLlmTranslationSimul` and updated the factory test from identity (`is`) to type (`isinstance`). The 2 reviewer blockers (lazy MLX import, ruff F841/I001) and the rebase onto `9209316` were already applied in commit `efd3c93`; this round verified them and fixed the post-rebase `new_session` regression.
+
+## Stage Report: implementation (cycle 4 — hysteresis port)
+
+- DONE: Apply the token-based MT hysteresis (MIN_SOURCE_TOKENS) to translation_mlx_llm_mt_simul.py
+  Ported from integration commit bf383db by hand to match #423's structure (mass commit policy b2d15b7 already committed). Three changes: (1) __init__ — replaced _MIN_SOURCE_DELTA (chars, 15) with _MIN_SOURCE_TOKENS (tokens, 15) + _chars_per_token rolling ratio seeded by language (CJK 2.0, Latin 4.0); (2) _translate_simul — record src_token_count in draft dict + refresh _chars_per_token from each draft; (3) process() — hysteresis check converts char_delta to token_delta via _chars_per_token before comparing to _MIN_SOURCE_TOKENS. Commit eef74fa.
+- DONE: Verify py_compile
+  python3 -m py_compile translation_mlx_llm_mt_simul.py — OK.
+- DONE: Verify ruff check
+  uv run ruff check whisperlivekit/translation_mlx_llm_mt_simul.py — All checks passed.
+- DONE: Verify pytest (37 tests)
+  uv run pytest tests/test_mlx_llm_mt_simul.py tests/test_simul_mt_capture_no_mlx.py — 37 passed, 1 warning.
+- DONE: Verify uv lock --check
+  uv lock --check — Resolved 405 packages.
+- DONE: Commit with measured-spike body and push to fork
+  Commit eef74fa on spacedock-ensign/mlx-llm-mt-simultaneous; pushed to fork (clkao/WhisperLiveKit).
+
+### Summary
+
+Ported the token-based MT draft-call hysteresis (MIN_SOURCE_TOKENS=15) from integration commit bf383db onto the #423 branch (which already has the mass commit policy at b2d15b7). The hysteresis was in source CHARS (MIN_SOURCE_DELTA=15, calibrated for CJK); now in source BPE TOKENS estimated via a rolling chars-per-token ratio updated on each draft. CJK and Latin converge to the same token budget. All 37 tests pass, ruff clean, uv lock valid.
