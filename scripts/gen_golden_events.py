@@ -54,7 +54,9 @@ def emit(path, sentences, rate, unit):
             # incremental commit: the newly-stable text only (production emits
             # new tokens per process_iter, not a cumulative snapshot)
             is_last = i == len(clauses) - 1
-            commit_text = src + ("。" if any("\u4e00" <= ch <= "\u9fff" for ch in src[-1]) else ".") if is_last else src
+            term = "。" if any("\u4e00" <= ch <= "\u9fff" for ch in src[-1]) else "."
+            base = src if src.rstrip().endswith(("。", "！", "？", ".", "!", "?", '."', '!"', '?"')) else src + term
+            commit_text = base if is_last else src
             lines.append({"t": 0.0, "audio_t": round(cend + COMMIT_STABILIZE, 2),
                           "type": "transcription_final", "text": commit_text})
             if not is_last:

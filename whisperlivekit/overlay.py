@@ -37,6 +37,23 @@ from whisperlivekit.overlay_model import PROVISIONAL, FINAL_SAME, FINAL_ADD
 # AppKit is imported lazily at instantiation (see _create_window) so this module
 # imports cleanly even on a headless host or without pyobjc installed. The level /
 # collection-behavior constants are resolved against AppKit the first time an
+# Accumulate committed source clauses into the reading buffer: no space across
+# a CJK boundary (zh has none), a single space for Latin.
+def _src_join(a: str, b: str) -> str:
+    if not a:
+        return b
+    if not b:
+        return a
+    if a[-1].isspace() or b[:1].isspace():
+        return a + b
+    def _cjk(ch):
+        return ("\u4e00" <= ch <= "\u9fff"
+                or ch in "\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\uff09\u300d\u300f\u3011")
+    if _cjk(a[-1]) and _cjk(b[0]):
+        return a + b
+    return a + " " + b
+
+
 # OverlayRenderer is constructed.
 AppKit = None
 Foundation = None
@@ -138,6 +155,18 @@ class OverlayRenderer:
         self._lat_alpha = 0.3
         # current displayed state
         self._zh: str = ""        # finalized source (top, small)
+        # zh reading buffer: the src row shows committed clauses ACCUMULATED
+        # plus the rolling tail; when the sentence completes (terminator) the
+        # buffer freezes; the NEXT sentence's first words promote it to the zh
+        # history field. The float happens when new words need the line.
+        self._zh_committed: str = ""      # committed clauses of the current sentence
+        self._zh_sentence_complete: bool = False
+        # zh reading-buffer state: the partial row holds the rolling tail while
+        # the sentence is spoken, then the COMMITTED sentence after it lands —
+        # the float to the zh history field happens when the next utterance's
+        # words arrive (reading buffer), not at commit.
+        self._zh_buffer_state: str = "rolling"   # "rolling" | "committed"
+        self._zh_buffer_text: str = ""
         self._en: str = ""        # last finalized translation text (legacy, display is model-driven)
         self._partial: str = ""   # in-progress partial (bottom, dimmer)
         # window + fields (created in __enter__ on the main thread)
@@ -432,22 +461,33 @@ class OverlayRenderer:
 
     # ---- callback contract (same as render.Renderer) ----
     def partial(self, label: str, text: str, started_at: datetime, speaker: int | None = None) -> None:
-        self._model.set_partial(text)
+        # New rolling words arrive. If the buffer holds a COMPLETED sentence,
+        # it floats up to the zh history field now — the float happens when
+        # new words need the line, not at commit.
+        if self._zh_sentence_complete:
+            if self._overlay_mode != "target":
+                self._set(self._field_zh, self._zh_committed)
+            self._zh_committed = ""
+            self._zh_sentence_complete = False
+        display = self._zh_committed + text
+        self._model.set_partial(display)
         if self._overlay_mode != "target":
-            self._set(self._field_partial, text)
+            self._set(self._field_partial, display)
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
         with self._lock:
             self._zh = zh
-        # Keep the committed text as the reading buffer: the source line shows
-        # the stable sentence until the NEXT utterance's rolling words need the
-        # line — the float happens when new words come, not at commit.
-        self._model.set_partial(zh)
+        # The committed clause accumulates into the reading buffer (append);
+        # a sentence-final terminator freezes the buffer. The zh history field
+        # keeps the PREVIOUS sentence — no duplicate rows.
+        self._zh_committed = _src_join(self._zh_committed, zh)
+        if zh.rstrip().endswith(("。", "！", "？", ".", "!", "?")):
+            self._zh_sentence_complete = True
+        self._model.set_partial(self._zh_committed)
         self._record_latency(started_at, "asr")
         if self._overlay_mode != "target":
-            self._set(self._field_zh, zh)
-            self._set(self._field_partial, zh)
+            self._set(self._field_partial, self._zh_committed)
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         if self._overlay_mode == "source":

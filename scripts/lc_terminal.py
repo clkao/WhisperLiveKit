@@ -207,9 +207,10 @@ class OverlaySink:
             self._r.partial("", self._cc_src(partial), datetime.now())
         prov = (disp.partial_translation or "").strip()
         if prov:
-            self._last_prov = prov
             self._r.preview("", [(None, self._cc_target(prov))], datetime.now())
-        # finalized lines: (source, translation) pairs from translation_finals
+        # finalized lines: (source, translation) pairs from translation_finals.
+        # 2-tuples only: the draft already grew by append, so the final needs no
+        # diff spans — the dim→bright style flip is the correction signal.
         done = len(disp.final_lines)
         if done > len(self._shown_finals):
             for src, tr in disp.final_lines[len(self._shown_finals):]:
@@ -217,10 +218,7 @@ class OverlaySink:
                 if src:
                     self._r.final("", [(None, self._cc_src(src))], datetime.now())
                 if tr:
-                    from whisperlivekit.inline_diff import inline_diff
-                    shown = self._cc_target(tr)
-                    diff = inline_diff(self._last_prov, [shown])[0] if self._last_prov else None
-                    self._r.translation("", [(None, shown, diff)], datetime.now())
+                    self._r.translation("", [(None, self._cc_target(tr))], datetime.now())
 
     def _from_front_state(self, state):
         # live partial: the rolling ASR buffer (converted for display)
