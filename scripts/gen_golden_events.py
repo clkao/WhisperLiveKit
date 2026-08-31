@@ -43,8 +43,18 @@ def emit(path, sentences, rate, unit):
         committed_src = ""
         for i, ((src, tgt_cum), d) in enumerate(zip(clauses, durs)):
             cstart, cend = t, t + d
-            lines.append({"t": 0.0, "audio_t": round(cstart + ASR_PROV_LAG, 1),
-                          "type": "transcription_provisional", "text": src})
+            # ASR provisional grows WITH THE SPEECH: the tail shows only the
+            # words spoken so far (prefixes at ~35%/70%/100% of the clause),
+            # never the full clause at once — the draft must not run ahead of
+            # the voice.
+            n_units = len(src) if unit == "chars" else len(src.split())
+            # prefixes up to 70% of the clause; the commit completes the tail
+            # (a 100% provisional would land after the commit and double it)
+            for frac in (0.35, 0.7):
+                k = max(1, round(n_units * frac))
+                prefix = src[:k] if unit == "chars" else " ".join(src.split()[:k])
+                lines.append({"t": 0.0, "audio_t": round(cstart + d * frac + ASR_PROV_LAG, 2),
+                              "type": "transcription_provisional", "text": prefix})
             committed_now = committed_src + src
             lines.append({"t": 0.0, "audio_t": round(cstart + ASR_PROV_LAG + MT_DRAFT_LAG, 2),
                           "type": "translation_provisional", "text": tgt_cum,
@@ -67,6 +77,8 @@ def emit(path, sentences, rate, unit):
         lines.append({"t": 0.0, "audio_t": round(t + COMMIT_STABILIZE + MT_FINAL_LAG, 2),
                       "type": "translation_final", "text": final_tgt})
         t += 0.0  # inter-sentence pause is already inside the measured rate
+    # stream order = time order (the replay/diff tools assume monotonic audio_t)
+    lines.sort(key=lambda e: e["audio_t"])
     with open(OUT / path, "w") as f:
         for e in lines:
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
