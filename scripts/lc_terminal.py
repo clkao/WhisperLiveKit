@@ -174,6 +174,7 @@ class OverlaySink:
         self._last_transl = ""
         self._last_prov = ""   # stash the provisional so the final can diff against it
         self._shown_finals: list[tuple[str, str]] = []  # (source, translation) already rendered
+        self._last_final_txt: str = ""  # previous cumulative line text (FrontData delta extraction)
         self._opencc = opencc_conv      # source-side converter (display)
         self._opencc_mt = opencc_mt_conv  # whether MT gets converted text
         self._target_opencc = target_opencc  # target-side converter (zh-tw output)
@@ -237,7 +238,11 @@ class OverlaySink:
             tr = (line.get("translation") or "").strip()
             if txt and txt != self._last_final:
                 self._last_final = txt
-                self._r.final("", [(None, self._cc_src(txt))], datetime.now())
+                # FrontData line text is CUMULATIVE per utterance; the overlay's
+                # reading buffer joins increments — pass only the new suffix
+                delta_txt = txt[len(self._last_final_txt):] if self._last_final_txt and txt.startswith(self._last_final_txt) else txt
+                self._last_final_txt = txt
+                self._r.final("", [(None, self._cc_src(delta_txt))], datetime.now())
             if tr and tr != self._last_transl:
                 self._last_transl = tr
                 # no diff spans on the overlay: committed is bright, provisional
