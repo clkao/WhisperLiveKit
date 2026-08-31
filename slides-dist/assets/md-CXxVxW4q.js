@@ -1,0 +1,8 @@
+import{L as e,T as t,Y as n,_ as r,b as i,g as a,gt as o,mt as s,x as c}from"./modules/shiki-DNi1TG5r.js";import{nt as l,rt as u}from"./index-CKJWntGP.js";import{t as d}from"./slidev/CodeBlockWrapper-npZ_igfU.js";import{t as f}from"./slidev/default-DS315Ln4.js";var p={__name:`slides.md__slidev_5`,setup(p){let{$slidev:m,$nav:h,$clicksContext:g,$clicks:_,$page:v,$renderContext:y,$frontmatter:b}=u();return g.setup(),(u,p)=>{let m=d;return e(),r(f,o(t(s(l)(s(b),4))),{default:n(()=>[p[1]||=a(`h1`,null,`The pipeline`,-1),c(m,{title:``,ranges:[]},{default:n(()=>[...p[0]||=[a(`pre`,{class:`shiki shiki-themes vitesse-dark vitesse-light slidev-code`,style:{"--shiki-dark":`#dbd7caee`,"--shiki-light":`#393a34`,"--shiki-dark-bg":`#121212`,"--shiki-light-bg":`#ffffff`}},[a(`code`,{class:`language-text`},[a(`span`,{class:`line`},[a(`span`,null,`┌──────┐  ┌───────────┐  ┌────────┐  ┌─────────┐`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`│ Mic  │─▶│ Qwen3-ASR │─▶│ Hy-MT2 │─▶│ Overlay │`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`│ 16k  │  │  0.6B 8bit│  │ 1.8B   │  │ NSWindow│`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`└──────┘  └───────────┘  └────────┘  └─────────┘`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`               │             │`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`               ▼             ▼`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`          OpenCC s2twp   Simul-MT`)]),i(`
+`),a(`span`,{class:`line`},[a(`span`,null,`          zh→zh-tw      AlignAtt`)])])],-1)]]),_:1}),p[2]||=a(`p`,null,`All models run via MLX on Apple Silicon GPU. No network after first cache.`,-1)]),_:1},16)}}};export{p as default};
