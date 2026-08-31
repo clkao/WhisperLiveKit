@@ -85,6 +85,16 @@ class EventLog:
         return log
 
 
+class FanOutSink:
+    """Dispatch each event to multiple sinks (e.g. DisplayAdapter + EventLog)."""
+    def __init__(self, sinks: List[EventSink]) -> None:
+        self.sinks = list(sinks)
+
+    def emit(self, event: CaptionEvent) -> None:
+        for s in self.sinks:
+            s.emit(event)
+
+
 class EventTap:
     """Tap attached to the ASR+MT driver loop.
 

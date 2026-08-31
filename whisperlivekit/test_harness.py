@@ -43,6 +43,7 @@ Usage::
 """
 
 import asyncio
+import dataclasses
 import logging
 import subprocess
 from dataclasses import dataclass, field
@@ -139,6 +140,10 @@ class TestState:
     audio_position: float = 0.0
     status: str = ""
     error: str = ""
+    # Event-derived display state (from the processor's caption EventTap via
+    # DisplayAdapter). None when the processor has no tap (should not happen
+    # in production). This is the display layer's source of truth.
+    display: Optional[Any] = None
 
     @classmethod
     def from_front_data(cls, front_data: FrontData, audio_position: float = 0.0) -> "TestState":
@@ -536,6 +541,11 @@ class TestHarness:
         try:
             async for front_data in self._results_gen:
                 self._state = TestState.from_front_data(front_data, self._audio_position)
+                # attach the event-derived display state (snapshot copy) so the
+                # display layer can render from the caption event stream
+                _da = getattr(self._processor, "display_adapter", None)
+                if _da is not None:
+                    self._state.display = dataclasses.replace(_da.state)
                 self._history.append(self._state)
                 if self._on_update:
                     self._on_update(self._state)

@@ -173,6 +173,7 @@ class OverlaySink:
         self._last_final = ""
         self._last_transl = ""
         self._last_prov = ""   # stash the provisional so the final can diff against it
+        self._shown_finals: list[tuple[str, str]] = []  # (source, translation) already rendered
         self._opencc = opencc_conv      # source-side converter (display)
         self._opencc_mt = opencc_mt_conv  # whether MT gets converted text
         self._target_opencc = target_opencc  # target-side converter (zh-tw output)
@@ -190,6 +191,38 @@ class OverlaySink:
         return _fix_sentence_spacing(out)
 
     def __call__(self, state):
+        # Event-derived display state is the source of truth when the pipeline
+        # emits caption events (production path). Fall back to TestState/FrontData
+        # reconstruction when absent (older processors, replayed FrontData).
+        disp = getattr(state, "display", None)
+        if disp is not None:
+            self._from_events(disp)
+            return
+        self._from_front_state(state)
+
+    def _from_events(self, disp):
+        """Render from the caption event stream (DisplayState)."""
+        partial = (disp.partial_transcription or "").strip()
+        if partial:
+            self._r.partial("", self._cc_src(partial), datetime.now())
+        prov = (disp.partial_translation or "").strip()
+        if prov:
+            self._last_prov = prov
+            self._r.preview("", [(None, self._cc_target(prov))], datetime.now())
+        # finalized lines: (source, translation) pairs from translation_finals
+        done = len(disp.final_lines)
+        if done > len(self._shown_finals):
+            for src, tr in disp.final_lines[len(self._shown_finals):]:
+                self._shown_finals.append((src, tr))
+                if src:
+                    self._r.final("", [(None, self._cc_src(src))], datetime.now())
+                if tr:
+                    from whisperlivekit.inline_diff import inline_diff
+                    shown = self._cc_target(tr)
+                    diff = inline_diff(self._last_prov, [shown])[0] if self._last_prov else None
+                    self._r.translation("", [(None, shown, diff)], datetime.now())
+
+    def _from_front_state(self, state):
         # live partial: the rolling ASR buffer (converted for display)
         partial = (state.buffer_transcription or "").strip()
         if partial:

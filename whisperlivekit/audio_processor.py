@@ -232,6 +232,23 @@ class AudioProcessor:
         self.translate_on_complete: bool = bool(getattr(self.args, "translate_on_complete", False))
         self._pending_translation_tokens: List[ASRToken] = []
 
+        # Caption event stream (parallel tap; FrontData untouched). The display
+        # adapter is always attached so the overlay/TUI can render from the
+        # event stream; --event-log adds a JSONL sink for capture/diff tooling.
+        from whisperlivekit.caption_events import EventLog, EventTap, FanOutSink
+        from whisperlivekit.display_adapter import DisplayAdapter
+        self.display_adapter = DisplayAdapter()
+        self._event_log: Optional[EventLog] = None
+        _sinks: List[Any] = [self.display_adapter]
+        if getattr(self.args, "event_log", None):
+            self._event_log = EventLog()
+            _sinks.append(self._event_log)
+        self.event_tap = EventTap(
+            sink=_sinks[0] if len(_sinks) == 1 else FanOutSink(_sinks),
+        )
+        # dedupe state: emit ASR provisional only when the tail text changes
+        self._last_asr_prov: str = ""
+
         # Silent-backend watchdog: flips once the ASR has produced anything.
         self._any_asr_output: bool = False
         self._silent_backend_warned: bool = False
@@ -323,6 +340,22 @@ class AudioProcessor:
             for token in self._pending_translation_tokens:
                 await self.translation_queue.put(token)
             self._pending_translation_tokens = []
+
+    def _mt_committed_text(self) -> str:
+        """Committed source text the simul-MT layer has released against (best effort)."""
+        fn = getattr(self.translation, "_committed_text", None)
+        try:
+            return fn() if callable(fn) else ""
+        except Exception:
+            return ""
+
+    def _mt_source_text(self) -> str:
+        """Full source text (committed + tail) the simul-MT layer last saw (best effort)."""
+        fn = getattr(self.translation, "_source_text", None)
+        try:
+            return fn() if callable(fn) else ""
+        except Exception:
+            return ""
 
     async def _queue_hypothesis_tail_for_translation(self, buffer_transcript) -> None:
         """Forward the unstable ASR tail to translation backends that opt in.
@@ -642,6 +675,10 @@ class AudioProcessor:
                     )
             if final_tokens:
                 logger.info(f"Finish flushed {len(final_tokens)} tokens")
+                self.event_tap.transcription_final(
+                    final_tokens[-1].end or end_time,
+                    self.sep.join(t.text for t in final_tokens),
+                )
                 # Synthetic buffer recovery did not come from a counted backend
                 # call, but it still creates output tokens exposed to consumers.
                 self.metrics.n_tokens_produced += synthetic_token_count
@@ -683,6 +720,13 @@ class AudioProcessor:
                     _buffer_transcript = self.transcription.get_buffer()
                     async with self.lock:
                         self.state.buffer_transcription = _buffer_transcript
+                    _prov = (_buffer_transcript.text or "").strip()
+                    if _prov and _prov != self._last_asr_prov:
+                        self._last_asr_prov = _prov
+                        self.event_tap.transcription_provisional(
+                            _buffer_transcript.end if _buffer_transcript.end is not None else self.state.end_buffer,
+                            _prov,
+                        )
                     continue
 
                 if item is SENTINEL:
@@ -812,6 +856,20 @@ class AudioProcessor:
                 else:
                     self._warn_if_backend_silent(cumulative_pcm_duration_stream_time)
 
+                # caption events: committed tokens (final) + rolling tail (provisional)
+                if new_tokens:
+                    self.event_tap.transcription_final(
+                        new_tokens[-1].end or current_audio_processed_upto,
+                        self.sep.join(t.text for t in new_tokens),
+                    )
+                prov_text = (_buffer_transcript.text or "").strip()
+                if prov_text and prov_text != self._last_asr_prov:
+                    self._last_asr_prov = prov_text
+                    self.event_tap.transcription_provisional(
+                        _buffer_transcript.end if _buffer_transcript.end is not None else current_audio_processed_upto,
+                        prov_text,
+                    )
+
                 await self._queue_tokens_for_translation(new_tokens)
                 await self._queue_hypothesis_tail_for_translation(_buffer_transcript)
                 if isinstance(item, Silence) and item.is_starting:
@@ -912,6 +970,7 @@ class AudioProcessor:
 
                 new_translation = None
                 new_translation_buffer = None
+                fresh_mt = False
 
                 if isinstance(item, Silence):
                     if item.is_starting:
@@ -923,18 +982,41 @@ class AudioProcessor:
                     new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
                 else:
                     self.translation.insert_tokens(item)
+                    calls_before = getattr(self.translation, "_mt_call_count", None)
                     new_translation, new_translation_buffer = await asyncio.to_thread(self.translation.process)
+                    fresh_mt = (
+                        calls_before is not None
+                        and getattr(self.translation, "_mt_call_count", calls_before) > calls_before
+                    )
 
                 if new_translation is not None:
                     async with self.lock:
                         self.state.new_translation.append(new_translation)
                         self.state.new_translation_buffer = new_translation_buffer
+                    # caption events: finalized translation(s) at this boundary
+                    _items = new_translation if isinstance(new_translation, (list, tuple)) else [new_translation]
+                    for _tr in _items:
+                        _text = (getattr(_tr, "text", "") or "").strip()
+                        if _text:
+                            self.event_tap.translation_final(
+                                getattr(_tr, "end", None) or self.state.end_buffer,
+                                _text,
+                            )
                 elif new_translation_buffer is not None:
                     # A backend can return a provisional buffer with no finalized
                     # translation (None). Forward the buffer so the display shows
                     # the provisional draft before the final arrives.
+                    _prov_text = (getattr(new_translation_buffer, "text", "") or "").strip()
                     async with self.lock:
                         self.state.new_translation_buffer = new_translation_buffer
+                    if _prov_text:
+                        self.event_tap.translation_provisional(
+                            self.state.end_buffer,
+                            _prov_text,
+                            self._mt_committed_text(),
+                            self._mt_source_text(),
+                            bool(fresh_mt),
+                        )
             except Exception as e:
                 logger.warning(f"Exception in translation_processor: {e}")
                 logger.warning(f"Traceback: {traceback.format_exc()}")
@@ -1083,6 +1165,13 @@ class AudioProcessor:
         """Clean up resources when processing is complete."""
         logger.info("Starting cleanup of AudioProcessor resources.")
         self.is_stopping = True
+        # flush the caption event log (if --event-log was given)
+        if self._event_log is not None:
+            try:
+                self._event_log.save(self.args.event_log)
+                logger.info("Caption event log saved to %s", self.args.event_log)
+            except Exception as e:
+                logger.warning("Could not save caption event log: %s", e)
         for task in self.all_tasks_for_cleanup:
             if task and not task.done():
                 task.cancel()

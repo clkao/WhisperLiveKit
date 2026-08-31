@@ -1008,6 +1008,14 @@ def parse_args():
         help="Free-text domain context (talk title, glossary) injected into "
         "the MT prompt for every session.",
     )
+    translation_group.add_argument(
+        "--event-log",
+        type=str,
+        default=None,
+        help="Write the caption event stream (ASR/MT provisional+final, with "
+        "timestamps) to this JSONL file on cleanup, for capture/diff tooling.",
+        dest="event_log",
+    )
 
     args = parser.parse_args()
     args.transcription = not args.no_transcription

@@ -51,18 +51,17 @@ def emit(path, sentences, rate, unit):
                           "committed": committed_src, "source": committed_now,
                           "fresh": i == 0})
             committed_src = committed_now
+            # incremental commit: the newly-stable text only (production emits
+            # new tokens per process_iter, not a cumulative snapshot)
+            is_last = i == len(clauses) - 1
+            commit_text = src + ("。" if any("\u4e00" <= ch <= "\u9fff" for ch in src[-1]) else ".") if is_last else src
             lines.append({"t": 0.0, "audio_t": round(cend + COMMIT_STABILIZE, 2),
-                          "type": "transcription_final", "text": committed_src})
-            if i < len(clauses) - 1:
+                          "type": "transcription_final", "text": commit_text})
+            if not is_last:
                 lines.append({"t": 0.0, "audio_t": round(cend + COMMIT_STABILIZE + RELEASE_LAG, 2),
                               "type": "translation_provisional", "text": tgt_cum,
                               "committed": committed_src, "source": committed_src, "fresh": False})
             t = cend
-        # sentence-final: append terminator
-        term = "。" if any("\u4e00" <= ch <= "\u9fff" for ch in committed_src[-1]) else "."
-        committed_src = committed_src + term
-        lines.append({"t": 0.0, "audio_t": round(t + COMMIT_STABILIZE, 2),
-                      "type": "transcription_final", "text": committed_src})
         lines.append({"t": 0.0, "audio_t": round(t + COMMIT_STABILIZE + MT_FINAL_LAG, 2),
                       "type": "translation_final", "text": final_tgt})
         t += 0.0  # inter-sentence pause is already inside the measured rate
