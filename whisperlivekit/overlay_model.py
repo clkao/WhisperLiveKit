@@ -66,6 +66,8 @@ class DisplayState:
     current: List[Span] = field(default_factory=list)   # the active caption line
     prev: List[Span] = field(default_factory=list)      # the scrolled-up history line
     partial: str = ""                                    # the ASR source partial (plain)
+    partial_committed_len: int = 0                        # chars of `partial` that are committed
+                                                          # (the split the view styles: stable vs tail)
 
 
 def _segments_plain(segments: list) -> str:
@@ -149,17 +151,21 @@ class OverlayDisplayModel:
         # source partial
         self._partial: str = ""
         self._last_partial: str = ""  # for change detection
+        self._partial_committed_len: int = 0
+        self._last_partial_committed_len: int = 0
         self._last_state: Optional[DisplayState] = None
         # set by in-place updates (append effect) so tick() emits the new state
         self._dirty = False
 
     # ---- event feed (mirrors OverlayRenderer callbacks) ----
 
-    def set_partial(self, text: str) -> None:
+    def set_partial(self, text: str, committed_len: int = 0) -> None:
         self._partial = text or ""
+        self._partial_committed_len = max(0, min(committed_len, len(self._partial)))
 
     def clear_partial(self) -> None:
         self._partial = ""
+        self._partial_committed_len = 0
 
     def preview(self, segments: list, started_at) -> None:
         """Provisional translation with the append effect.
@@ -325,13 +331,17 @@ class OverlayDisplayModel:
         if self._dirty:
             cur_changed = True
             self._dirty = False
-        if not cur_changed and not prev_changed and self._partial == self._last_partial:
+        if (not cur_changed and not prev_changed
+                and self._partial == self._last_partial
+                and self._partial_committed_len == self._last_partial_committed_len):
             return None
         self._last_partial = self._partial
+        self._last_partial_committed_len = self._partial_committed_len
         state = DisplayState(
             current=list(self._en_spans),
             prev=list(self._en_prev_spans),
             partial=self._partial,
+            partial_committed_len=self._partial_committed_len,
         )
         # change detection includes partial (set_partial may have changed it)
         if self._last_state is not None and state == self._last_state:
@@ -346,4 +356,5 @@ class OverlayDisplayModel:
             current=list(self._en_spans),
             prev=list(self._en_prev_spans),
             partial=self._partial,
+            partial_committed_len=self._partial_committed_len,
         )

@@ -418,10 +418,12 @@ class OverlayRenderer:
         elif not state.prev and self._field_en_prev is not None:
             self._set(self._field_en_prev, "")
 
-        # NOTE: the src (partial) row is owned exclusively by the partial()/
-        # final() callbacks — they fire on real text changes and render the
-        # committed/tail split. Re-setting it here on every drainer tick with
-        # plain text would clobber the attributed styling and flicker.
+        # src row: rendered from the model state (single writer, change-
+        # detected). committed prefix stable, rolling tail dim — same
+        # two-tone grammar as the EN row.
+        if self._field_partial is not None:
+            n = max(0, min(state.partial_committed_len, len(state.partial)))
+            self._set_src(state.partial[:n], state.partial[n:])
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -462,24 +464,22 @@ class OverlayRenderer:
                 print(line, file=sys.stderr, flush=True)
 
     def _set_src(self, committed: str, tail: str) -> None:
-        """Render the source reading buffer with the committed/provisional split:
-        committed clauses in the stable (brighter) style, the rolling tail dim
-        italic. Same two-tone grammar as the EN row (dim = provisional, bright
-        = committed), no diff coloring."""
+        """Render the source reading buffer with the committed/provisional split.
+        Single font, color-only distinction (dim = provisional, bright =
+        committed): mixed fonts reflow the line on every tail update — a
+        flicker source. Change-detected: identical content never re-renders."""
         if self._overlay_mode == "target" or self._field_partial is None:
             return
-        if AppKit is None or not (committed or tail):
-            key = (committed, tail)
-            if key == getattr(self, "_last_src_key", None):
-                return
-            self._last_src_key = key
+        key = (committed, tail)
+        if key == getattr(self, "_last_src_key", None):
+            return
+        self._last_src_key = key
+        if AppKit is None:
             self._set(self._field_partial, committed + tail)
             return
         font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
-        italic = AppKit.NSFontManager.sharedFontManager().convertFont_toHaveTrait_(
-            font, AppKit.NSFontItalicTrait)
         stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
-        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
+        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 1.0)
         mut = AppKit.NSMutableAttributedString.alloc().init()
         if committed:
             mut.appendAttributedString_(
@@ -488,16 +488,7 @@ class OverlayRenderer:
         if tail:
             mut.appendAttributedString_(
                 AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    tail, {"NSFont": italic, "NSColor": dim}))
-        # change detection: identical (committed, tail) pairs must not re-render
-        # — an unconditional attributed re-set repaints the field and flickers
-        key = (committed, tail)
-        if key == getattr(self, "_last_src_key", None):
-            return
-        self._last_src_key = key
-        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "setAttributedStringValue:", mut, False)
-
+                    tail, {"NSFont": font, "NSColor": dim}))
         self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setAttributedStringValue:", mut, False)
 
@@ -505,16 +496,15 @@ class OverlayRenderer:
     def partial(self, label: str, text: str, started_at: datetime, speaker: int | None = None) -> None:
         # New rolling words arrive. If the buffer holds a COMPLETED sentence,
         # it floats up to the zh history field now — the float happens when
-        # new words need the line, not at commit.
+        # new words need the line, not at commit. The src ROW is rendered by
+        # the drainer (_reconcile) from the model state — single writer.
         if self._zh_sentence_complete:
             if self._overlay_mode != "target":
                 self._set(self._field_zh, self._zh_committed)
             self._zh_committed = ""
             self._zh_sentence_complete = False
-        display = self._zh_committed + text
-        self._model.set_partial(display)
-        if self._overlay_mode != "target":
-            self._set_src(committed=self._zh_committed, tail=text)
+        self._model.set_partial(self._zh_committed + text,
+                                committed_len=len(self._zh_committed))
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
@@ -526,11 +516,10 @@ class OverlayRenderer:
         self._zh_committed = _src_join(self._zh_committed, zh)
         if zh.rstrip().endswith(("。", "！", "？", ".", "!", "?")):
             self._zh_sentence_complete = True
-        self._model.set_partial(self._zh_committed)
+        # the whole buffer is committed now
+        self._model.set_partial(self._zh_committed,
+                                committed_len=len(self._zh_committed))
         self._record_latency(started_at, "asr")
-        if self._overlay_mode != "target":
-            # the whole buffer is committed now — stable style
-            self._set_src(self._zh_committed, "")
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         if self._overlay_mode == "source":
