@@ -67,14 +67,47 @@ class SrcReadingBuffer:
         self.last_promoted = None
         return p
 
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._committed = ""          # committed clauses of the current sentence
+        self._sentence_complete = False
+        self.last_promoted: str | None = None
+        # right after a promotion, backends' rolling buffers often still carry
+        # the promoted sentence — strip it from the tail until it's gone
+        self._suppress_prefix: str = ""
+
+    @property
+    def committed(self) -> str:
+        return self._committed
+
+    @property
+    def sentence_complete(self) -> bool:
+        return self._sentence_complete
+
+    def consume_promotion(self) -> str:
+        """Return and clear the sentence promoted to history (or None)."""
+        p = self.last_promoted
+        self.last_promoted = None
+        return p
+
     def tail(self, text: str) -> str:
         """A rolling update: returns the src row display string. If the buffer
         holds a completed sentence, it promotes — the float happens when new
         words need the line, not at commit."""
         if self._sentence_complete:
             self.last_promoted = self._committed
+            self._suppress_prefix = self._committed
             self._committed = ""
             self._sentence_complete = False
+        # suppress the promoted sentence if the hypothesis still carries it —
+        # otherwise the vanished bright text re-appears as a dim draft
+        if self._suppress_prefix:
+            if text.startswith(self._suppress_prefix):
+                text = text[len(self._suppress_prefix):]
+            else:
+                self._suppress_prefix = ""  # hypothesis moved past it
         # defensive: some backends' rolling buffer still carries the committed
         # prefix — never render it twice
         if self._committed and text.startswith(self._committed):
