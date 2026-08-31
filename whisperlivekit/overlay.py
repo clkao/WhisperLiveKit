@@ -459,6 +459,36 @@ class OverlayRenderer:
             if line:
                 print(line, file=sys.stderr, flush=True)
 
+    def _set_src(self, committed: str, tail: str) -> None:
+        """Render the source reading buffer with the committed/provisional split:
+        committed clauses in the stable (brighter) style, the rolling tail dim
+        italic. Same two-tone grammar as the EN row (dim = provisional, bright
+        = committed), no diff coloring."""
+        if self._overlay_mode == "target" or self._field_partial is None:
+            return
+        if AppKit is None or not (committed or tail):
+            self._set(self._field_partial, committed + tail)
+            return
+        font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
+        italic = AppKit.NSFontManager.sharedFontManager().convertFont_toHaveTrait_(
+            font, AppKit.NSFontItalicTrait)
+        stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
+        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
+        mut = AppKit.NSMutableAttributedString.alloc().init()
+        if committed:
+            mut.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                    committed, {"NSFont": font, "NSColor": stable}))
+        if tail:
+            mut.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                    tail, {"NSFont": italic, "NSColor": dim}))
+        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setAttributedStringValue:", mut, False)
+
+        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setAttributedStringValue:", mut, False)
+
     # ---- callback contract (same as render.Renderer) ----
     def partial(self, label: str, text: str, started_at: datetime, speaker: int | None = None) -> None:
         # New rolling words arrive. If the buffer holds a COMPLETED sentence,
@@ -472,7 +502,7 @@ class OverlayRenderer:
         display = self._zh_committed + text
         self._model.set_partial(display)
         if self._overlay_mode != "target":
-            self._set(self._field_partial, display)
+            self._set_src(committed=self._zh_committed, tail=text)
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
@@ -487,7 +517,8 @@ class OverlayRenderer:
         self._model.set_partial(self._zh_committed)
         self._record_latency(started_at, "asr")
         if self._overlay_mode != "target":
-            self._set(self._field_partial, self._zh_committed)
+            # the whole buffer is committed now — stable style
+            self._set_src(self._zh_committed, "")
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         if self._overlay_mode == "source":
@@ -587,8 +618,10 @@ class OverlayRenderer:
 
     def _spans_to_attributed(self, spans: list) -> "AppKit.NSAttributedString | None":
         """Build a styled NSAttributedString from the model's DisplayState spans.
-        Style → color: PROVISIONAL → dimmed, FINAL_SAME → white, FINAL_ADD → green.
-        Returns None for empty spans (the caller skips the field update)."""
+        Style → color: PROVISIONAL → dimmed, committed (FINAL_SAME and FINAL_ADD
+        alike) → white. The overlay's only visual grammar is dim = provisional,
+        bright = committed — no diff coloring (the draft already grew by
+        append; green deltas were noise). Returns None for empty spans."""
         if not spans:
             return None
         if AppKit is None:
@@ -597,15 +630,12 @@ class OverlayRenderer:
         para = AppKit.NSMutableParagraphStyle.alloc().init()
         para.setAlignment_(AppKit.NSCenterTextAlignment)
         white = AppKit.NSColor.whiteColor()
-        green = AppKit.NSColor.colorWithCalibratedRed_green_blue_alpha_(0.3, 0.85, 0.4, 1.0)
         dimmed = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
         mut = AppKit.NSMutableAttributedString.alloc().init()
         for sp in spans:
-            if sp.style == FINAL_ADD:
-                color = green
-            elif sp.style == PROVISIONAL:
+            if sp.style == PROVISIONAL:
                 color = dimmed
-            else:  # FINAL_SAME or anything else
+            else:  # FINAL_SAME, FINAL_ADD — committed is committed: bright
                 color = white
             attrs = {"NSFont": font, "NSColor": color, "NSParagraphStyle": para}
             mut.appendAttributedString_(

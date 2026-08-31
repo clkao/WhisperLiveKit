@@ -240,11 +240,9 @@ class OverlaySink:
                 self._r.final("", [(None, self._cc_src(txt))], datetime.now())
             if tr and tr != self._last_transl:
                 self._last_transl = tr
-                # inline diff vs the stashed provisional: struck gray old + green new
-                from whisperlivekit.inline_diff import inline_diff
-                shown = self._cc_target(tr)
-                diff = inline_diff(self._last_prov, [shown])[0] if self._last_prov else None
-                self._r.translation("", [(None, shown, diff)], datetime.now())
+                # no diff spans on the overlay: committed is bright, provisional
+                # is dim — the style flip is the signal (CL: no green in overlay)
+                self._r.translation("", [(None, self._cc_target(tr))], datetime.now())
 
 
 class StatsTracker:
@@ -455,13 +453,10 @@ class TuiSink:
                 self._seen_transls.add(i)
                 started_at = self._final_started_at.get(i, datetime.now())
                 shown = self._cc_target(tr)
-                # inline diff vs the stashed provisional: struck gray old + bold green
-                # new, same rendering as the ASR two-pass diff.
-                from whisperlivekit.inline_diff import inline_diff
-                diff = (inline_diff(self._last_prov, [shown])[0]
-                        if self._last_prov else None)
-                self._last_prov = ""  # consumed
-                self._r.translation("mic", [(spk, shown, diff)], started_at)
+                # no diff spans on the overlay: committed is bright, provisional
+                # is dim — the style flip is the signal (CL: no green in overlay)
+                self._last_prov = ""
+                self._r.translation("mic", [(spk, shown)], started_at)
 
 
 # ---------------------------------------------------------------------------
