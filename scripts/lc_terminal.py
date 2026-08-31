@@ -412,6 +412,7 @@ class TuiSink:
         self._seen_finals: set[int] = set()
         self._seen_transls: set[int] = set()
         self._final_started_at: dict[int, datetime] = {}
+        self._line_texts: dict[int, str] = {}  # latest cumulative text per line
         self._last_prov = ""   # stash the provisional so the final can diff against it
         self._opencc = opencc_conv
         self._target_opencc = target_opencc
@@ -449,11 +450,18 @@ class TuiSink:
             # every line. With diarization on, keep real speaker IDs (>=1).
             if spk is not None and (spk <= 0 or (not self._diarization and spk == 1)):
                 spk = None
+            # FrontData line text GROWS as tokens commit; printing on first
+            # sight would clip to the first fragment. Defer until the line is
+            # complete: a newer line appeared, or its translation arrived.
+            if txt:
+                self._line_texts[i] = txt
             if txt and i not in self._seen_finals:
-                self._seen_finals.add(i)
-                started_at = datetime.now()
-                self._final_started_at[i] = started_at
-                self._r.final("mic", [(spk, self._cc_src(txt))], started_at)
+                complete = (i + 1) in self._line_texts or bool(tr)
+                if complete:
+                    self._seen_finals.add(i)
+                    started_at = datetime.now()
+                    self._final_started_at[i] = started_at
+                    self._r.final("mic", [(spk, self._cc_src(txt))], started_at)
             if tr and i not in self._seen_transls:
                 self._seen_transls.add(i)
                 started_at = self._final_started_at.get(i, datetime.now())

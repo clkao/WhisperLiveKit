@@ -507,8 +507,13 @@ class OverlayRenderer:
                 self._set(self._field_zh, self._zh_committed)
             self._zh_committed = ""
             self._zh_sentence_complete = False
-        self._model.set_partial(self._zh_committed + text,
-                                committed_len=len(self._zh_committed))
+        # defensive: some backends' rolling buffer still carries the committed
+        # prefix — never render it twice
+        if self._zh_committed and text.startswith(self._zh_committed):
+            display = text
+        else:
+            display = self._zh_committed + text
+        self._model.set_partial(display, committed_len=len(self._zh_committed))
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
