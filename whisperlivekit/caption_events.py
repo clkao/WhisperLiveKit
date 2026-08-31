@@ -11,7 +11,7 @@ Event types (named by what the viewer sees, not which subsystem produced it,
 aligning with the overlay's partial/preview/translation vocabulary and the
 FrontData buffer_transcription/buffer_translation fields):
 
-  - ``transcription_partial`` : the unstable ASR tail (rolling hypothesis,
+  - ``transcription_provisional`` : the unstable ASR tail (rolling hypothesis,
     not committed) — what the viewer sees as the in-progress source line.
   - ``transcription_final``   : committed ASR tokens (a finalized segment).
   - ``translation_provisional``: provisional translation (AlignAtt release
@@ -38,7 +38,7 @@ class CaptionEvent:
     """One event in the caption stream."""
     t: float          # wall clock (seconds since stream start)
     audio_t: float    # audio position (seconds)
-    type: str         # transcription_partial | transcription_final |
+    type: str         # transcription_provisional | transcription_final |
                       # translation_provisional | translation_final
     text: str
     # translation_provisional only: what AlignAtt released against (committed source)
@@ -100,10 +100,10 @@ class EventTap:
         import time
         return time.perf_counter()
 
-    def transcription_partial(self, audio_t: float, text: str) -> None:
+    def transcription_provisional(self, audio_t: float, text: str) -> None:
         if self._sink is None or not text or not text.strip():
             return
-        self._sink.emit(CaptionEvent(self._now(), audio_t, "transcription_partial", text))
+        self._sink.emit(CaptionEvent(self._now(), audio_t, "transcription_provisional", text))
 
     def transcription_final(self, audio_t: float, text: str) -> None:
         if self._sink is None or not text or not text.strip():

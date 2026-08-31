@@ -19,7 +19,7 @@ from whisperlivekit.caption_events import CaptionEvent
 @dataclass
 class DisplayState:
     """What the display should show at any point in the stream."""
-    partial_transcription: str = ""   # current rolling ASR (transcription_partial)
+    partial_transcription: str = ""   # current rolling ASR (transcription_provisional)
     partial_translation: str = ""     # current provisional MT (translation_provisional)
     final_lines: List[str] = field(default_factory=list)  # committed translation_finals
     # bookkeeping
@@ -41,7 +41,7 @@ class DisplayAdapter:
     """Stateful reducer: feed CaptionEvents, read DisplayState.
 
     Rules:
-      - transcription_partial   -> set partial_transcription (overwrites; it's rolling)
+      - transcription_provisional   -> set partial_transcription (overwrites; it's rolling)
       - transcription_final   -> clear partial_transcription (the draft is now committed)
       - translation_provisional    -> set partial_translation (overwrites; it's provisional)
       - translation_final    -> append to final_lines, clear partial_translation
@@ -52,7 +52,7 @@ class DisplayAdapter:
 
     def feed(self, event: CaptionEvent) -> DisplayState:
         t = event.type
-        if t == "transcription_partial":
+        if t == "transcription_provisional":
             self.state.partial_transcription = event.text
         elif t == "transcription_final":
             self.state.partial_transcription = ""  # committed; draft no longer rolling

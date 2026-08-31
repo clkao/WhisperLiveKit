@@ -16,8 +16,8 @@ from pathlib import Path
 from whisperlivekit.caption_events import EventLog
 
 # Row order (top to bottom). translation_provisional split into call/release would add a row.
-ROWS = ["transcription_partial", "transcription_final", "translation_provisional", "translation_final"]
-GLYPH = {"transcription_partial": "·", "transcription_final": "▌", "translation_provisional": "○", "translation_final": "█"}
+ROWS = ["transcription_provisional", "transcription_final", "translation_provisional", "translation_final"]
+GLYPH = {"transcription_provisional": "·", "transcription_final": "▌", "translation_provisional": "○", "translation_final": "█"}
 
 
 def truncate(s: str, n: int = 22) -> str:
@@ -69,7 +69,7 @@ def render(events, width: int = 120, label: str = "") -> None:
         if 0 <= col < width:
             axis[col] = "|"
     print(f"{'audio_t (s)':10} {''.join(axis)}")
-    print(f"{'legend':10} · transcription_partial  ▌ transcription_final  ○ translation_provisional  █ translation_final")
+    print(f"{'legend':10} · transcription_provisional  ▌ transcription_final  ○ translation_provisional  █ translation_final")
 
 
 def main():

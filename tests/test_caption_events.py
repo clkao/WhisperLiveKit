@@ -59,7 +59,7 @@ class TestDisplayAdapter:
 
     def test_transcription_final_clears_partial_transcription(self):
         """transcription_final commits the draft; partial_transcription should clear."""
-        events = [CaptionEvent(0, 2.0, "transcription_partial", "hello"),
+        events = [CaptionEvent(0, 2.0, "transcription_provisional", "hello"),
                   CaptionEvent(0, 2.1, "transcription_final", "hello")]
         adapter = DisplayAdapter()
         adapter.feed(events[0])
@@ -119,26 +119,26 @@ class TestEventDiff:
 class TestEventStream:
     def test_eventlog_roundtrip(self, tmp_path):
         log = EventLog()
-        log.emit(CaptionEvent(1.0, 2.0, "transcription_partial", "hello"))
+        log.emit(CaptionEvent(1.0, 2.0, "transcription_provisional", "hello"))
         log.emit(CaptionEvent(1.1, 2.1, "translation_final", "你好", committed="", source=""))
         p = str(tmp_path / "ev.jsonl")
         log.save(p)
         loaded = EventLog.load(p)
         assert len(loaded.events) == 2
-        assert loaded.events[0].type == "transcription_partial"
+        assert loaded.events[0].type == "transcription_provisional"
         assert loaded.events[1].text == "你好"
 
     def test_tap_noop_when_no_sink(self):
         """A tap with no sink is zero-cost: nothing emitted, no crash."""
         tap = EventTap()
-        tap.transcription_partial(1.0, "hello")
+        tap.transcription_provisional(1.0, "hello")
         tap.translation_final(2.0, "你好")
         # no assertion needed — just must not raise
 
     def test_tap_forwards_to_sink(self):
         log = EventLog()
         tap = EventTap(sink=log, clock=lambda: 0.0)
-        tap.transcription_partial(1.0, "rolling")
+        tap.transcription_provisional(1.0, "rolling")
         tap.translation_provisional(2.0, "prov", committed="c", source="s")
         assert len(log.events) == 2
         assert log.events[1].committed == "c"

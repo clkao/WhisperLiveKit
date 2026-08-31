@@ -8,7 +8,7 @@ we can judge (1) whether generation produces a coherent sequence and
 (2) whether display renders that sequence correctly, independently.
 
 Event schema (one JSON object per line):
-  {"t": <wall_sec>, "audio_t": <sec>, "type": "transcription_partial"|"transcription_final"|"translation_provisional"|"translation_final",
+  {"t": <wall_sec>, "audio_t": <sec>, "type": "transcription_provisional"|"transcription_final"|"translation_provisional"|"translation_final",
    "text": "<str>", "committed": "<str>" (translation_provisional only, what AlignAtt released against),
    "source": "<str>" (translation_provisional only, full source the MT saw),
    "n_mt_calls": <int> (translation_provisional only)}
@@ -63,7 +63,7 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
         # ASR draft (unstable tail)
         buf = asr.get_buffer()
         tail = getattr(buf, "text", "") or ""
-        tap.transcription_partial(audio_t, tail)
+        tap.transcription_provisional(audio_t, tail)
         # ASR final (committed tokens from process_iter)
         toks, end = asr.process_iter()
         if toks:
@@ -112,14 +112,14 @@ def replay(log_path: str) -> None:
     if not events:
         print("no events"); return
     print(f"=== {len(events)} events from {log_path} ===\n")
-    cur_transcription_partial = ""; cur_mt = ""; last_translation_final = ""
+    cur_transcription_provisional = ""; cur_mt = ""; last_translation_final = ""
     for e in events:
         t = e["t"]; at = e.get("audio_t", 0); typ = e["type"]; txt = e["text"]
-        if typ == "transcription_partial":
-            cur_transcription_partial = txt
+        if typ == "transcription_provisional":
+            cur_transcription_provisional = txt
             print(f"[{t:6.2f} a={at:5.1f}] asr draft : {txt[:50]!r}")
         elif typ == "transcription_final":
-            cur_transcription_partial = ""
+            cur_transcription_provisional = ""
             print(f"[{t:6.2f} a={at:5.1f}] ASR FINAL : {txt[:50]!r}")
         elif typ == "translation_provisional":
             cur_mt = txt
