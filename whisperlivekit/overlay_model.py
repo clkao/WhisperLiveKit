@@ -160,8 +160,17 @@ class OverlayDisplayModel:
     # ---- event feed (mirrors OverlayRenderer callbacks) ----
 
     def set_partial(self, text: str, committed_len: int = 0) -> None:
-        self._partial = text or ""
-        self._partial_committed_len = max(0, min(committed_len, len(self._partial)))
+        text = text or ""
+        # monotonic display: a pure SHRINK with the same committed split is a
+        # streaming-hypothesis revision (words vanish then re-appear) — hold
+        # the longer text until a commit resolves it. Legitimate resets (a new
+        # sentence after a promote) lower committed_len and pass through.
+        cur, cur_cl = self._partial, self._partial_committed_len
+        if (text and cur and committed_len == cur_cl
+                and len(text) < len(cur) and cur.startswith(text)):
+            return
+        self._partial = text
+        self._partial_committed_len = max(0, min(committed_len, len(text)))
 
     def clear_partial(self) -> None:
         self._partial = ""

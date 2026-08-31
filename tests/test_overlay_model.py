@@ -412,3 +412,35 @@ def test_preempting_final_clears_stale_queued_draft():
     clk.advance(4.0)
     m.tick()
     assert m._en_plain != "Sentence two", "stale draft popped over the bright final"
+
+
+# ---- monotonic src display (no vanish/reappear on hypothesis revision) ----
+
+def test_set_partial_holds_on_pure_shrink():
+    """A streaming revision that shrinks the tail (same committed split) is
+    held — the display never vanishes/reappears on hypothesis churn."""
+    from whisperlivekit.overlay_model import OverlayDisplayModel
+    m = OverlayDisplayModel(hold_sec=3.5)
+    m.set_partial("我們今天來討論鐳射在醫學上的應用", committed_len=0)
+    m.set_partial("我們今天來討論鐳射在", committed_len=0)  # revision shrank
+    assert m.state().partial == "我們今天來討論鐳射在醫學上的應用", "shrink must be held"
+    m.set_partial("我們今天來討論鐳射在醫學上的應用，未來", committed_len=0)  # growth shows
+    assert m.state().partial == "我們今天來討論鐳射在醫學上的應用，未來"
+
+
+def test_set_partial_commit_shrink_passes_through():
+    """A legit commit shrinks the tail but grows committed_len — passes through."""
+    m = OverlayDisplayModel(hold_sec=3.5)
+    m.set_partial("我們今天來討論鐳射在醫學上的應用", committed_len=0)
+    m.set_partial("鐳射在醫學上的應用", committed_len=6)  # commit landed, tail stripped
+    assert m.state().partial == "鐳射在醫學上的應用"
+    assert m.state().partial_committed_len == 6
+
+
+def test_set_partial_new_sentence_reset_passes_through():
+    """A promote resets committed to empty — the shorter new-sentence tail must show."""
+    m = OverlayDisplayModel(hold_sec=3.5)
+    m.set_partial("我們今天來討論鐳射在醫學上的應用。", committed_len=12)
+    m.set_partial("鐳射技術", committed_len=0)  # new sentence after promote
+    assert m.state().partial == "鐳射技術"
+    assert m.state().partial_committed_len == 0
