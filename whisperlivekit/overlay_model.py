@@ -149,8 +149,9 @@ class OverlayDisplayModel:
         # source partial
         self._partial: str = ""
         self._last_partial: str = ""  # for change detection
-        # last emitted state (for change detection)
         self._last_state: Optional[DisplayState] = None
+        # set by in-place updates (append effect) so tick() emits the new state
+        self._dirty = False
 
     # ---- event feed (mirrors OverlayRenderer callbacks) ----
 
@@ -161,21 +162,43 @@ class OverlayDisplayModel:
         self._partial = ""
 
     def preview(self, segments: list, started_at) -> None:
-        """Provisional translation. If the new provisional extends the shown text, stream
-        the delta (smooth growth). If it rewrites (different prefix), hard-replace to the
-        latest (no animation, but stays current — not frozen). Skip if unchanged."""
+        """Provisional translation with the append effect.
+
+        - extends the shown draft  -> APPEND in place: the line grows on screen,
+          no scroll-up, no retype, no hold. The new words just appear at the
+          end of the existing draft (the view streams the delta word-by-word).
+        - rewrites the draft       -> replace IN PLACE: the stale draft is
+          discarded (not scrolled to history — it was wrong, it is not
+          history-worthy), the new draft shows after the hold.
+        - unchanged                -> skip.
+
+        Utterance identity is structural (provisional vs final state), NOT the
+        started_at timestamp: callers pass datetime.now() per update, so
+        timestamp equality cannot detect same-utterance transitions.
+        """
         plain = _segments_plain(segments)
         shown = self._en_plain
         if plain == shown:
             return  # skip (unchanged)
-        if shown and plain.startswith(shown):
-            # extends: stream the delta (enqueue the full new text; the drainer shows it)
-            spans = _segments_to_spans(segments, is_final=False)
-            self._enqueue(spans, plain, started_at, is_final=False)
-        else:
-            # rewrite or first: hard-replace to the latest provisional
-            spans = _segments_to_spans(segments, is_final=False)
-            self._enqueue(spans, plain, started_at, is_final=False)
+        if shown and not self._en_is_final and plain.startswith(shown):
+            # append effect: the draft grew — extend the line in place.
+            # No scroll-up, no retype, no hold: the new words appear at the end
+            # and the view streams the delta word-by-word.
+            self._en_plain = plain
+            self._en_spans = _segments_to_spans(segments, is_final=False)
+            self._en_is_final = False
+            # keep the next final immediately releasable
+            self._en_shown_at = self._clock() - self._hold
+            self._queue.clear()  # a queued item is stale — the line shows the latest
+            self._dirty = True
+            return
+        if shown and not self._en_is_final:
+            # draft rewrite: replace in place — the stale draft is discarded,
+            # NOT scrolled into history (it was wrong; history shows finals).
+            self._en_plain = ""
+            self._en_spans = []
+        spans = _segments_to_spans(segments, is_final=False)
+        self._enqueue(spans, plain, started_at, is_final=False)
 
     def translation(self, segments: list, started_at) -> None:
         """Final translation. Only AMEND — don't retype what's already shown. Keep the
@@ -195,13 +218,10 @@ class OverlayDisplayModel:
             # if there's no common prefix (committed=""), the old content scrolls up
             # to history (it's a genuinely different caption).
             if not committed and shown:
-                # Only scroll up if this is NOT a same-utterance provisional→final
-                # correction (a draft correction replaces in place, not a new caption).
-                utt_t = started_at.timestamp() if started_at else None
-                same_utt = (utt_t is not None
-                            and self._en_utt == utt_t
-                            and not self._en_is_final)
-                if not same_utt:
+                # Only scroll FINALS into history. A shown provisional with no
+                # common prefix to the final is a discarded draft — replace it
+                # in place, don't pollute history.
+                if self._en_is_final:
                     self._en_prev_plain = shown
                     self._en_prev_spans = self._en_spans
                     self._en_prev_at = self._clock()
@@ -211,13 +231,16 @@ class OverlayDisplayModel:
             self._en_is_final = True
             self._en_shown_at = -self._hold  # release delta immediately on next tick
             self._en_utt = started_at.timestamp() if started_at else None
-            # only enqueue the delta sentences
+            # only enqueue the delta sentences (append-flagged: the drainer
+            # appends them to the current line — the line stays coherent,
+            # history records full sentences, not delta tails)
             if delta.strip():
                 import re as _re
                 sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', delta) if s.strip()]
                 for s in sents:
                     s_spans = _segments_to_spans([(None, s, None)], is_final=True)
-                    self._queue.append((s_spans, s, self._en_utt, True))
+                    self._queue.append((s_spans, s, self._en_utt, True, True))
+            self._dirty = True  # the prefix flip (draft→final style) shows immediately
             return
         # no shown provisional: full enqueue
         spans = _segments_to_spans(segments, is_final=True)
@@ -244,21 +267,44 @@ class OverlayDisplayModel:
         cur_changed = False
         prev_changed = False
         if self._queue and now - self._en_shown_at >= self._hold:
-            spans, plain, utt_t, is_final = self._queue.pop(0)
-            same_utt = utt_t is not None and utt_t == self._en_utt
-            scroll_up = (self._en_plain and plain != self._en_plain
-                         and (not same_utt or self._en_is_final))
-            if scroll_up:
-                self._en_prev_plain = self._en_plain
-                self._en_prev_spans = self._en_spans
-                self._en_prev_at = now
-                prev_changed = True
-            self._en_plain = plain
-            self._en_spans = spans
-            self._en_utt = utt_t
-            self._en_is_final = is_final
-            self._en_shown_at = now
-            cur_changed = True
+            item = self._queue.pop(0)
+            if len(item) == 5:
+                spans, plain, utt_t, is_final, amend = item
+            else:
+                spans, plain, utt_t, is_final = item
+                amend = False
+            if amend:
+                # Append-flagged delta sentence: grow the current line (it
+                # already holds the committed prefix). No scroll — the line
+                # stays one coherent caption.
+                joiner = "" if (not self._en_plain or plain[:1].isspace()
+                                or self._en_plain[-1:].isspace()) else " "
+                if joiner:
+                    self._en_spans.append(Span(joiner, FINAL_SAME))
+                self._en_plain += joiner + plain
+                self._en_spans = self._en_spans + list(spans)
+                self._en_utt = utt_t
+                self._en_is_final = is_final
+                self._en_shown_at = now
+                cur_changed = True
+            else:
+                same_utt = utt_t is not None and utt_t == self._en_utt
+                # Scroll only FINALS into history. Drafts (provisionals) are never
+                # history-worthy: growth appends in place, rewrites replace in
+                # place — the reader sees one growing line, not churn.
+                scroll_up = (self._en_plain and plain != self._en_plain
+                             and self._en_is_final)
+                if scroll_up:
+                    self._en_prev_plain = self._en_plain
+                    self._en_prev_spans = self._en_spans
+                    self._en_prev_at = now
+                    prev_changed = True
+                self._en_plain = plain
+                self._en_spans = spans
+                self._en_utt = utt_t
+                self._en_is_final = is_final
+                self._en_shown_at = now
+                cur_changed = True
         else:
             # expire the current line if its hold elapsed with nothing queued — but
             # ONLY for finals. A provisional is a draft the viewer expects to be
@@ -274,6 +320,9 @@ class OverlayDisplayModel:
                 self._en_prev_plain = ""
                 self._en_prev_spans = []
                 prev_changed = True
+        if self._dirty:
+            cur_changed = True
+            self._dirty = False
         if not cur_changed and not prev_changed and self._partial == self._last_partial:
             return None
         self._last_partial = self._partial

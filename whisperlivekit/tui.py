@@ -40,6 +40,14 @@ _PREVIEW_STYLE = {
     "dark": "grey50",
     "light": "grey50",
 }
+# Newly-appended provisional tail (the append effect): the draft's stable prefix
+# stays grey50; the words that just appeared are brighter, so the eye tracks the
+# growth. When the final lands, the whole line flips to the translation style.
+_PREVIEW_NEW_STYLE = {
+    "default": "grey70",
+    "dark": "grey70",
+    "light": "grey39",
+}
 _SPEAKER_PALETTE = {
     "default": ["bold magenta", "bold blue", "bold dark_orange3", "bold red"],
     "dark": ["bold bright_magenta", "bold bright_blue", "bold orange1", "bold bright_red"],
@@ -84,9 +92,10 @@ class TuiRenderer:
     ):
         self.console = console or Console()
         resolved = _resolve_theme(theme)
-        self._sty = {**_COMMON_STYLES, "translation": _TRANSLATION_STYLE[resolved], "preview": _PREVIEW_STYLE[resolved]}
+        self._sty = {**_COMMON_STYLES, "translation": _TRANSLATION_STYLE[resolved], "preview": _PREVIEW_STYLE[resolved], "preview_new": _PREVIEW_NEW_STYLE[resolved]}
         self._palette = _SPEAKER_PALETTE[resolved]
         self._partials: dict[str, tuple[datetime, str, int | None, Text | None] | None] = {}
+        self._last_preview_plain: dict[str, str] = {}  # label -> previous provisional plain (append detection)
         self._lock = threading.Lock()
         self._translate = translate
         self._pending: list[dict] = []
@@ -233,14 +242,31 @@ class TuiRenderer:
         import re
         segs = [(seg[0], re.sub(r"<[\|｜][^\|｜]*[\|｜]>", "", seg[1]).strip(),
                  seg[2] if len(seg) > 2 else None) for seg in zh_segments]
-        self._append_segments(line, segs, self._sty["preview"])
         with self._lock:
+            prev_plain = self._last_preview_plain.get(label, "")
+            new_plain = "  ".join(
+                (f"[S{s + 1}] " if s is not None else "") + t for s, t, *_ in segs
+            )
+            if (prev_plain and new_plain.startswith(prev_plain)
+                    and len(new_plain) > len(prev_plain)
+                    and len(segs) == 1 and segs[0][0] is None):
+                # append effect: the draft grew — stable prefix stays dim,
+                # the newly-appended tail is brighter so the eye tracks growth.
+                line.append(prev_plain, style=self._sty["preview"])
+                line.append(new_plain[len(prev_plain):], style=self._sty["preview_new"])
+            else:
+                # rewrite or first show: whole line in the draft style
+                self._append_segments(line, segs, self._sty["preview"])
+            self._last_preview_plain[label] = new_plain
             prev = self._partials.get(label)
-            if prev and prev[0] == started_at:
+            if prev:
+                # update the partial's preview regardless of started_at: callers
+                # pass datetime.now() per update, so timestamp equality never
+                # matches and the preview would freeze on its first version.
                 self._partials[label] = (prev[0], prev[1], prev[2], line)
             else:
                 for e in self._pending:
-                    if e["zh"] is None and e["label"] == label and e["started_at"] == started_at:
+                    if e["zh"] is None and e["label"] == label:
                         e["zh_preview"] = line
                         break
             self._live.update(self._render_active())
@@ -251,6 +277,7 @@ class TuiRenderer:
         self._append_segments(line, segments, self._sty["final"])
         with self._lock:
             self._record_latency(started_at, "asr")
+            self._last_preview_plain.pop(label, None)  # utterance done; next preview starts fresh
             prev = self._partials.get(label)
             zh_preview = prev[3] if (prev and prev[0] == started_at) else None
             self._partials[label] = None
