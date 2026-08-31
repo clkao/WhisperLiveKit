@@ -236,6 +236,10 @@ class OverlayDisplayModel:
             self._en_spans = _segments_to_spans(segments, is_final=True)
             self._en_is_final = True
             self._en_shown_at = self._clock()
+            # the final supersedes anything queued (e.g. its own still-pending
+            # draft): leaving it queued would pop a stale dim draft over this
+            # bright final if the speaker pauses past the hold.
+            self._queue.clear()
             self._dirty = True
             return
         # no shown provisional: full enqueue

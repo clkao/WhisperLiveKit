@@ -390,3 +390,25 @@ def test_golden_final_survives_its_hold():
             m.tick()
             assert m._en_plain == e.text, "final wiped before its hold elapsed"
     assert finals_seen == 6
+
+
+def test_preempting_final_clears_stale_queued_draft():
+    """A final that takes over the line while its own draft is still queued
+    must clear the queue: on a >hold pause, the stale dim draft must not pop
+    and regress the bright final (bright->dim on same content)."""
+    m, clk = make()
+    # draft queued behind nothing (first show)
+    m.preview(segs("Sentence two"), started_at=U1)
+    m.tick()
+    clk.advance(0.1)
+    # the final lands while the draft is still queued (preempt)
+    m.translation(segs("Sentence two."), started_at=U1)
+    m.tick()
+    assert m._en_plain == "Sentence two."
+    assert m._en_is_final
+    assert m._queue == [], "stale draft left queued after the final took over"
+    # speaker pauses past the hold: the final must persist (or expire cleanly),
+    # never regress to the stale dim draft
+    clk.advance(4.0)
+    m.tick()
+    assert m._en_plain != "Sentence two", "stale draft popped over the bright final"

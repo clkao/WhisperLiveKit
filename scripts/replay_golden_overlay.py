@@ -40,7 +40,9 @@ def main():
         if t == "transcription_provisional":
             model.set_partial(e.text)
         elif t == "transcription_final":
-            model.clear_partial()
+            # production mapping (overlay.py final()): the committed sentence
+            # becomes the reading buffer — it holds until new words arrive
+            model.set_partial(e.text)
         elif t == "translation_provisional":
             # started_at: approximate the utterance start from the audio time
             model.preview([(None, e.text)], EPOCH + timedelta(seconds=e.audio_t))
