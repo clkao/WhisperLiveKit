@@ -18,8 +18,11 @@ Usage:
   .venv/bin/python scripts/capture_frame_events.py --replay /tmp/zh_en_events.jsonl
 """
 from __future__ import annotations
-import argparse, json, sys, time, os
-from datetime import datetime
+
+import argparse
+import json
+import sys
+
 
 def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str) -> None:
     import numpy as np
@@ -29,8 +32,9 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
 
     if backend == "qwen3":
         import types
-        from whisperlivekit.asr_mlx_qwen3 import MlxQwen3AsrOnlineProcessor
+
         from whisperlivekit.asr_commit import StableCommitTransform
+        from whisperlivekit.asr_mlx_qwen3 import MlxQwen3AsrOnlineProcessor
         from whisperlivekit.asr_wrapper import AsrWrapper
         cfg = types.SimpleNamespace(
             model_id="mlx-community/Qwen3-ASR-0.6B-8bit", language=lang,
@@ -44,14 +48,15 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
         asr = NemotronMLXOnlineProcessor(NemotronMLXASR(lan=lang,
             nemotron_mlx_asr_model="mlx-community/nemotron-3.5-asr-streaming-0.6b"))
 
-    from whisperlivekit.translation_mlx_llm_mt_simul import MlxLlmTranslationSimul
     from whisperlivekit.timed_objects import HypothesisTail
+    from whisperlivekit.translation_mlx_llm_mt_simul import MlxLlmTranslationSimul
     mt = MlxLlmTranslationSimul(model_id="hy-mt2-1.8b-8bit",
         target_language=target, source_language=lang,
         commit_mode="mass", mass_threshold=0.5)
 
-    from whisperlivekit.caption_events import EventLog, EventTap
     import time as _time
+
+    from whisperlivekit.caption_events import EventLog, EventTap
     t0 = _time.perf_counter()
     log = EventLog()
     tap = EventTap(sink=log, clock=lambda: _time.perf_counter()-t0)
@@ -81,8 +86,8 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
         if tr is not None and tr.text and tr.text.strip():
             tap.translation_final(audio_t, tr.text)
         elif buf is not None and getattr(buf, "text", "") and getattr(buf,"text","").strip():
-            compute = mt._mt_call_count > calls_before
-            tap.translation_provisional(audio_t, buf.text, mt._committed_text(), mt._source_text(), compute)
+            fresh = mt._mt_call_count > calls_before
+            tap.translation_provisional(audio_t, buf.text, mt._committed_text(), mt._source_text(), fresh)
     # finalize
     toks, end = asr.finish()
     if toks:
@@ -94,8 +99,8 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
     if tr is not None and tr.text and tr.text.strip():
         tap.translation_final(len(audio)/16000, tr.text)
     elif buf is not None and getattr(buf, "text", "") and getattr(buf,"text","").strip():
-        compute = mt._mt_call_count > calls_before
-        tap.translation_provisional(len(audio)/16000, buf.text, mt._committed_text(), mt._source_text(), compute)
+        fresh = mt._mt_call_count > calls_before
+        tap.translation_provisional(len(audio)/16000, buf.text, mt._committed_text(), mt._source_text(), fresh)
 
     log.save(out_path)
     print(f"captured {len(log.events)} events -> {out_path}", file=sys.stderr)

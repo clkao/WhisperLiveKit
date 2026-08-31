@@ -16,9 +16,10 @@ FrontData buffer_transcription/buffer_translation fields):
   - ``transcription_final``   : committed ASR tokens (a finalized segment).
   - ``translation_provisional``: provisional translation (AlignAtt release
     against committed source; held target is NOT released yet).
-    ``compute=True`` if a fresh MT forward pass produced this draft;
-    ``compute=False`` if it was a free release from cached attention (the
-    hysteresis distinction — exposes call count vs emission count).
+    ``fresh=True`` if this is a freshly drafted translation (a new MT forward
+    pass); ``fresh=False`` if it is replayed from the cached attention (a
+    free release — no MT call). Exposes the hysteresis distinction (call
+    count vs emission count).
   - ``translation_final``     : finalized translation (quality pass at a
     boundary).
 
@@ -45,10 +46,11 @@ class CaptionEvent:
     committed: str = ""
     # translation_provisional only: the full source the MT saw (committed + tail)
     source: str = ""
-    # translation_provisional only: True if a fresh MT forward pass produced
-    # this draft (compute); False if a free release from cached attention.
-    # Exposes the hysteresis lever (call count vs emission count).
-    compute: bool = False
+    # translation_provisional only: True if a freshly drafted translation (a
+    # new MT forward pass); False if replayed from cached attention (a free
+    # release — no MT call). Exposes the hysteresis lever (call count vs
+    # emission count).
+    fresh: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -110,10 +112,10 @@ class EventTap:
             return
         self._sink.emit(CaptionEvent(self._now(), audio_t, "transcription_final", text))
 
-    def translation_provisional(self, audio_t: float, text: str, committed: str = "", source: str = "", compute: bool = False) -> None:
+    def translation_provisional(self, audio_t: float, text: str, committed: str = "", source: str = "", fresh: bool = False) -> None:
         if self._sink is None or not text or not text.strip():
             return
-        self._sink.emit(CaptionEvent(self._now(), audio_t, "translation_provisional", text, committed, source, compute))
+        self._sink.emit(CaptionEvent(self._now(), audio_t, "translation_provisional", text, committed, source, fresh))
 
     def translation_final(self, audio_t: float, text: str) -> None:
         if self._sink is None or not text or not text.strip():
