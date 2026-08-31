@@ -478,17 +478,21 @@ class OverlayRenderer:
             self._set(self._field_partial, committed + tail)
             return
         font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
+        # the attributed string must carry the field's paragraph style — without
+        # it the text falls back to left alignment (make_field centers)
+        para = AppKit.NSMutableParagraphStyle.alloc().init()
+        para.setAlignment_(AppKit.NSCenterTextAlignment)
         stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
         dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 1.0)
         mut = AppKit.NSMutableAttributedString.alloc().init()
         if committed:
             mut.appendAttributedString_(
                 AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    committed, {"NSFont": font, "NSColor": stable}))
+                    committed, {"NSFont": font, "NSColor": stable, "NSParagraphStyle": para}))
         if tail:
             mut.appendAttributedString_(
                 AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    tail, {"NSFont": font, "NSColor": dim}))
+                    tail, {"NSFont": font, "NSColor": dim, "NSParagraphStyle": para}))
         self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setAttributedStringValue:", mut, False)
 
