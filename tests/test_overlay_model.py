@@ -5,11 +5,23 @@ asserts on the DisplayState DOM — the same events the OverlayRenderer receives
 without AppKit or real time. Uses the segment-based API (list of (speaker, text)
 tuples) matching the live callback contract.
 """
-from datetime import datetime
+"""Tests for the overlay display model (pure, AppKit-free).
+
+Drives OverlayDisplayModel with a deterministic event stream + fake clock and
+asserts on the DisplayState DOM — the same events the OverlayRenderer receives,
+without AppKit or real time. Uses the segment-based API (list of (speaker, text)
+tuples) matching the live callback contract.
+"""
+from datetime import datetime, timedelta
 import io
+import os
 
 from rich.console import Console
 import pytest
+
+from whisperlivekit.caption_events import EventLog
+
+GOLDEN_PATH = os.path.join(os.path.dirname(__file__), "golden", "zh_long_ideal.jsonl")
 
 from whisperlivekit.overlay_model import (
     FINAL_SAME,
@@ -305,3 +317,76 @@ def test_tui_preview_updates_without_started_at_match():
     assert "draft v1" in r._partials["u1"][3].plain
     r.preview("u1", [(None, "draft v2 grows")], datetime.now())
     assert "draft v2 grows" in r._partials["u1"][3].plain  # NOT frozen on v1
+
+
+# ---- golden-stream display sanity (the "what shows in overlay makes sense" bar) ----
+
+def _feed_golden_to_overlay(hold=3.5):
+    """Drive the real overlay model with the golden CaptionEvents (the OverlaySink mapping)."""
+    events = EventLog.load(GOLDEN_PATH).events
+    EPOCH = datetime(2026, 1, 1)
+
+    class C:
+        now = 0.0
+        def __call__(self): return self.now
+        def advance(self, s): self.now += s
+    c = C()
+    m = OverlayDisplayModel(hold_sec=1.2, clock=c)  # short hold so pacing progresses
+    trace = []
+    for e in events:
+        t = e.type
+        if t == "transcription_provisional":
+            m.set_partial(e.text)
+        elif t == "transcription_final":
+            m.clear_partial()
+        elif t == "translation_provisional":
+            m.preview([(None, e.text)], EPOCH + timedelta(seconds=e.audio_t))
+        elif t == "translation_final":
+            m.translation([(None, e.text)], EPOCH + timedelta(seconds=e.audio_t))
+        c.advance(0.3)
+        m.tick()
+        snap = m.state()
+        trace.append((e, m._en_plain, [sp.style for sp in snap.current],
+                      "".join(s.text for s in snap.prev)))
+    return events, trace
+
+
+def test_golden_final_survives_its_hold():
+    """After a translation_final lands, the row holds the polished sentence for
+    the hold duration — the next sentence's in-flight draft must not wipe it."""
+    events = EventLog.load(GOLDEN_PATH).events
+    EPOCH = datetime(2026, 1, 1)
+
+    class C:
+        now = 0.0
+
+        def __call__(self):
+            return self.now
+
+        def advance(self, s):
+            self.now += s
+
+    c = C()
+    m = OverlayDisplayModel(hold_sec=1.0, clock=c)
+    finals_seen = 0
+    for e in events:
+        t = e.type
+        if t == "transcription_provisional":
+            m.set_partial(e.text)
+        elif t == "transcription_final":
+            m.clear_partial()
+        elif t == "translation_provisional":
+            m.preview([(None, e.text)], EPOCH + timedelta(seconds=e.audio_t))
+        elif t == "translation_final":
+            m.translation([(None, e.text)], EPOCH + timedelta(seconds=e.audio_t))
+        c.advance(0.2)
+        m.tick()
+        cur = m._en_plain
+        if e.type == "translation_final":
+            finals_seen += 1
+            assert cur == e.text, f"final not displayed when it lands: {cur!r}"
+            assert m._en_is_final, "final must be final-styled"
+            c.advance(0.1)
+            m.tick()
+            assert m._en_plain == e.text, "final wiped before its hold elapsed"
+    assert finals_seen == 6

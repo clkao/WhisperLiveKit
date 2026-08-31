@@ -440,11 +440,14 @@ class OverlayRenderer:
         zh = _segments_text(segments)
         with self._lock:
             self._zh = zh
-        self._model.clear_partial()
+        # Keep the committed text as the reading buffer: the source line shows
+        # the stable sentence until the NEXT utterance's rolling words need the
+        # line — the float happens when new words come, not at commit.
+        self._model.set_partial(zh)
         self._record_latency(started_at, "asr")
         if self._overlay_mode != "target":
             self._set(self._field_zh, zh)
-        self._set(self._field_partial, "")
+            self._set(self._field_partial, zh)
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
         if self._overlay_mode == "source":

@@ -198,7 +198,11 @@ class OverlayDisplayModel:
             self._en_plain = ""
             self._en_spans = []
         spans = _segments_to_spans(segments, is_final=False)
-        self._enqueue(spans, plain, started_at, is_final=False)
+        # respect_hold only when a FINAL is on screen: the draft queues behind
+        # it so the reader keeps the polished sentence for its full hold.
+        # An empty or rewritten draft row shows immediately.
+        self._enqueue(spans, plain, started_at, is_final=False,
+                      respect_hold=shown and self._en_is_final)
 
     def translation(self, segments: list, started_at) -> None:
         """Final translation. Only AMEND — don't retype what's already shown. Keep the
@@ -226,27 +230,19 @@ class OverlayDisplayModel:
                     self._en_prev_spans = self._en_spans
                     self._en_prev_at = self._clock()
             # the committed prefix stays as the current line (now final style)
-            self._en_plain = committed
-            self._en_spans = _segments_to_spans([(None, committed, None)], is_final=True) if committed else []
+            # and the whole final text amends it in place — the line stays one
+            # coherent caption; history records full sentences.
+            self._en_plain = plain
+            self._en_spans = _segments_to_spans(segments, is_final=True)
             self._en_is_final = True
-            self._en_shown_at = -self._hold  # release delta immediately on next tick
-            self._en_utt = started_at.timestamp() if started_at else None
-            # only enqueue the delta sentences (append-flagged: the drainer
-            # appends them to the current line — the line stays coherent,
-            # history records full sentences, not delta tails)
-            if delta.strip():
-                import re as _re
-                sents = [s.strip() for s in _re.split(r'(?<=[.!?])\s+', delta) if s.strip()]
-                for s in sents:
-                    s_spans = _segments_to_spans([(None, s, None)], is_final=True)
-                    self._queue.append((s_spans, s, self._en_utt, True, True))
-            self._dirty = True  # the prefix flip (draft→final style) shows immediately
+            self._en_shown_at = self._clock()
+            self._dirty = True
             return
         # no shown provisional: full enqueue
         spans = _segments_to_spans(segments, is_final=True)
         self._enqueue(spans, plain, started_at, is_final=True)
 
-    def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool) -> None:
+    def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool, respect_hold: bool = False) -> None:
         utt_t = started_at.timestamp() if started_at is not None else None
         # If this final corrects a provisional of the same utterance currently on screen,
         # replace in place: drop the provisional so the drainer won't scroll it up.
@@ -256,7 +252,9 @@ class OverlayDisplayModel:
             self._en_spans = []
         self._queue.clear()
         self._queue.append((spans, plain, utt_t, is_final))
-        self._en_shown_at = -self._hold  # release immediately on the next tick
+        if not respect_hold:
+            self._en_shown_at = -self._hold  # release immediately on the next tick
+        # else: the queued item waits for the shown caption's hold to elapse
 
     # ---- the drainer (advance the hold timers) ----
 
@@ -337,8 +335,6 @@ class OverlayDisplayModel:
         self._last_state = state
         return state
 
-    def _partial_changed(self) -> bool:
-        return False  # handled in tick via _last_partial
 
     def state(self) -> DisplayState:
         """Return the current display state (snapshot) without advancing."""
