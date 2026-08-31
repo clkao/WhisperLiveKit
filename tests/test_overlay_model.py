@@ -444,3 +444,34 @@ def test_set_partial_new_sentence_reset_passes_through():
     m.set_partial("鐳射技術", committed_len=0)  # new sentence after promote
     assert m.state().partial == "鐳射技術"
     assert m.state().partial_committed_len == 0
+
+
+# ---- SrcReadingBuffer (the src row state machine, pure) ----
+
+def test_src_buffer_full_zh_long_sequence():
+    """Drive the real src buffer through the golden sentence-2 sequence:
+    clause commits accumulate, the sentence completes at the terminator,
+    the next sentence's words promote it to history."""
+    from whisperlivekit.src_buffer import SrcReadingBuffer
+    b = SrcReadingBuffer()
+    # sentence 1
+    assert b.tail("我们今天来讨论") == "我们今天来讨论"
+    b.commit("我们今天来讨论")
+    assert b.tail("镭射在医学上的应用") == "我们今天来讨论镭射在医学上的应用"
+    assert b.commit("镭射在医学上的应用。") == "我们今天来讨论镭射在医学上的应用。"
+    assert b.sentence_complete
+    # sentence 2 starts: sentence 1 promotes
+    assert b.tail("镭射技术可以精确的切除肿瘤组织") == "镭射技术可以精确的切除肿瘤组织"
+    assert b.consume_promotion() == "我们今天来讨论镭射在医学上的应用。"
+    b.commit("镭射技术可以精确的切除肿瘤组织")
+    assert b.tail("减少对周围健康组织的伤害") == "镭射技术可以精确的切除肿瘤组织减少对周围健康组织的伤害"
+    assert b.commit("减少对周围健康组织的伤害。") == "镭射技术可以精确的切除肿瘤组织减少对周围健康组织的伤害。"
+    assert b.sentence_complete
+
+
+def test_src_join_cjk_no_space_latin_space():
+    from whisperlivekit.src_buffer import src_join
+    assert src_join("我们今天来讨论", "镭射在医学上的应用。") == "我们今天来讨论镭射在医学上的应用。"
+    assert src_join("Hello everyone.", "My name is Ihab Bilad") == "Hello everyone. My name is Ihab Bilad"
+    assert src_join("", "text") == "text"
+    assert src_join("text", "") == "text"

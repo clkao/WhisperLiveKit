@@ -33,6 +33,7 @@ import time
 from datetime import datetime
 
 from whisperlivekit.overlay_model import PROVISIONAL, FINAL_SAME, FINAL_ADD
+from whisperlivekit.src_buffer import SrcReadingBuffer
 
 # AppKit is imported lazily at instantiation (see _create_window) so this module
 # imports cleanly even on a headless host or without pyobjc installed. The level /
@@ -159,8 +160,7 @@ class OverlayRenderer:
         # plus the rolling tail; when the sentence completes (terminator) the
         # buffer freezes; the NEXT sentence's first words promote it to the zh
         # history field. The float happens when new words need the line.
-        self._zh_committed: str = ""      # committed clauses of the current sentence
-        self._zh_sentence_complete: bool = False
+        self._src = SrcReadingBuffer()    # src reading buffer (pure, tested)
         # zh reading-buffer state: the partial row holds the rolling tail while
         # the sentence is spoken, then the COMMITTED sentence after it lands —
         # the float to the zh history field happens when the next utterance's
@@ -502,18 +502,11 @@ class OverlayRenderer:
         # it floats up to the zh history field now — the float happens when
         # new words need the line, not at commit. The src ROW is rendered by
         # the drainer (_reconcile) from the model state — single writer.
-        if self._zh_sentence_complete:
-            if self._overlay_mode != "target":
-                self._set(self._field_zh, self._zh_committed)
-            self._zh_committed = ""
-            self._zh_sentence_complete = False
-        # defensive: some backends' rolling buffer still carries the committed
-        # prefix — never render it twice
-        if self._zh_committed and text.startswith(self._zh_committed):
-            display = text
-        else:
-            display = self._zh_committed + text
-        self._model.set_partial(display, committed_len=len(self._zh_committed))
+        display = self._src.tail(text)
+        promoted = self._src.consume_promotion()
+        if promoted is not None and self._overlay_mode != "target":
+            self._set(self._field_zh, promoted)
+        self._model.set_partial(display, committed_len=len(self._src.committed))
 
     def final(self, label: str, segments: list, started_at: datetime) -> None:
         zh = _segments_text(segments)
@@ -522,12 +515,10 @@ class OverlayRenderer:
         # The committed clause accumulates into the reading buffer (append);
         # a sentence-final terminator freezes the buffer. The zh history field
         # keeps the PREVIOUS sentence — no duplicate rows.
-        self._zh_committed = _src_join(self._zh_committed, zh)
-        if zh.rstrip().endswith(("。", "！", "？", ".", "!", "?")):
-            self._zh_sentence_complete = True
+        self._src.commit(zh)
         # the whole buffer is committed now
-        self._model.set_partial(self._zh_committed,
-                                committed_len=len(self._zh_committed))
+        self._model.set_partial(self._src.committed,
+                                committed_len=len(self._src.committed))
         self._record_latency(started_at, "asr")
 
     def translation(self, label: str, zh_segments: list, started_at: datetime) -> None:
