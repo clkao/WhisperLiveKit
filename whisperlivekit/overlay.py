@@ -418,8 +418,10 @@ class OverlayRenderer:
         elif not state.prev and self._field_en_prev is not None:
             self._set(self._field_en_prev, "")
 
-        if state.partial is not None and self._field_partial is not None:
-            self._set(self._field_partial, state.partial)
+        # NOTE: the src (partial) row is owned exclusively by the partial()/
+        # final() callbacks — they fire on real text changes and render the
+        # committed/tail split. Re-setting it here on every drainer tick with
+        # plain text would clobber the attributed styling and flicker.
 
     # ---- latency (mirror of render.Renderer._record_latency) ----
     def _record_latency(self, started_at: datetime, which: str) -> None:
@@ -467,6 +469,10 @@ class OverlayRenderer:
         if self._overlay_mode == "target" or self._field_partial is None:
             return
         if AppKit is None or not (committed or tail):
+            key = (committed, tail)
+            if key == getattr(self, "_last_src_key", None):
+                return
+            self._last_src_key = key
             self._set(self._field_partial, committed + tail)
             return
         font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
@@ -483,6 +489,12 @@ class OverlayRenderer:
             mut.appendAttributedString_(
                 AppKit.NSAttributedString.alloc().initWithString_attributes_(
                     tail, {"NSFont": italic, "NSColor": dim}))
+        # change detection: identical (committed, tail) pairs must not re-render
+        # — an unconditional attributed re-set repaints the field and flickers
+        key = (committed, tail)
+        if key == getattr(self, "_last_src_key", None):
+            return
+        self._last_src_key = key
         self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setAttributedStringValue:", mut, False)
 
