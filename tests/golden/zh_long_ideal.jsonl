@@ -1,24 +1,24 @@
-{"t":0.0,"audio_t":0.0,"type":"asr_draft","text":"我们今天来讨论镭射在医学上的应用。"}
-{"t":0.0,"audio_t":2.0,"type":"asr_final","text":"我们今天来讨论镭射在医学上的应用。"}
-{"t":0.0,"audio_t":3.0,"type":"mt_draft","text":"Today we will discuss the applications of laser in medicine.","committed":"我们今天来讨论镭射在医学上的应用。","source":"我们今天来讨论镭射在医学上的应用。"}
-{"t":0.0,"audio_t":5.0,"type":"mt_final","text":"Today, we will discuss the applications of laser technology in medicine."}
-{"t":0.0,"audio_t":5.5,"type":"asr_draft","text":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
-{"t":0.0,"audio_t":9.0,"type":"asr_final","text":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
-{"t":0.0,"audio_t":7.0,"type":"mt_draft","text":"Laser technology can precisely remove tumor tissue, reducing damage to surrounding healthy tissue.","committed":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。","source":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
-{"t":0.0,"audio_t":10.0,"type":"mt_final","text":"Laser technology can precisely remove tumor tissue, reducing damage to surrounding healthy tissue."}
-{"t":0.0,"audio_t":10.5,"type":"asr_draft","text":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
-{"t":0.0,"audio_t":14.0,"type":"asr_final","text":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
-{"t":0.0,"audio_t":12.0,"type":"mt_draft","text":"In eye surgery, lasers correct vision, treating myopia and farsightedness.","committed":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。","source":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
-{"t":0.0,"audio_t":15.0,"type":"mt_final","text":"In eye surgery, lasers correct vision, treating myopia and farsightedness."}
-{"t":0.0,"audio_t":15.5,"type":"asr_draft","text":"牙医也使用镭射来进行口腔手术，减少出血。"}
-{"t":0.0,"audio_t":19.0,"type":"asr_final","text":"牙医也使用镭射来进行口腔手术，减少出血。"}
-{"t":0.0,"audio_t":17.0,"type":"mt_draft","text":"Dentists also use lasers for oral surgery, reducing bleeding.","committed":"牙医也使用镭射来进行口腔手术，减少出血。","source":"牙医也使用镭射来进行口腔手术，减少出血。"}
-{"t":0.0,"audio_t":20.0,"type":"mt_final","text":"Dentists also use lasers for oral surgery, reducing bleeding."}
-{"t":0.0,"audio_t":20.5,"type":"asr_draft","text":"皮肤科用雷射去除斑点、点痕、纹身。"}
-{"t":0.0,"audio_t":24.0,"type":"asr_final","text":"皮肤科用雷射去除斑点、点痕、纹身。"}
-{"t":0.0,"audio_t":22.0,"type":"mt_draft","text":"Dermatology uses lasers to remove spots, marks, and tattoos.","committed":"皮肤科用雷射去除斑点、点痕、纹身。","source":"皮肤科用雷射去除斑点、点痕、纹身。"}
-{"t":0.0,"audio_t":25.0,"type":"mt_final","text":"Dermatology uses lasers to remove spots, marks, and tattoos."}
-{"t":0.0,"audio_t":25.5,"type":"asr_draft","text":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
-{"t":0.0,"audio_t":30.0,"type":"asr_final","text":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
-{"t":0.0,"audio_t":27.0,"type":"mt_draft","text":"In summary, lasers play an increasingly important role in modern medicine.","committed":"总之，雷射在现代医学中扮演着越来越重要的角色。","source":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
-{"t":0.0,"audio_t":31.0,"type":"mt_final","text":"In summary, lasers play an increasingly important role in modern medicine."}
+{"t":0.0,"audio_t":0.0,"type":"transcription_partial","text":"我们今天来讨论镭射在医学上的应用。"}
+{"t":0.0,"audio_t":2.0,"type":"transcription_final","text":"我们今天来讨论镭射在医学上的应用。"}
+{"t":0.0,"audio_t":3.0,"type":"translation_provisional","text":"Today we will discuss the applications of laser in medicine.","committed":"我们今天来讨论镭射在医学上的应用。","source":"我们今天来讨论镭射在医学上的应用。"}
+{"t":0.0,"audio_t":5.0,"type":"translation_final","text":"Today, we will discuss the applications of laser technology in medicine."}
+{"t":0.0,"audio_t":5.5,"type":"transcription_partial","text":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
+{"t":0.0,"audio_t":9.0,"type":"transcription_final","text":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
+{"t":0.0,"audio_t":7.0,"type":"translation_provisional","text":"Laser technology can precisely remove tumor tissue, reducing damage to surrounding healthy tissue.","committed":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。","source":"镭射技术可以精确的切除肿瘤组织，减少对周围健康组织的伤害。"}
+{"t":0.0,"audio_t":10.0,"type":"translation_final","text":"Laser technology can precisely remove tumor tissue, reducing damage to surrounding healthy tissue."}
+{"t":0.0,"audio_t":10.5,"type":"transcription_partial","text":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
+{"t":0.0,"audio_t":14.0,"type":"transcription_final","text":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
+{"t":0.0,"audio_t":12.0,"type":"translation_provisional","text":"In eye surgery, lasers correct vision, treating myopia and farsightedness.","committed":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。","source":"在眼科手术中，镭射用来矫正视力，治疗近视和远视。"}
+{"t":0.0,"audio_t":15.0,"type":"translation_final","text":"In eye surgery, lasers correct vision, treating myopia and farsightedness."}
+{"t":0.0,"audio_t":15.5,"type":"transcription_partial","text":"牙医也使用镭射来进行口腔手术，减少出血。"}
+{"t":0.0,"audio_t":19.0,"type":"transcription_final","text":"牙医也使用镭射来进行口腔手术，减少出血。"}
+{"t":0.0,"audio_t":17.0,"type":"translation_provisional","text":"Dentists also use lasers for oral surgery, reducing bleeding.","committed":"牙医也使用镭射来进行口腔手术，减少出血。","source":"牙医也使用镭射来进行口腔手术，减少出血。"}
+{"t":0.0,"audio_t":20.0,"type":"translation_final","text":"Dentists also use lasers for oral surgery, reducing bleeding."}
+{"t":0.0,"audio_t":20.5,"type":"transcription_partial","text":"皮肤科用雷射去除斑点、点痕、纹身。"}
+{"t":0.0,"audio_t":24.0,"type":"transcription_final","text":"皮肤科用雷射去除斑点、点痕、纹身。"}
+{"t":0.0,"audio_t":22.0,"type":"translation_provisional","text":"Dermatology uses lasers to remove spots, marks, and tattoos.","committed":"皮肤科用雷射去除斑点、点痕、纹身。","source":"皮肤科用雷射去除斑点、点痕、纹身。"}
+{"t":0.0,"audio_t":25.0,"type":"translation_final","text":"Dermatology uses lasers to remove spots, marks, and tattoos."}
+{"t":0.0,"audio_t":25.5,"type":"transcription_partial","text":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
+{"t":0.0,"audio_t":30.0,"type":"transcription_final","text":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
+{"t":0.0,"audio_t":27.0,"type":"translation_provisional","text":"In summary, lasers play an increasingly important role in modern medicine.","committed":"总之，雷射在现代医学中扮演着越来越重要的角色。","source":"总之，雷射在现代医学中扮演着越来越重要的角色。"}
+{"t":0.0,"audio_t":31.0,"type":"translation_final","text":"In summary, lasers play an increasingly important role in modern medicine."}

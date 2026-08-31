@@ -28,7 +28,7 @@ def _load_golden():
 
 class TestDisplayAdapter:
     def test_golden_renders_one_final_per_sentence(self):
-        """The golden stream has 6 mt_finals; the adapter should accumulate all 6."""
+        """The golden stream has 6 translation_finals; the adapter should accumulate all 6."""
         events = _load_golden()
         adapter = DisplayAdapter()
         for e in events:
@@ -38,7 +38,7 @@ class TestDisplayAdapter:
         )
 
     def test_provisional_grows_then_clears_at_final(self):
-        """Each mt_draft sets partial_translation; the following mt_final clears it."""
+        """Each translation_provisional sets partial_translation; the following translation_final clears it."""
         events = _load_golden()
         adapter = DisplayAdapter()
         seen_prov = False
@@ -46,21 +46,21 @@ class TestDisplayAdapter:
         for e in events:
             before = adapter.state.partial_translation
             adapter.feed(e)
-            if e.type == "mt_draft":
+            if e.type == "translation_provisional":
                 assert adapter.state.partial_translation, (
-                    f"mt_draft did not set provisional: {e}"
+                    f"translation_provisional did not set provisional: {e}"
                 )
                 seen_prov = True
-            elif e.type == "mt_final":
+            elif e.type == "translation_final":
                 if before and adapter.state.partial_translation:
                     cleared_after_final = False
-        assert seen_prov, "no mt_draft observed"
-        assert cleared_after_final, "mt_final did not clear the provisional"
+        assert seen_prov, "no translation_provisional observed"
+        assert cleared_after_final, "translation_final did not clear the provisional"
 
-    def test_asr_final_clears_partial_transcription(self):
-        """asr_final commits the draft; partial_transcription should clear."""
-        events = [CaptionEvent(0, 2.0, "asr_draft", "hello"),
-                  CaptionEvent(0, 2.1, "asr_final", "hello")]
+    def test_transcription_final_clears_partial_transcription(self):
+        """transcription_final commits the draft; partial_transcription should clear."""
+        events = [CaptionEvent(0, 2.0, "transcription_partial", "hello"),
+                  CaptionEvent(0, 2.1, "transcription_final", "hello")]
         adapter = DisplayAdapter()
         adapter.feed(events[0])
         assert adapter.state.partial_transcription == "hello"
@@ -68,10 +68,10 @@ class TestDisplayAdapter:
         assert adapter.state.partial_transcription == ""
 
     def test_no_flicker_on_repeated_draft(self):
-        """Repeated identical mt_drafts should not append to final_lines."""
-        events = [CaptionEvent(0, 1.0, "mt_draft", "Hello"),
-                  CaptionEvent(0, 1.1, "mt_draft", "Hello"),
-                  CaptionEvent(0, 1.2, "mt_draft", "Hello world")]
+        """Repeated identical translation_provisionals should not append to final_lines."""
+        events = [CaptionEvent(0, 1.0, "translation_provisional", "Hello"),
+                  CaptionEvent(0, 1.1, "translation_provisional", "Hello"),
+                  CaptionEvent(0, 1.2, "translation_provisional", "Hello world")]
         adapter = DisplayAdapter()
         for e in events:
             adapter.feed(e)
@@ -89,14 +89,14 @@ class TestEventDiff:
         assert report.verdict == "matches", report.summary()
 
     def test_fragment_finals_diverge(self):
-        """A captured stream with 12 mt_finals (fragmentation) vs golden's 6."""
+        """A captured stream with 12 translation_finals (fragmentation) vs golden's 6."""
         golden = _load_golden()
         # synthetic capture: 12 fragment finals, 6 drafts (some empty committed)
         captured = []
         for i in range(6):
-            captured.append(CaptionEvent(0, i, "mt_draft", "frag", committed=""))
-            captured.append(CaptionEvent(0, i, "mt_final", f"frag {i}"))
-            captured.append(CaptionEvent(0, i, "mt_final", f"frag {i}b"))
+            captured.append(CaptionEvent(0, i, "translation_provisional", "frag", committed=""))
+            captured.append(CaptionEvent(0, i, "translation_final", f"frag {i}"))
+            captured.append(CaptionEvent(0, i, "translation_final", f"frag {i}b"))
         report = diff_event_streams(captured, golden)
         assert report.verdict == "diverges", report.summary()
         assert report.fragment_finals, "should detect fragmentation"
@@ -104,9 +104,9 @@ class TestEventDiff:
         assert report.captured_finals == 12
 
     def test_starved_provisionals_diverge(self):
-        """mt_final with no preceding mt_draft (provisional starved)."""
+        """translation_final with no preceding translation_provisional (provisional starved)."""
         golden = _load_golden()
-        captured = [CaptionEvent(0, 1, "mt_final", "final with no draft")]
+        captured = [CaptionEvent(0, 1, "translation_final", "final with no draft")]
         report = diff_event_streams(captured, golden)
         assert report.finals_without_preceding_draft == 1
         assert report.verdict == "diverges"
@@ -119,27 +119,27 @@ class TestEventDiff:
 class TestEventStream:
     def test_eventlog_roundtrip(self, tmp_path):
         log = EventLog()
-        log.emit(CaptionEvent(1.0, 2.0, "asr_draft", "hello"))
-        log.emit(CaptionEvent(1.1, 2.1, "mt_final", "你好", committed="", source=""))
+        log.emit(CaptionEvent(1.0, 2.0, "transcription_partial", "hello"))
+        log.emit(CaptionEvent(1.1, 2.1, "translation_final", "你好", committed="", source=""))
         p = str(tmp_path / "ev.jsonl")
         log.save(p)
         loaded = EventLog.load(p)
         assert len(loaded.events) == 2
-        assert loaded.events[0].type == "asr_draft"
+        assert loaded.events[0].type == "transcription_partial"
         assert loaded.events[1].text == "你好"
 
     def test_tap_noop_when_no_sink(self):
         """A tap with no sink is zero-cost: nothing emitted, no crash."""
         tap = EventTap()
-        tap.asr_draft(1.0, "hello")
-        tap.mt_final(2.0, "你好")
+        tap.transcription_partial(1.0, "hello")
+        tap.translation_final(2.0, "你好")
         # no assertion needed — just must not raise
 
     def test_tap_forwards_to_sink(self):
         log = EventLog()
         tap = EventTap(sink=log, clock=lambda: 0.0)
-        tap.asr_draft(1.0, "rolling")
-        tap.mt_draft(2.0, "prov", committed="c", source="s")
+        tap.transcription_partial(1.0, "rolling")
+        tap.translation_provisional(2.0, "prov", committed="c", source="s")
         assert len(log.events) == 2
         assert log.events[1].committed == "c"
         assert log.events[1].source == "s"

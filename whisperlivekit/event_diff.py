@@ -4,8 +4,8 @@ Scores how far a harnessed run is from the ideal event stream, decoupled from
 display. The score is a coarse, interpretable number, not a rigorous metric:
 it counts structural mismatches at the event-type level (ignoring exact text),
 so it flags the failure modes we observed — fragment finals (too many
-mt_finals), empty provisionals (mt_draft with committed=""), dead paths (no
-mt_draft before mt_final) — without requiring exact text match.
+translation_finals), empty provisionals (translation_provisional with committed=""), dead paths (no
+translation_provisional before translation_final) — without requiring exact text match.
 
 Usage:
   golden = load_golden("tests/golden/zh_long.jsonl")
@@ -26,15 +26,15 @@ class DiffReport:
     captured_finals: int = 0
     golden_drafts: int = 0
     captured_drafts: int = 0
-    empty_committed_drafts: int = 0   # mt_draft with committed="" (AlignAtt released nothing)
-    finals_without_preceding_draft: int = 0  # mt_final with no mt_draft before it (provisional starved)
+    empty_committed_drafts: int = 0   # translation_provisional with committed="" (AlignAtt released nothing)
+    finals_without_preceding_draft: int = 0  # translation_final with no translation_provisional before it (provisional starved)
     fragment_finals: bool = False  # captured_finals >> golden_finals (fragmentation)
     verdict: str = ""  # matches | partial | diverges
 
     def summary(self) -> str:
         lines = [
-            f"mt_final: golden={self.golden_finals} captured={self.captured_finals}",
-            f"mt_draft: golden={self.golden_drafts} captured={self.captured_drafts}",
+            f"translation_final: golden={self.golden_finals} captured={self.captured_finals}",
+            f"translation_provisional: golden={self.golden_drafts} captured={self.captured_drafts}",
             f"empty-committed drafts: {self.empty_committed_drafts}",
             f"finals without preceding draft: {self.finals_without_preceding_draft}",
             f"fragment finals: {self.fragment_finals}",
@@ -45,20 +45,20 @@ class DiffReport:
 
 def diff_event_streams(captured: List[CaptionEvent], golden: List[CaptionEvent]) -> DiffReport:
     r = DiffReport()
-    r.golden_finals = sum(1 for e in golden if e.type == "mt_final")
-    r.captured_finals = sum(1 for e in captured if e.type == "mt_final")
-    r.golden_drafts = sum(1 for e in golden if e.type == "mt_draft")
-    r.captured_drafts = sum(1 for e in captured if e.type == "mt_draft")
+    r.golden_finals = sum(1 for e in golden if e.type == "translation_final")
+    r.captured_finals = sum(1 for e in captured if e.type == "translation_final")
+    r.golden_drafts = sum(1 for e in golden if e.type == "translation_provisional")
+    r.captured_drafts = sum(1 for e in captured if e.type == "translation_provisional")
     r.empty_committed_drafts = sum(
-        1 for e in captured if e.type == "mt_draft" and not e.committed.strip()
+        1 for e in captured if e.type == "translation_provisional" and not e.committed.strip()
     )
 
-    # finals without a preceding mt_draft (provisional starved)
+    # finals without a preceding translation_provisional (provisional starved)
     saw_draft = False
     for e in captured:
-        if e.type == "mt_draft":
+        if e.type == "translation_provisional":
             saw_draft = True
-        elif e.type == "mt_final":
+        elif e.type == "translation_final":
             if not saw_draft:
                 r.finals_without_preceding_draft += 1
             saw_draft = False

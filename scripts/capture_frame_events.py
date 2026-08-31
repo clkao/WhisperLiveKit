@@ -8,10 +8,10 @@ we can judge (1) whether generation produces a coherent sequence and
 (2) whether display renders that sequence correctly, independently.
 
 Event schema (one JSON object per line):
-  {"t": <wall_sec>, "audio_t": <sec>, "type": "asr_draft"|"asr_final"|"mt_draft"|"mt_final",
-   "text": "<str>", "committed": "<str>" (mt_draft only, what AlignAtt released against),
-   "source": "<str>" (mt_draft only, full source the MT saw),
-   "n_mt_calls": <int> (mt_draft only)}
+  {"t": <wall_sec>, "audio_t": <sec>, "type": "transcription_partial"|"transcription_final"|"translation_provisional"|"translation_final",
+   "text": "<str>", "committed": "<str>" (translation_provisional only, what AlignAtt released against),
+   "source": "<str>" (translation_provisional only, full source the MT saw),
+   "n_mt_calls": <int> (translation_provisional only)}
 
 Usage:
   .venv/bin/python scripts/capture_frame_events.py [--audio PATH] [--lang zh] [--target en]
@@ -63,12 +63,12 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
         # ASR draft (unstable tail)
         buf = asr.get_buffer()
         tail = getattr(buf, "text", "") or ""
-        tap.asr_draft(audio_t, tail)
+        tap.transcription_partial(audio_t, tail)
         # ASR final (committed tokens from process_iter)
         toks, end = asr.process_iter()
         if toks:
             txt = "".join(t.text for t in toks)
-            tap.asr_final(audio_t, txt)
+            tap.transcription_final(audio_t, txt)
         # Feed MT
         items = list(toks)
         if tail.strip():
@@ -76,22 +76,26 @@ def capture(out_path: str, audio_path: str, lang: str, target: str, backend: str
         if items:
             mt.insert_tokens(items)
         # MT final / provisional
+        calls_before = mt._mt_call_count
         tr, buf = mt.process()
         if tr is not None and tr.text and tr.text.strip():
-            tap.mt_final(audio_t, tr.text)
+            tap.translation_final(audio_t, tr.text)
         elif buf is not None and getattr(buf, "text", "") and getattr(buf,"text","").strip():
-            tap.mt_draft(audio_t, buf.text, mt._committed_text(), mt._source_text())
+            compute = mt._mt_call_count > calls_before
+            tap.translation_provisional(audio_t, buf.text, mt._committed_text(), mt._source_text(), compute)
     # finalize
     toks, end = asr.finish()
     if toks:
         txt = "".join(t.text for t in toks)
-        tap.asr_final(len(audio)/16000, txt)
+        tap.transcription_final(len(audio)/16000, txt)
     if toks: mt.insert_tokens(list(toks))
+    calls_before = mt._mt_call_count
     tr, buf = mt.process()
     if tr is not None and tr.text and tr.text.strip():
-        tap.mt_final(len(audio)/16000, tr.text)
+        tap.translation_final(len(audio)/16000, tr.text)
     elif buf is not None and getattr(buf, "text", "") and getattr(buf,"text","").strip():
-        tap.mt_draft(len(audio)/16000, buf.text, mt._committed_text(), mt._source_text())
+        compute = mt._mt_call_count > calls_before
+        tap.translation_provisional(len(audio)/16000, buf.text, mt._committed_text(), mt._source_text(), compute)
 
     log.save(out_path)
     print(f"captured {len(log.events)} events -> {out_path}", file=sys.stderr)
@@ -108,22 +112,22 @@ def replay(log_path: str) -> None:
     if not events:
         print("no events"); return
     print(f"=== {len(events)} events from {log_path} ===\n")
-    cur_asr_draft = ""; cur_mt = ""; last_mt_final = ""
+    cur_transcription_partial = ""; cur_mt = ""; last_translation_final = ""
     for e in events:
         t = e["t"]; at = e.get("audio_t", 0); typ = e["type"]; txt = e["text"]
-        if typ == "asr_draft":
-            cur_asr_draft = txt
+        if typ == "transcription_partial":
+            cur_transcription_partial = txt
             print(f"[{t:6.2f} a={at:5.1f}] asr draft : {txt[:50]!r}")
-        elif typ == "asr_final":
-            cur_asr_draft = ""
+        elif typ == "transcription_final":
+            cur_transcription_partial = ""
             print(f"[{t:6.2f} a={at:5.1f}] ASR FINAL : {txt[:50]!r}")
-        elif typ == "mt_draft":
+        elif typ == "translation_provisional":
             cur_mt = txt
             com = e.get("committed","")[:25]
             print(f"[{t:6.2f} a={at:5.1f}] mt  draft : {txt[:50]!r}  [com={com!r}]")
-        elif typ == "mt_final":
+        elif typ == "translation_final":
             print(f"[{t:6.2f} a={at:5.1f}] MT  FINAL : {txt[:50]!r}")
-            last_mt_final = txt
+            last_translation_final = txt
 
 
 def main():
