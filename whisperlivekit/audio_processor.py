@@ -1022,7 +1022,12 @@ class AudioProcessor:
                     _prov_text = (getattr(new_translation_buffer, "text", "") or "").strip()
                     async with self.lock:
                         self.state.new_translation_buffer = new_translation_buffer
-                    if _prov_text and getattr(self.translation, "_simul_active", False):
+                    # dedupe: the release path re-emits the cached draft every
+                    # process() until the source grows — identical provisionals
+                    # in a row are display noise (5x repeats in the zh-en capture)
+                    if _prov_text and getattr(self.translation, "_simul_active", False) \
+                            and _prov_text != getattr(self, "_last_mt_prov", ""):
+                        self._last_mt_prov = _prov_text
                         self.event_tap.translation_provisional(
                             self.state.end_buffer,
                             _prov_text,
