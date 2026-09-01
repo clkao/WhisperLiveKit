@@ -280,14 +280,14 @@ class OverlayDisplayModel:
             self._en_plain = ""
             self._en_spans = []
         spans = _segments_to_spans(segments, is_final=False)
-        # drafts ALWAYS release immediately. Queuing a draft behind a shown
-        # final's hold starves it: during continuous speech the next final
-        # always lands before the hold elapses and clears the queue, so the
-        # reader never sees a provisional (CL: 'no provisional for mt?'). The
-        # draft covers the same clause content as the final it replaces, so
-        # nothing is lost by replacing it.
+        # A draft queues behind a shown final's hold — the reader keeps the
+        # polished sentence. With endpointing-owned segment closure the
+        # inter-final gaps (~5s+) exceed the hold, so queued drafts pop and
+        # display (the old starvation came from 2s fragment finals, fixed
+        # generation-side). The draft covers the same content plus the new
+        # clause, so a late release loses nothing.
         self._enqueue(spans, plain, started_at, is_final=False,
-                      respect_hold=False)
+                      respect_hold=shown and self._en_is_final)
 
     def translation(self, segments: list, started_at) -> None:
         """Final translation. Only AMEND — don't retype what's already shown. Keep the
