@@ -79,11 +79,13 @@ MIN_HOLD_SEC = 3.5
 _SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+")
 
 # CJK range for tokenization (mirrors inline_diff._CJK subset).
-_CJK_CHARS = set("　-〿㐀-翿一-鿿豈-﫿＀-￯")
+_CJK = "　-〿㐀-翿一-鿿豈-﫿＀-￯"  # same ranges as inline_diff._CJK
+_CJK_RE = re.compile(rf"[{_CJK}]")
+_CJK_CHARS = None  # built lazily (set() of a range literal would include '-')
 
 
 def _is_cjk(ch: str) -> bool:
-    return ch in _CJK_CHARS
+    return bool(_CJK_RE.match(ch))
 
 
 def _merge_cjk_pairs(tokens: list) -> list:
@@ -185,6 +187,9 @@ class OverlayRenderer:
         self._event_log = None  # optional OverlayEventLog for replay/tuning
         self._en_drain_stop = threading.Event()
         self._append_stop = threading.Event()  # cancels a stale streaming thread
+        self._src_stop = threading.Event()     # cancels the src-row reveal thread
+        self._src_streaming = False
+        self._src_streaming_target: str = ""
         self._shown_en_plain: str = ""  # plain text currently rendered on the current row
         self._streaming_target: str = ""  # what the streaming thread is streaming toward
         self._streaming_active = False  # is a streaming thread running
@@ -467,15 +472,32 @@ class OverlayRenderer:
         """Render the source reading buffer with the committed/provisional split.
         Single font, color-only distinction (dim = provisional, bright =
         committed): mixed fonts reflow the line on every tail update — a
-        flicker source. Change-detected: identical content never re-renders."""
+        flicker source. Change-detected: identical content never re-renders.
+        Growth types out (CJK char pairs / Latin words); shrink or rewrite
+        (commit, promote, hypothesis revision) hard-swaps."""
         if self._overlay_mode == "target" or self._field_partial is None:
             return
         key = (committed, tail)
         if key == getattr(self, "_last_src_key", None):
             return
+        full = committed + tail
+        prev_full = getattr(self, "_last_src_full", "")
+        if (AppKit is not None and getattr(self, "_src_streaming", False)
+                and getattr(self, "_src_streaming_target", None) == full):
+            return  # a reveal thread is already typing toward this text
+        if (prev_full and full.startswith(prev_full)
+                and len(full) > len(prev_full)):
+            # extends: type the appended units instead of snapping them in
+            self._src_last_committed = committed
+            self._stream_src_delta(full)
+            return
+        # rewrite / shrink / first show: hard-swap (no typing)
+        self._src_stop.set()
+        self._src_streaming = False
         self._last_src_key = key
+        self._last_src_full = full
         if AppKit is None:
-            self._set(self._field_partial, committed + tail)
+            self._set(self._field_partial, full)
             return
         font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
         # the attributed string must carry the field's paragraph style — without
@@ -573,6 +595,63 @@ class OverlayRenderer:
         field.performSelectorOnMainThread_withObject_waitUntilDone_(
             "setStringValue:", text, False
         )
+
+    def _render_src_text(self, text: str, committed_len: int) -> None:
+        """Two-tone render of the src row: committed bright, rest dim."""
+        if AppKit is None:
+            self._set(self._field_partial, text)
+            return
+        font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
+        para = AppKit.NSMutableParagraphStyle.alloc().init()
+        para.setAlignment_(AppKit.NSCenterTextAlignment)
+        stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
+        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 1.0)
+        mut = AppKit.NSMutableAttributedString.alloc().init()
+        n = min(committed_len, len(text))
+        if n:
+            mut.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                    text[:n], {"NSFont": font, "NSColor": stable, "NSParagraphStyle": para}))
+        if len(text) > n:
+            mut.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                    text[n:], {"NSFont": font, "NSColor": dim, "NSParagraphStyle": para}))
+        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "setAttributedStringValue:", mut, False)
+
+    def _stream_src_delta(self, target: str) -> None:
+        """Type the src row's appended units (CJK char pairs / Latin words) —
+        the same typing grammar as the EN row, applied to the ASR reading
+        buffer. Cancels a stale reveal thread; the drainer's guard
+        (_src_streaming_target) prevents tick-restarts."""
+        from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
+        prev = getattr(self, "_last_src_full", "")
+        committed_len = len(getattr(self, "_src_last_committed", "") or "")
+        delta = target[len(prev):] if prev and target.startswith(prev) else target
+        self._src_stop.set()
+        self._src_stop = threading.Event()
+        stop = self._src_stop
+        self._src_streaming_target = target
+        self._src_streaming = True
+        def _stream(prev=prev, delta=delta, stop=stop, target=target,
+                    committed_len=committed_len):
+            import time as _t
+            cur = prev
+            units = _merge_cjk_pairs(_DIFF_TOKEN_RE.findall(delta))
+            for w in units:
+                if stop.is_set():
+                    self._src_streaming = False
+                    return
+                needs_space = (cur and w and not w.startswith(" ")
+                              and not cur.endswith(" ")
+                              and not _is_cjk(w[0]) and not _is_cjk(cur[-1]))
+                cur = (cur + " " + w) if needs_space else (cur + w)
+                self._last_src_full = cur
+                self._last_src_key = (cur[:committed_len], cur[committed_len:])
+                self._render_src_text(cur, committed_len)
+                _t.sleep(0.04)
+            self._src_streaming = False
+        threading.Thread(target=_stream, daemon=True, name="ov-src-type").start()
 
     def _stream_delta(self, shown: str, target: str, is_provisional: bool) -> None:
         """Stream from `shown` to `target` word-by-word at 0.05s intervals via a

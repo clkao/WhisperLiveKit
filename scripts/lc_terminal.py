@@ -76,6 +76,7 @@ except Exception:  # noqa: BLE001
 for _n in ("mlx_audio.stt", "mlx_audio"):
     logging.getLogger(_n).setLevel(logging.WARNING)
 
+from whisperlivekit.src_buffer import ends_sentence
 from whisperlivekit.test_harness import TestHarness
 from whisperlivekit.tui import TuiRenderer, MultiRenderer
 
@@ -359,6 +360,7 @@ class TerminalSink:
     def __init__(self, stats=None, opencc_conv=None, target_opencc=None):
         self._seen_text = set()
         self._seen_transl = set()
+        self._printed_line = set()   # cumulative zh already printed
         self._lang = "en"
         self._stats = stats
         self._opencc = opencc_conv
@@ -383,11 +385,29 @@ class TerminalSink:
         for line in state.lines:
             txt = (line.get("text") or "").strip()
             tr = (line.get("translation") or "").strip()
-            if txt and txt not in self._seen_text:
-                self._seen_text.add(txt)
-                if self._stats is not None:
-                    self._stats.on_commit()
-                print(f"\n[zh] {self._cc_src(txt)}")
+            if txt:
+                # FrontData line text GROWS cumulatively; print once complete,
+                # then print only appended sentence(s) as they land (they must
+                # not vanish into the seen-set — CL: missing-sentence bug)
+                if txt not in self._printed_line and not any(
+                        txt.startswith(p) for p in self._printed_line):
+                    self._printed_line.add(txt)
+                    if self._stats is not None:
+                        self._stats.on_commit()
+                    print(f"\n[zh] {self._cc_src(txt)}")
+                else:
+                    prev = next((p for p in self._printed_line
+                                 if txt.startswith(p)), "")
+                    if len(txt) > len(prev):
+                        suffix = txt[len(prev):]
+                        if ends_sentence(suffix):
+                            # replace the printed set with the grown cumulative
+                            self._printed_line = {
+                                p for p in self._printed_line if p != prev}
+                            self._printed_line.add(txt)
+                            if self._stats is not None:
+                                self._stats.on_commit()
+                            print(f"\n[zh] {self._cc_src(suffix)}")
             if tr and tr not in self._seen_transl:
                 self._seen_transl.add(tr)
                 if self._stats is not None:
@@ -413,6 +433,8 @@ class TuiSink:
         self._seen_transls: set[int] = set()
         self._final_started_at: dict[int, datetime] = {}
         self._line_texts: dict[int, str] = {}  # latest cumulative text per line
+        self._printed_line: dict[int, str] = {}    # cumulative zh already printed
+        self._printed_transl: dict[int, str] = {}  # cumulative translation already printed
         self._last_prov = ""   # stash the provisional so the final can diff against it
         self._opencc = opencc_conv
         self._target_opencc = target_opencc
@@ -459,17 +481,40 @@ class TuiSink:
                 complete = (i + 1) in self._line_texts or bool(tr)
                 if complete:
                     self._seen_finals.add(i)
+                    self._printed_line[i] = txt
                     started_at = datetime.now()
                     self._final_started_at[i] = started_at
                     self._r.final("mic", [(spk, self._cc_src(txt))], started_at)
+            elif txt and i in self._seen_finals:
+                # the line grew cumulatively after its first final — the appended
+                # sentence(s) must print as their own line (CL: 'missing the 1st
+                # of the second sentence completely')
+                prev = self._printed_line.get(i, "")
+                if len(txt) > len(prev) and txt.startswith(prev):
+                    suffix = txt[len(prev):]
+                    if ends_sentence(suffix):
+                        self._printed_line[i] = txt
+                        self._r.final("mic", [(spk, self._cc_src(suffix))], datetime.now())
             if tr and i not in self._seen_transls:
                 self._seen_transls.add(i)
+                self._printed_transl[i] = tr
                 started_at = self._final_started_at.get(i, datetime.now())
                 shown = self._cc_target(tr)
                 # no diff spans on the overlay: committed is bright, provisional
                 # is dim — the style flip is the signal (CL: no green in overlay)
                 self._last_prov = ""
                 self._r.translation("mic", [(spk, shown)], started_at)
+            elif tr and i in self._seen_transls:
+                # cumulative translation growth: the appended sentence(s) get
+                # their own line instead of vanishing into the dedup
+                prev = self._printed_transl.get(i, "")
+                if len(tr) > len(prev) and tr.startswith(prev):
+                    suffix = tr[len(prev):].lstrip()
+                    if ends_sentence(suffix):
+                        self._printed_transl[i] = tr
+                        self._last_prov = ""
+                        self._r.translation("mic", [(spk, self._cc_target(suffix))],
+                                            self._final_started_at.get(i, datetime.now()))
 
 
 # ---------------------------------------------------------------------------
