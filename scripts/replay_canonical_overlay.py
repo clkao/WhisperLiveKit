@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Replay a captured canonical caption event stream through the REAL overlay
-view (OverlayRenderer + OverlayDisplayModel), recording every src-row state at
-the drainer's tick rate, and detect flicker:
+view, capturing what the src row actually RENDERS (including the typing
+thread's intermediate frames), then run the flicker detector over the
+RENDERED sequence — not the model state.
 
-  - shrink:   the display loses text (the model holds pure shrinks, so a
-              rendered shrink means a commit/promote/reset resolved it)
-  - reappear: text that vanished comes back later within the same sentence
-
-A healthy stream shows only growth, commit flips, and promote resets.
+Flicker = the rendered text loses a suffix and that text re-appears soon
+after. A healthy stream only grows, flips style at commits, and resets at
+promotes.
 
 Usage: .venv/bin/python scripts/replay_canonical_overlay.py <events.jsonl>
 """
 from __future__ import annotations
-import sys
+import sys, time
 from datetime import datetime
 
 from whisperlivekit.overlay import OverlayRenderer
@@ -20,26 +19,33 @@ from whisperlivekit.overlay_model import OverlayDisplayModel
 from whisperlivekit.caption_events import EventLog
 
 
-def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.15) -> None:
+def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
     events = EventLog.load(path).events
+    t0 = events[0].t
 
     r = OverlayRenderer(overlay_mode="both")
 
     class C:
         now = 0.0
-
-        def __call__(self):
-            return self.now
-
-        def advance(self, s):
-            self.now += s
-
+        def __call__(self): return self.now
+        def advance(self, s): self.now += s
     clk = C()
     r._model = OverlayDisplayModel(hold_sec=hold, clock=clk)
 
-    frames = []  # (event_type, src_display, committed_len)
+    # capture what actually renders (typing thread + hard-swaps both funnel
+    # through _set / _render_src_text; AppKit is None here so both go to _set)
+    rendered: list[tuple[float, str, str]] = []  # (elapsed, kind, text)
 
-    def feed(e):
+    class F: pass
+    r._field_partial = fp = object()
+
+    def traced_set(field, value):
+        if field is fp:
+            rendered.append((time.monotonic() - t0, "render", str(value)))
+    r._set = traced_set
+
+    for e in events:
+        clk.advance(pace)
         now = datetime.now()
         if e.type == "transcription_provisional":
             r.partial("mic", e.text, now)
@@ -49,37 +55,34 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.15) -> None:
             r.preview("mic", [(None, e.text)], now)
         elif e.type == "translation_final":
             r.translation("mic", [(None, e.text)], now)
-        st = r._model.tick()
-        if st is not None:
-            frames.append((e.type, st.partial, st.partial_committed_len))
-        elif frames:
-            frames.append((e.type + "*", frames[-1][1], frames[-1][2]))
+        # pump the drainer across the event's pacing window so the typing
+        # thread's intermediate frames are captured
+        end = time.monotonic() + pace
+        while time.monotonic() < end:
+            st = r._model.tick()
+            if st is not None:
+                r._reconcile(st)
+            time.sleep(0.02)
 
-    for e in events:
-        clk.advance(pace)
-        feed(e)
-
-    print(f"=== {len(frames)} rendered src frames from {path} ===")
+    print(f"=== {len(rendered)} rendered src frames from {path} ===")
     flickers = 0
-    prev_full = ""
-    for i in range(len(frames)):
-        ty, full, _cl = frames[i]
-        if not (prev_full and full and len(full) < len(prev_full)
-                and prev_full.startswith(full)):
-            if full:
-                prev_full = full
-            continue
-        # shrank by losing a suffix — if that suffix re-appears soon, flicker
-        vanished = prev_full[len(full):].lstrip()
-        for ty2, full2, _ in frames[i + 1:i + 8]:
-            if len(full2) > len(full) and (
-                    full2 == prev_full or full2[len(full):].startswith(vanished)):
-                print(f"  [{ty}] {prev_full!r} -> {full!r} -> reappeared as {full2!r}")
-                flickers += 1
-                break
+    prev = ""
+    i = 0
+    while i < len(rendered):
+        at, _ty, full = rendered[i]
+        if prev and full and len(full) < len(prev) and prev.startswith(full):
+            vanished = prev[len(full):].lstrip()
+            for j in range(i + 1, min(i + 8, len(rendered))):
+                full2 = rendered[j][2]
+                if len(full2) > len(full) and (
+                        full2 == prev or full2[len(full):].startswith(vanished)):
+                    print(f"  [+{at:6.2f}] {prev!r} -> {full!r} -> reappeared {full2!r}")
+                    flickers += 1
+                    break
         if full:
-            prev_full = full
-    print("src flicker events:", flickers)
+            prev = full
+        i += 1
+    print("src flicker events (rendered frames):", flickers)
 
 
 if __name__ == "__main__":

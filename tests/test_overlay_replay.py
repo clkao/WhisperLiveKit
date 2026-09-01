@@ -82,3 +82,21 @@ def test_canonical_stream_no_prefix_flicker():
             prev = st.partial
     assert frames, "no frames rendered"
     print(f"canonical replay OK: {len(frames)} frames, no flicker")
+
+
+def test_reword_retraction_held():
+    """The mic run's flicker: the hypothesis re-decodes and RETRACTS the tail
+    ('我们今天来讨论镭射。在医学上的应用，镭射。' -> '确的切除。'). Any shorter
+    text at the same commit boundary is held — the reader never sees a
+    retraction; the commit resolves it."""
+    import time as _t
+    m = OverlayDisplayModel(hold_sec=3.5, clock=_t.monotonic)
+    m.set_partial("我们今天来讨论镭射。在医学上的应用，镭射。", committed_len=0)
+    st = m.tick()
+    assert st.partial == "我们今天来讨论镭射。在医学上的应用，镭射。"
+    m.set_partial("确的切除。", committed_len=0)   # retraction — held
+    assert m.tick() is None, "retraction must not re-render"
+    # growth passes through
+    m.set_partial("确的切除肿瘤组织。", committed_len=0)
+    st = m.tick()
+    assert st.partial == "确的切除肿瘤组织。"

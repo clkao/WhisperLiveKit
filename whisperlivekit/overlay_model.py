@@ -162,13 +162,16 @@ class OverlayDisplayModel:
 
     def set_partial(self, text: str, committed_len: int = 0) -> None:
         text = text or ""
-        # monotonic display: a pure SHRINK with the same committed split is a
-        # streaming-hypothesis revision (words vanish then re-appear) — hold
-        # the longer text until a commit resolves it. Legitimate resets (a new
-        # sentence after a promote) lower committed_len and pass through.
+        # monotonic display: with the same committed split, ANY shorter text is
+        # a streaming-hypothesis regression (a prefix shrink, or a re-decode
+        # rewording that retracts words) — hold the longer text until a commit
+        # resolves it. Rendering the retraction is the "prefix flicker" CL
+        # sees: words vanish, then re-appear a moment later. Legitimate resets
+        # (a commit or a new sentence after a promote) change committed_len
+        # and pass through.
         cur, cur_cl = self._partial, self._partial_committed_len
         if (text and cur and committed_len == cur_cl
-                and len(text) < len(cur) and cur.startswith(text)):
+                and len(text) < len(cur)):
             return
         self._partial = text
         self._partial_committed_len = max(0, min(committed_len, len(text)))
