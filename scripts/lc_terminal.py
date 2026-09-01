@@ -465,18 +465,31 @@ class TuiSink:
         if prov:
             self._r.preview("mic", [(None, self._cc_target(prov))], datetime.now())
         # finalized lines: (source, translation) pairs from translation_finals.
+        # The TUI pairs a translation with its pending final by
+        # (label, started_at) — pass the SAME started_at to both.
         done = len(disp.final_lines)
         if done > len(self._shown_finals):
-            for src, tr in disp.final_lines[len(self._shown_finals):]:
+            base = len(self._shown_finals)
+            for k, (src, tr) in enumerate(disp.final_lines[base:]):
+                started_at = datetime.now()
                 self._shown_finals.append((src, tr))
+                self._final_started_at[base] = started_at
                 if src:
-                    self._r.final("mic", [(None, self._cc_src(src))], datetime.now())
+                    self._r.final("mic", [(None, self._cc_src(src))], started_at)
                 if tr:
                     self._r.translation("mic", [(None, self._cc_target(tr))],
-                                        datetime.now())
+                                        started_at)
 
     def __call__(self, state):
         # Event-derived display state is the source of truth when the pipeline
+        # emits caption events (production path) — the lines[] path loses
+        # events (cumulative-line merging + per-index dedup can drop a
+        # translation; CL: 'i don't think we have all the translation events').
+        disp = getattr(state, "display", None)
+        if disp is not None:
+            self._from_events_tui(disp)
+            return
+        partial = (state.buffer_transcription or "").strip()
         # emits caption events (production path) — the lines[] path loses
         # events (cumulative-line merging + per-index dedup can drop a
         # translation; CL: 'i don't think we have all the translation events').

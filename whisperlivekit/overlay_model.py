@@ -304,29 +304,39 @@ class OverlayDisplayModel:
                 cpl = shown.rfind(" ", 0, cpl) + 1 if " " in shown[:cpl] else 0
             committed = plain[:cpl]  # already shown — keep, flip to final
             delta = plain[cpl:]       # new content
-            # if there's no common prefix (committed=""), the old content scrolls up
-            # to history (it's a genuinely different caption).
+            # if there's no common prefix (committed=""), this is a genuinely
+            # different caption — the next utterance's final. If the shown line
+            # is a final still inside its hold, QUEUE behind it instead of
+            # flashing it away: back-to-back finals (e.g. dermatology -> in-short
+            # 0.37s apart on zh->ja) replaced each other instantly and the
+            # reader never got the hold (CL).
             if not committed and shown:
-                # Only scroll FINALS into history. A shown provisional with no
-                # common prefix to the final is a discarded draft — replace it
-                # in place, don't pollute history.
                 if self._en_is_final:
-                    self._en_prev_plain = shown
-                    self._en_prev_spans = self._en_spans
-                    self._en_prev_at = self._clock()
-            # the committed prefix stays as the current line (now final style)
-            # and the whole final text amends it in place — the line stays one
-            # coherent caption; history records full sentences.
-            self._en_plain = plain
-            self._en_spans = _segments_to_spans(segments, is_final=True)
-            self._en_is_final = True
-            self._en_shown_at = self._clock()
-            # the final supersedes anything queued (e.g. its own still-pending
-            # draft): leaving it queued would pop a stale dim draft over this
-            # bright final if the speaker pauses past the hold.
-            self._queue.clear()
-            self._dirty = True
-            return
+                    self._enqueue(_segments_to_spans(segments, is_final=True),
+                                  plain, started_at, is_final=True,
+                                  respect_hold=True)
+                    return
+                self._en_prev_plain = shown
+                self._en_prev_spans = self._en_spans
+                self._en_prev_at = self._clock()
+            if committed:
+                # the committed prefix stays as the current line (now final
+                # style) and the whole final text amends it in place — the line
+                # stays one coherent caption (same-utterance correction).
+                self._en_plain = plain
+                self._en_spans = _segments_to_spans(segments, is_final=True)
+                self._en_is_final = True
+                self._en_shown_at = self._clock()
+                # the final supersedes anything queued (e.g. its own still-pending
+                # draft): leaving it queued would pop a stale dim draft over this
+                # bright final if the speaker pauses past the hold.
+                self._queue.clear()
+                self._dirty = True
+                return
+            # shown draft, no common prefix: discard the draft in place and
+            # enqueue the final (falls through to the enqueue below)
+            self._en_plain = ""
+            self._en_spans = []
         # no shown provisional: full enqueue
         spans = _segments_to_spans(segments, is_final=True)
         self._enqueue(spans, plain, started_at, is_final=True)
@@ -340,8 +350,16 @@ class OverlayDisplayModel:
                 and self._en_utt == utt_t and not self._en_is_final):
             self._en_plain = ""
             self._en_spans = []
-        self._queue.clear()
-        self._queue.append((spans, plain, utt_t, is_final, amend))
+        if is_final:
+            # FINALS ACCUMULATE — a queued final is committed content and must
+            # display; clearing the queue (the draft rule) dropped finals that
+            # landed back-to-back (CL: 'not queueing translated strings if
+            # they happen immediately after the last'). Drafts supersede.
+            self._queue.append((spans, plain, utt_t, is_final, amend))
+            del self._queue[:-3]
+        else:
+            self._queue.clear()
+            self._queue.append((spans, plain, utt_t, is_final, amend))
         if not respect_hold:
             self._en_shown_at = -self._hold  # release immediately on the next tick
         # else: the queued item waits for the shown caption's hold to elapse
@@ -352,9 +370,14 @@ class OverlayDisplayModel:
         """Advance the drainer one step. Returns the DisplayState to render if something
         changed, or None if the display is unchanged (the view can skip)."""
         now = self._clock()
+        # A queued item waits MIN_SHOW (half the hold) once a FINAL is shown —
+        # back-to-back finals each get a readable minimum instead of flashing
+        # (CL: the dermatology final was replaced 0.37s after landing). With
+        # nothing queued, the shown final holds for the full hold before expiry.
+        min_show = max(1.0, self._hold / 2)
         cur_changed = False
         prev_changed = False
-        if self._queue and now - self._en_shown_at >= self._hold:
+        if self._queue and now - self._en_shown_at >= min(self._hold, min_show):
             item = self._queue.pop(0)
             if len(item) == 5:
                 spans, plain, utt_t, is_final, amend = item
