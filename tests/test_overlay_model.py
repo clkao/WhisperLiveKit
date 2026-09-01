@@ -118,12 +118,16 @@ def test_final_single_sentence_shows_immediately():
 
 
 def test_two_consecutive_finals_scroll_up():
-    """Speak two sentences; when the second shows, the first must be on prev."""
+    """Speak two sentences; when the second shows, the first must be on prev.
+    A final landing while the first is inside its hold queues behind it and
+    pops after MIN_SHOW (half the hold) — no flash, no loss."""
     m, clk = make()
     m.translation(segs("First caption here."), started_at=U1)
     m.tick()
     m.translation(segs("Second caption arrives."), started_at=U1)
-    m.tick()  # drain the queued delta
+    # queued behind the shown final's minimum show (hold/2)
+    clk.advance(2.0)
+    m.tick()
     state = m.state()
     assert plain(state) == "Second caption arrives."
     assert prev_plain(state) == "First caption here."
@@ -161,8 +165,12 @@ def test_prev_expires_on_own_timer():
     m.translation(segs("First."), started_at=U1)
     m.tick()
     m.translation(segs("Second."), started_at=U1)
+    clk.advance(2.0)  # queued final pops after MIN_SHOW
     m.tick()
     assert prev_plain(m.state()) == "First."
+    clk.advance(3.6)
+    m.tick()  # prev hold elapsed
+    assert prev_plain(m.state()) == ""
     clk.advance(3.6)
     m.tick()  # prev hold elapsed
     assert prev_plain(m.state()) == ""

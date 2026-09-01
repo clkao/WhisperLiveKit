@@ -316,9 +316,6 @@ class OverlayDisplayModel:
                                   plain, started_at, is_final=True,
                                   respect_hold=True)
                     return
-                self._en_prev_plain = shown
-                self._en_prev_spans = self._en_spans
-                self._en_prev_at = self._clock()
             if committed:
                 # the committed prefix stays as the current line (now final
                 # style) and the whole final text amends it in place — the line
