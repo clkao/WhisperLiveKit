@@ -546,10 +546,11 @@ class OverlayRenderer:
             self._zh = zh
         # The committed clause accumulates into the reading buffer (append);
         # a sentence-final terminator freezes the buffer. The zh history field
-        # keeps the PREVIOUS sentence — no duplicate rows.
+        # keeps the PREVIOUS sentence — no duplicate rows. The tail the commit
+        # did not absorb stays on screen — the display text must not change at
+        # commit time (CL: flickering prefix at every mid-sentence commit).
         self._src.commit(zh)
-        # the whole buffer is committed now
-        self._model.set_partial(self._src.committed,
+        self._model.set_partial(self._src.display,
                                 committed_len=len(self._src.committed))
         self._record_latency(started_at, "asr")
 

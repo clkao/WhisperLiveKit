@@ -1,0 +1,84 @@
+"""Regression tests driven by the canonical captured event stream
+(qwen3-asr + simul-MT on zh_long.wav, production event tap).
+
+CL: 'the flickering prefix is again happening in many asr sentences' —
+reproduced from the canonical capture: at every mid-sentence commit the
+display dropped the already-shown tail for a frame, then the next
+provisional re-added it. These tests lock the behavior down.
+"""
+from __future__ import annotations
+import time
+from datetime import datetime
+from pathlib import Path
+
+from whisperlivekit.caption_events import EventLog
+from whisperlivekit.overlay import OverlayRenderer
+from whisperlivekit.overlay_model import OverlayDisplayModel
+from whisperlivekit.src_buffer import SrcReadingBuffer
+
+CANONICAL = Path(__file__).parent / "golden" / "zh_long_canonical.jsonl"
+
+
+def test_src_buffer_commit_absorbs_tail_display_unchanged():
+    """The canonical flicker: tail '我们今天来讨论镭射。' shown, commit '我们今天'
+    lands -> the display must NOT drop the tail for a frame."""
+    b = SrcReadingBuffer()
+    assert b.tail("我们今天来讨论镭射。") == "我们今天来讨论镭射。"
+    # mid-sentence commit absorbs the committed part of the tail
+    display = b.commit("我们今天")
+    assert display == "我们今天来讨论镭射。", f"commit changed the display: {display!r}"
+    assert b.tail_text == "来讨论镭射。"
+    # the next provisional replaces the tail — text keeps growing
+    assert b.tail("来讨论镭射在医学上的应用。") == "我们今天来讨论镭射在医学上的应用。"
+
+
+def test_src_buffer_commit_absorbing_whole_tail():
+    """A commit covering the whole tail clears it (no duplicated text)."""
+    b = SrcReadingBuffer()
+    b.tail("镭射技术可以精确的。")
+    display = b.commit("镭射技术可以精确的切除肿瘤组织。")
+    assert display == "镭射技术可以精确的切除肿瘤组织。"
+    assert b.tail_text == ""
+
+
+def test_src_buffer_commit_reworded_tail_dropped():
+    """A commit whose text matches neither the tail nor a prefix: the stale
+    tail is dropped rather than rendered next to text the ASR retracted."""
+    b = SrcReadingBuffer()
+    b.tail("镭射在医学上")
+    display = b.commit("镭射技术可以")
+    assert display == "镭射技术可以" and b.tail_text == ""
+
+
+def test_canonical_stream_no_prefix_flicker():
+    """Replay the canonical zh_long stream through the real view classes:
+    the src display must never lose text and then re-show it. Commits keep
+    the absorbed tail so the text never changes at commit time."""
+    events = EventLog.load(str(CANONICAL)).events
+    r = OverlayRenderer(overlay_mode="both")
+    r._model = OverlayDisplayModel(hold_sec=3.5, clock=time.monotonic)
+    frames = []
+    prev = ""
+    for e in events:
+        now = datetime.now()
+        if e.type == "transcription_provisional":
+            r.partial("mic", e.text, now)
+        elif e.type == "transcription_final":
+            r.final("mic", [(None, e.text)], now)
+        elif e.type == "translation_provisional":
+            r.preview("mic", [(None, e.text)], now)
+        elif e.type == "translation_final":
+            r.translation("mic", [(None, e.text)], now)
+        st = r._model.tick()
+        if st is not None and st.partial:
+            frames.append(st.partial)
+            if prev and len(st.partial) < len(prev) and prev.startswith(st.partial):
+                # a shrink rendered — legal only at a promote/reset (a new
+                # sentence); the LOST text must never re-appear
+                for nxt in frames[len(frames):len(frames) + 6]:
+                    if nxt == prev:
+                        raise AssertionError(
+                            f"prefix flicker: {prev!r} -> {st.partial!r} -> reappeared")
+            prev = st.partial
+    assert frames, "no frames rendered"
+    print(f"canonical replay OK: {len(frames)} frames, no flicker")

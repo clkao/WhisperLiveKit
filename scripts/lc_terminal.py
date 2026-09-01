@@ -565,6 +565,7 @@ async def run_file(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None)
     kwargs = _make_engine_kwargs(args)
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
+        _attach_event_log(args, h)
         if ocr_loop is not None:
             _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
         if stop_event is not None:
@@ -587,6 +588,42 @@ async def run_file(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None)
             await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
         await h.finish(timeout=180)
+        _save_event_log(h)
+
+
+
+def _save_event_log(harness):
+    """Persist the captured caption event stream (if --event-log was given)."""
+    log = getattr(harness, "_lc_event_log", None)
+    path = getattr(harness, "_lc_event_log_path", None)
+    if log is None:
+        return
+    log.save(path)
+    print(f"[event-log] saved {len(log.events)} events -> {path}", file=sys.stderr)
+
+
+def _attach_event_log(args, harness):
+    """Wire a JSONL EventLog sink into the processor's caption event tap so
+    the canonical stream (all four event types) can be captured from any run."""
+    path = getattr(args, "event_log", None)
+    if not path:
+        return
+    from whisperlivekit.caption_events import EventLog, FanOutSink
+    tap = getattr(getattr(harness, "_processor", None), "event_tap", None)
+    if tap is None:
+        print("[event-log] processor has no event tap", file=sys.stderr)
+        return
+    log = EventLog()
+    existing = tap._sink
+    if isinstance(existing, FanOutSink):
+        existing.sinks.append(log)
+    elif existing is not None:
+        tap._sink = FanOutSink([existing, log])
+    else:
+        tap._sink = log
+    harness._lc_event_log = log
+    harness._lc_event_log_path = path
+    print(f"[event-log] capturing caption events -> {path}", file=sys.stderr)
 
 
 async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
@@ -663,6 +700,7 @@ async def run_mic(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None):
 
     async with TestHarness(**kwargs) as h:
         h.on_update(sink)
+        _attach_event_log(args, h)
         if ocr_loop is not None:
             _start_ocr_loop(args, h._processor, on_hotwords=on_hotwords)
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
@@ -981,6 +1019,8 @@ def main() -> None:
                    help="overlay only: which text to show. 'both' = source + target, 'target' = translation only, 'source' = source only")
     p.add_argument("--overlay-hold", type=float, default=3.5,
                    help="minimum seconds a finalized EN caption stays before replacement")
+    p.add_argument("--event-log", default=None, metavar="PATH",
+                   help="save the canonical caption event stream (JSONL) for replay/diff tooling")
 
     # --- OpenCC ---
     p.add_argument("--opencc", default=None, metavar="CONFIG",
