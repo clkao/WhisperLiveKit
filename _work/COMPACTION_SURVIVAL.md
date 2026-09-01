@@ -208,3 +208,35 @@ prompt, source is most of it) — unlike the paper's Gemma chat layout (~17%).
 Script bugs fixed en route (for future runs): decode steps have GROWING key
 length (Lk = prompt+1 per step) — never np.stack full decode rows, slice the
 span per step; dump_calls/score must be defined before main() in the file.
+
+---
+
+## Session addendum 3 — head calibration VALIDATED on mlx (the earlier scare was my bug)
+
+`scripts/calibrate_ts_mlx.py` re-runs the paper's TS calibration on the mlx
+path (teacher-forced prefill, gold word alignments from
+Alignatt4LLM/data/alignatt_heads/word_alignments_zh-en.json, all 512 heads).
+
+**VERDICT: the PyTorch calibration transfers to mlx. TS(9,5)=0.765 on mlx-8bit
+vs 0.794 on PyTorch-bf16, identical head ordering (the 8 calibrated heads are
+the global top-8). bf16-mlx TS(9,5)=0.764 ≈ 8bit — quantization is innocent.**
+
+What was wrong earlier (do not repeat): my TS reimplementation had TWO
+coordinate bugs — word char-spans are relative to source_text/target_text but
+were projected against prompt/full offsets without shifting by
+rfind(src)/len(prompt_text). Gold positions landed on template tokens →
+TS≈noise (0.06) → a false "mlx can't reproduce the calibration" alarm. The
+attention matrices themselves were verified correct throughout (mlx vs HF
+eager: maxdiff ~0.03, argmax agreement 16/16).
+
+Also learned: detect_translation_heads.py --max-pairs does NOT limit the
+detect step (it ran all 1198 pairs); its word dicts come from
+coerce_alignment_rows→locate_words_in_text (sequential find with fallbacks).
+
+**Combined verdict for the simul-MT starvation (add to addendum 2):**
+heads VALID (calibration transfers) + policy WRONG (0.5 total-mass gate
+unattainable; paper uses stabilized argmax vs frontier with mass gates at 0)
++ frontier FROZEN mid-speech (cend ≤ n_src/3 in 89% of informative calls).
+Fix order: (1) word-level accessible frontier, (2) paper's decision rule,
+(3) then re-measure. The litmus stays scripts/check_simul_heads.py (draft
+coverage; 0.35 today, pass ≥ 0.6).
