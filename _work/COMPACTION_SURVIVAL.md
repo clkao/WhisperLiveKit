@@ -158,3 +158,53 @@ committed a golden fix without re-reading the trace; a heredoc write
 truncated translation_mlx_llm_mt_simul.py (restored from git). Always:
 re-run the FULL module test suites for touched areas, re-read the trace
 after regenerating, never `open(path,'w')` without content in a heredoc.
+
+---
+
+## Session addendum 2 — ALL-HEAD exploration verdict (mlx decode path)
+
+`scripts/explore_heads_mlx.py` (run: `LC_SIMUL_HEAD=9,5 .venv/bin/python
+scripts/explore_heads_mlx.py --audio <zh.wav> --out /tmp/head_explore.json`)
+captures ALL 32×16 heads at every apply_commit_policy call and scores:
+span_share / frontier_acc / hold_rate / track. Outputs:
+/tmp/head_explore.json (per-head), /tmp/head_calls.json (per-call frontier).
+
+**FINDING — the head is NOT the bottleneck; the frontier cadence is.**
+Across all 512 heads: track (corr of argmax position vs committed boundary)
+≈ 0 for EVERY head; frontier accuracy ≤ 0.41 (most 0.27); hold_rate ~0.6-0.7.
+No head's raw decode-step argmax tracks the ASR-commit frontier — including
+all 8 calibrated heads. Head-swapping cannot fix draft starvation.
+
+Why: the committed boundary (cend, from committed_src_end_from_text) advances
+only at pause-gated ASR commits. Per-call dump: 27/31 calls informative, and
+**89% of informative calls have cend ≤ n_src/3** — during speech the model is
+translating a source whose committed prefix is tiny, so every draft token
+legitimately attends to "inaccessible" tail → any correct AlignAtt policy
+holds everything → starvation. The paper's cascade advances the accessible
+frontier per WORD (Qwen3-ForcedAligner word end times, 0ms hold-back, 250ms
+conservative). Our qwen3 backend has no word timestamps — stable_text only.
+
+Also: (9,5) span_share measured 0.803 on decode steps here (earlier session
+trace said 0.044 — different normalization/span method; do not trust the old
+0.044 number). Source-span share is large on this model (translation-focused
+prompt, source is most of it) — unlike the paper's Gemma chat layout (~17%).
+
+**Consequence for the roadmap:** the highest-leverage fix is the FRONTIER:
+1. Word-level accessible frontier for the MT policy. Options: (a) nemotron
+   backend already has per-token timestamps (asr.py _hypothesis AlignedTokens)
+   — the AccessibleBoundary adapter gives word-end times; (b) add
+   Qwen3-ForcedAligner (mlx-community/Qwen3-ForcedAligner-0.6B-4bit, cached)
+   onto qwen3-asr's stable+tail text for word end times — this is exactly the
+   paper's own ASR+aligner cascade; (c) simplest stopgap: commit on
+   punctuation/word boundaries WITHIN the tail using VAD-adjacent stability
+   rather than pause-only.
+2. THEN re-run explore_heads_mlx.py: with a fine-grained frontier the
+   frontier_acc/track metrics become meaningful and a real head ranking
+   (and the paper's stabilized-argmax policy) can be validated.
+3. The rewrite to the paper's policy (head-averaged, Welford z-norm, width-7
+   median filter, first-failure scan) is still right, but it is downstream of
+   the frontier fix — with cend frozen mid-speech, every policy variant holds.
+
+Script bugs fixed en route (for future runs): decode steps have GROWING key
+length (Lk = prompt+1 per step) — never np.stack full decode rows, slice the
+span per step; dump_calls/score must be defined before main() in the file.
