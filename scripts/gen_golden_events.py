@@ -56,7 +56,10 @@ def emit(path, sentences, rate, unit):
                 lines.append({"t": 0.0, "audio_t": round(cstart + d * frac + ASR_PROV_LAG, 2),
                               "type": "transcription_provisional", "text": prefix})
             committed_now = committed_src + src
-            lines.append({"t": 0.0, "audio_t": round(cstart + ASR_PROV_LAG + MT_DRAFT_LAG, 2),
+            # MT draft lands as the clause's last words are spoken (just before
+            # the commit releases them) — not at clause start, where it would
+            # translate text the speaker hasn't said yet
+            lines.append({"t": 0.0, "audio_t": round(cend - 0.05 + MT_DRAFT_LAG, 2),
                           "type": "translation_provisional", "text": tgt_cum,
                           "committed": committed_src, "source": committed_now,
                           "fresh": i == 0})
