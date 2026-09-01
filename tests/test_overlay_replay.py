@@ -96,7 +96,8 @@ def test_reword_retraction_held():
     assert st.partial == "我们今天来讨论镭射。在医学上的应用，镭射。"
     m.set_partial("确的切除。", committed_len=0)   # retraction — held
     assert m.tick() is None, "retraction must not re-render"
-    # growth passes through
-    m.set_partial("确的切除肿瘤组织。", committed_len=0)
+    # even a longer reword is held while it's shorter than the held text —
+    # the commit (committed_len changes) is what resolves the stale display
+    m.set_partial("确的切除肿瘤组织。", committed_len=9)
     st = m.tick()
     assert st.partial == "确的切除肿瘤组织。"
