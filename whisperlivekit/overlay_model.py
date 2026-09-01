@@ -135,6 +135,7 @@ class OverlayDisplayModel:
     def __init__(self, hold_sec: float, clock=time.monotonic) -> None:
         self._hold = hold_sec
         self._clock = clock
+        self._partial_shown_at = clock()
         self._lock_held = False  # (the AppKit view adds its own threading.Lock; the model is single-threaded by construction)
         # current line
         self._en_plain: str = ""
@@ -171,6 +172,7 @@ class OverlayDisplayModel:
             return
         self._partial = text
         self._partial_committed_len = max(0, min(committed_len, len(text)))
+        self._partial_shown_at = self._clock()
 
     def clear_partial(self) -> None:
         self._partial = ""
@@ -331,6 +333,13 @@ class OverlayDisplayModel:
                     and now - self._en_shown_at >= self._hold):
                 self._en_plain = ""
                 self._en_spans = []
+                cur_changed = True
+            # expire the src row after the hold with no ASR activity (mic silence):
+            # a stale reading buffer that never clears reads as a stuck caption.
+            # The buffer itself keeps its committed text — speech resumes it.
+            if (self._partial and now - self._partial_shown_at >= self._hold):
+                self._partial = ""
+                self._partial_committed_len = 0
                 cur_changed = True
             # expire the prev line on its own timer
             if self._en_prev_plain and now - self._en_prev_at >= self._hold:

@@ -648,6 +648,8 @@ class OverlayRenderer:
             import time as _t
             cur = prev
             units = _merge_cjk_pairs(_DIFF_TOKEN_RE.findall(delta))
+            n_units = max(1, len(units))
+            step = min(0.08, 1.8 / n_units)
             for w in units:
                 if stop.is_set():
                     self._src_streaming = False
@@ -659,7 +661,7 @@ class OverlayRenderer:
                 self._last_src_full = cur
                 self._last_src_key = (cur[:committed_len], cur[committed_len:])
                 self._render_src_text(cur, committed_len)
-                _t.sleep(0.04)
+                _t.sleep(step)
             self._src_streaming = False
         threading.Thread(target=_stream, daemon=True, name="ov-src-type").start()
 
@@ -691,6 +693,12 @@ class OverlayRenderer:
                 self._set(self._field_en, "")
             tokens = _DIFF_TOKEN_RE.findall(delta)
             words = _merge_cjk_pairs(tokens)
+            # readable pacing: ~0.08s per unit for short deltas, total reveal
+            # bounded at ~1.8s so a large single-event append still finishes
+            # fast enough to track the speech (CL: a big append at 0.05s/unit
+            # flashed by unreadably fast)
+            n_units = max(1, len(words))
+            step = min(0.08, 1.8 / n_units)
             for w in words:
                 if stop.is_set():
                     self._streaming_active = False
@@ -702,7 +710,7 @@ class OverlayRenderer:
                 self._shown_en_plain = cur
                 attr = self._spans_to_attributed_simple(cur, is_prov)
                 self._set_attr(self._field_en, attr)
-                _t.sleep(0.05)
+                _t.sleep(step)
             self._streaming_active = False
         threading.Thread(target=_stream, daemon=True, name="ov-append").start()
 
