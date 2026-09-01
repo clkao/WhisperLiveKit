@@ -162,10 +162,9 @@ def test_premature_terminator_commit_types():
     not hard-snap — every mid-sentence growth types (CL: typing only showed
     on one sentence)."""
     b = SrcReadingBuffer()
-    b.tail("牙医也使用")           # commit 1 landed
-    b.commit("牙医也使用")          # committed = '牙医也使用'
+    b.commit("牙医也使用")           # commit 1 (new tokens only)
     display = b.tail("镭射来进行。")  # premature hypothesis tail
     assert display == "牙医也使用镭射来进行。"
-    # the commit continues past the premature terminator
-    display = b.commit("牙医也使用镭射来进行口腔手术。")
-    assert display == "牙医也使用镭射来进行口腔手术。"
+    # the commit continues past the premature terminator (new tokens only)
+    display = b.commit("镭射来进行口腔手术。")
+    assert display == "牙医也使用镭射来进行口腔手术。", display
