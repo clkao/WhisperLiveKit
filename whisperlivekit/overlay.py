@@ -191,6 +191,7 @@ class OverlayRenderer:
         self._src_streaming = False
         self._src_streaming_target: str = ""
         self._shown_en_plain: str = ""  # plain text currently rendered on the current row
+        self._shown_en_final: bool = False  # is the shown row in committed (bright) style
         self._streaming_target: str = ""  # what the streaming thread is streaming toward
         self._streaming_active = False  # is a streaming thread running
         self._en_drain_thread: threading.Thread | None = None
@@ -415,6 +416,15 @@ class OverlayRenderer:
                 attr = self._spans_to_attributed(state.current)
                 self._set_attr(self._field_en, attr)
                 self._shown_en_plain = cur_plain
+                self._shown_en_final = not is_provisional
+        elif (cur_plain and not is_provisional
+              and not getattr(self, "_shown_en_final", False)):
+            # same text, provisional → final: flip to bright IN PLACE (no retype)
+            # — the commit signal is the style change alone
+            attr = self._spans_to_attributed(state.current)
+            if attr is not None:
+                self._set_attr(self._field_en, attr)
+            self._shown_en_final = True
 
         # Prev row: hard-swap (no streaming — it's history)
         prev_attr = self._spans_to_attributed(state.prev) if state.prev else None
