@@ -182,12 +182,8 @@ def test_zh_ja_fallback_no_raw_source_provisional():
     spec = importlib.util.spec_from_file_location("lct", "scripts/lc_terminal.py")
     lct = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(lct)
-    events = EventLog.load(str(Path("/tmp/events-zh-ja.jsonl"))) \
-        if Path("/tmp/events-zh-ja.jsonl").exists() else None
-    if events is None:
-        import pytest
-        pytest.skip("zh-ja capture not present")
-    evs = events.events
+    fixture = Path(__file__).parent / "golden" / "zh_ja_fallback.jsonl"
+    evs = EventLog.load(str(fixture)).events
     # the pre-fix stream carried raw-source provisionals; the gate removes them
     raw = [e for e in evs if e.type == "translation_provisional"]
     # every translation provisional in the fallback path is raw source
