@@ -973,9 +973,16 @@ class AudioProcessor:
                 fresh_mt = False
 
                 if isinstance(item, Silence):
-                    if item.is_starting:
-                        new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
+                    # Endpointing: only a pause that crosses the segmentation
+                    # threshold closes the utterance (the golden's sentence
+                    # boundaries). Every short clause pause used to flush a
+                    # final here — the 12-vs-6 fragment finals (CL's measured
+                    # gap). The flush happens at the pause's END, when the
+                    # duration is known; the SOFT_MAX/HARD_MAX rules in the
+                    # simul MT cover run-on utterances without a crossing pause.
                     if item.has_ended:
+                        if self._is_pause_segmentation_boundary(item):
+                            new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
                         self.translation.insert_silence(item.duration)
                         continue
                 elif isinstance(item, ChangeSpeaker):

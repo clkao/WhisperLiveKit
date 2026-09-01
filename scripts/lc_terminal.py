@@ -113,7 +113,9 @@ def _make_engine_kwargs(args) -> dict:
         # WLK defaults to 5s pause-segmentation (too long — utterances merge into
         # one growing line). The VAD fires short silence events (0.1-0.3s), so the
         # threshold must be low to split at natural speech pauses.
-        "pause_segmentation_seconds": 0.1,
+        "pause_segmentation_seconds": float(os.environ.get("LC_PAUSE", "0.35")),
+        "mlx_llm_mt_simul_soft_max_s": float(os.environ.get("LC_SOFT_MAX", "4.0")),
+        "mlx_llm_mt_simul_hard_max_s": float(os.environ.get("LC_HARD_MAX", "20.0")),
         # Single-presenter use case: disable speaker diarization so the TUI
         # does not render [S1]/[S2] speaker markers on the partial line.
         "diarization": args.diarize,
