@@ -437,6 +437,7 @@ class TuiSink:
         self._line_texts: dict[int, str] = {}  # latest cumulative text per line
         self._printed_line: dict[int, str] = {}    # cumulative zh already printed
         self._printed_transl: dict[int, str] = {}  # cumulative translation already printed
+        self._shown_finals: list[tuple[str, str]] = []  # event-path final_lines already rendered
         self._last_prov = ""   # stash the provisional so the final can diff against it
         self._opencc = opencc_conv
         self._target_opencc = target_opencc
@@ -454,7 +455,35 @@ class TuiSink:
     def set_ocr_text(self, text):
         self._r.set_ocr_text(text)
 
+    def _from_events_tui(self, disp):
+        """Render from the caption event stream (DisplayState) — mirrors the
+        OverlaySink's event path so the TUI gets every translation event."""
+        partial = (disp.partial_transcription or "").strip()
+        if partial:
+            self._r.partial("mic", self._cc_src(partial), datetime.now(), speaker=None)
+        prov = (disp.partial_translation or "").strip()
+        if prov:
+            self._r.preview("mic", [(None, self._cc_target(prov))], datetime.now())
+        # finalized lines: (source, translation) pairs from translation_finals.
+        done = len(disp.final_lines)
+        if done > len(self._shown_finals):
+            for src, tr in disp.final_lines[len(self._shown_finals):]:
+                self._shown_finals.append((src, tr))
+                if src:
+                    self._r.final("mic", [(None, self._cc_src(src))], datetime.now())
+                if tr:
+                    self._r.translation("mic", [(None, self._cc_target(tr))],
+                                        datetime.now())
+
     def __call__(self, state):
+        # Event-derived display state is the source of truth when the pipeline
+        # emits caption events (production path) — the lines[] path loses
+        # events (cumulative-line merging + per-index dedup can drop a
+        # translation; CL: 'i don't think we have all the translation events').
+        disp = getattr(state, "display", None)
+        if disp is not None:
+            self._from_events_tui(disp)
+            return
         partial = (state.buffer_transcription or "").strip()
         if partial:
             self._r.partial("mic", self._cc_src(partial), datetime.now(), speaker=None)

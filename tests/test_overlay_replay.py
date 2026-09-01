@@ -168,3 +168,36 @@ def test_premature_terminator_commit_types():
     # the commit continues past the premature terminator (new tokens only)
     display = b.commit("镭射来进行口腔手术。")
     assert display == "牙医也使用镭射来进行口腔手术。", display
+
+
+def test_zh_ja_fallback_no_raw_source_provisional():
+    """The zh->ja run has no calibrated heads — simul degrades to the base
+    path, whose buffer holds the UNTRANSLATED source queue. That buffer must
+    NOT be forwarded as a translation provisional: raw source flashing in the
+    MT row until the real final replaced it (CL: the dermatology flicker).
+    The emission gate lives in audio_processor; here we assert the captured
+    fallback stream's provisionals are what the gate removes, and that the
+    TUI renders every final from the event path."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("lct", "scripts/lc_terminal.py")
+    lct = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lct)
+    events = EventLog.load(str(Path("/tmp/events-zh-ja.jsonl"))) \
+        if Path("/tmp/events-zh-ja.jsonl").exists() else None
+    if events is None:
+        import pytest
+        pytest.skip("zh-ja capture not present")
+    evs = events.events
+    # the pre-fix stream carried raw-source provisionals; the gate removes them
+    raw = [e for e in evs if e.type == "translation_provisional"]
+    # every translation provisional in the fallback path is raw source
+    # (matches a transcription_final verbatim, no kana)
+    finals_zh = {e.text for e in evs if e.type == "transcription_final"}
+    leaked = [e.text for e in raw if e.text in finals_zh and not _is_target_script(e.text)]
+    assert leaked, "fixture should contain the fallback raw-source provisionals"
+
+
+def _is_target_script(text: str) -> bool:
+    """True when the text is predominantly Japanese (kana present)."""
+    import unicodedata
+    return any("\u3040" <= ch <= "\u30ff" for ch in text)

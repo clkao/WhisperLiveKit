@@ -1012,11 +1012,17 @@ class AudioProcessor:
                 elif new_translation_buffer is not None:
                     # A backend can return a provisional buffer with no finalized
                     # translation (None). Forward the buffer so the display shows
-                    # the provisional draft before the final arrives.
+                    # the provisional draft before the final arrives — but ONLY
+                    # when the buffer is an actual translation draft. Without a
+                    # calibration the simul variant degrades to the base path,
+                    # whose buffer holds the UNTRANSLATED source queue; showing
+                    # it as a "provisional translation" flashed raw source text
+                    # in the MT row until the real final replaced it (CL: the
+                    # dermatology flicker on zh->ja).
                     _prov_text = (getattr(new_translation_buffer, "text", "") or "").strip()
                     async with self.lock:
                         self.state.new_translation_buffer = new_translation_buffer
-                    if _prov_text:
+                    if _prov_text and getattr(self.translation, "_simul_active", False):
                         self.event_tap.translation_provisional(
                             self.state.end_buffer,
                             _prov_text,
