@@ -78,3 +78,83 @@ The MT layer's `insert_tokens` queues a final whenever an ASR token `has_punctua
 4. **dg (diarization) ensign dispatch** — filed, not dispatched
 5. **8z eval** — 21-audio devset, AL/LAAL + COMET/BLEU (~4h)
 6. **AccessibleBoundary adapter** — qwen3-stable + nemotron-time onto same AlignAtt runtime
+
+---
+
+## Session 2026-09-01 addendum — READ THIS FIRST (the AlignAtt policy was wrong)
+
+**The single most important finding: our commit policy cannot work as shipped.**
+Re-read the paper (arxiv 2606.03967, AlignAtt4LLM IWSLT 2026) — §4.2 says the
+draft-to-source attention slice is NOT source-normalized: on their probes, ~9%
+of attention goes to accessible source, ~8% to inaccessible source, **~81% to
+non-source prompt positions (template/sink), 2% to the draft suffix**. Our
+`apply_commit_policy(mode="mass", threshold=0.5)` requires ≥0.5 of the TOTAL
+attention on committed source — structurally unattainable when 81% is
+off-source. That is why drafts held everything ('Today, we will' stuck 8s,
+'Future', blank stretches) — NOT primarily the head calibration.
+
+Measured this session (mlx capture, zh_long):
+- calibrated top head (9,5): source-span mass 0.044; head (9,8): 0.408 — the
+  head ordering differs between the PyTorch calibration path and the mlx
+  capture (TS 0.79 prefill-calibrated vs near-zero decode mass). BOTH facts
+  matter: the paper's heads are calibrated under the exact prompt layout of
+  Eq. 1, and our policy must implement the paper's decision rule.
+- The paper's policy (§4.4): head-AVERAGED row over the top-8 heads (not one
+  top head), two branches: (A) accessible-source provenance mass π_acc,
+  (B) per-head prefix-online z-score + width-7 median filter → stabilized
+  source argmax ŝ_t; gate = the argmax stays LEFT of the accessible frontier
+  (ŝ_t < N_acc + b); τ_argmax=0 and τ_src=0 — the mass gates are INACTIVE in
+  the official operating points. First-failure scan emits the longest
+  accepting prefix; stability unit = whitespace word (EN) / CJK char (ZH).
+- Draft cap: 16 new tokens per MT step; source words accessible when their
+  aligned end time is observed (their tail-reliability analysis suggests a
+  250ms conservative hold-back).
+
+**What to do next (ranked):**
+1. Rewrite the production policy to the paper's form: average the 8
+   calibrated heads, per-head Welford z-normalization + width-7 median
+   filter, stabilized argmax, first-failure scan vs the accessible frontier.
+   Drop the 0.5-total-mass gate. The `mass`/`argmax` modes in
+   simul_mt_capture.py::apply_commit_policy are both non-paper.
+2. Re-verify the head set ON the mlx decode path (the PyTorch prefill
+   calibration may still transfer — head (9,5)'s low mass may be the sink,
+   not a dead head; head (9,8) mass 0.408 is the outlier — check both under
+   the paper's row normalization).
+3. `scripts/check_simul_heads.py` = the litmus: draft coverage (word recall
+   of each final by the pre-final provisionals) — shipped heads measured
+   0.35/0.26 (FAIL, pass ≥ 0.6); the empirical (9,8) head produced complete
+   drafts (quality better) but still sparse — the policy rewrite should fix
+   the release cadence.
+4. `LC_SIMUL_HEAD="L,H"` env override exists in translation_mlx_llm_mt_simul
+   for A/B-ing heads without touching calibration files.
+
+**Also fixed this session (all committed on feat/apple-silicon-backends):**
+- Endpointing owns segment closure (fragment finals 12→4; draft starvation
+  42/42→4/20); knobs: pause_segmentation_seconds=0.35,
+  mlx_llm_mt_simul_soft_max_s=4.0, hard_max_s=20.0.
+- Draft-cache reset at segment close (the hyperopia reversion fix); stale
+  tails dropped from the MT source (time-based: the tail predating the
+  commit boundary is stale — variant spellings defeat exact containment).
+- Simul warmup at init (the first simul draft paid Metal compile inside the
+  translation loop → the first sentence had no draft) + the release guard
+  (a fresh draft when the committed text outgrows the cached span).
+- Display: event-driven TuiSink (started_at pairing!), drafts queue behind
+  finals (MIN_SHOW = hold/2), finals accumulate in the queue (no drop),
+  reword-amend, suppress promoted sentences, src-row expiry on silence,
+  CJK regex fix, adaptive typing. 105 tests green.
+- Fallback (no calibration): _simul_active=False → the base buffer is the
+  UNTRANSLATED source queue — gated out of translation_provisional (the
+  zh-ja dermatology flash). Fixture: tests/golden/zh_ja_fallback.jsonl.
+- Litmus script: scripts/check_simul_heads.py (draft coverage on an event
+  log). Fails today; the number to watch after the policy rewrite.
+- PR stack: #423 head 67459c8 (endpointing ported, body updated), #425
+  rebased e94d525, #426 rebased 0126dc9. The display layer is NOT in any PR
+  yet (new PR stacked on #423). lc_terminal env knobs: LC_PAUSE,
+  LC_SOFT_MAX, LC_HARD_MAX, LC_SIMUL_HEAD.
+
+**Process failures to not repeat:** validated display fixes only against the
+display tests and missed 2 broken simul tests (caught at the PR port);
+committed a golden fix without re-reading the trace; a heredoc write
+truncated translation_mlx_llm_mt_simul.py (restored from git). Always:
+re-run the FULL module test suites for touched areas, re-read the trace
+after regenerating, never `open(path,'w')` without content in a heredoc.
