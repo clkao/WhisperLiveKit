@@ -154,3 +154,18 @@ def test_reworded_provisional_amends():
     time.sleep(0.6)  # let the streaming thread finish typing the correction
     # the correction must type out (multiple renders), not flash in one frame
     assert len(events) >= 3, f"reword provisional did not amend: {events!r}"
+
+
+def test_premature_terminator_commit_types():
+    """A mid-sentence commit whose tail carried a premature terminator
+    ('...来进行。' -> commit '...来进行口腔手术。') must TYPE the continuation,
+    not hard-snap — every mid-sentence growth types (CL: typing only showed
+    on one sentence)."""
+    b = SrcReadingBuffer()
+    b.tail("牙医也使用")           # commit 1 landed
+    b.commit("牙医也使用")          # committed = '牙医也使用'
+    display = b.tail("镭射来进行。")  # premature hypothesis tail
+    assert display == "牙医也使用镭射来进行。"
+    # the commit continues past the premature terminator
+    display = b.commit("牙医也使用镭射来进行口腔手术。")
+    assert display == "牙医也使用镭射来进行口腔手术。"

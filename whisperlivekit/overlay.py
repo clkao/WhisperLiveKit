@@ -522,13 +522,24 @@ class OverlayRenderer:
         # reword (the hypothesis re-decoded): keep the common prefix on screen
         # and type the divergent suffix — same grammar as the EN row. Only when
         # the committed part is unchanged (the boundary text is stable).
+        # reword (the hypothesis re-decoded): keep the common prefix on screen
+        # and type the divergent suffix — same grammar as the EN row. The
+        # committed part must be preserved (cpl >= committed) — EXCEPT for a
+        # small boundary divergence (a premature tail terminator, e.g. the
+        # hypothesis guessed '来进行。' and the commit continues '来进行口腔
+        # 手术。'): allow the shown text to lose <= 2 boundary chars and still
+        # type, otherwise every mid-sentence commit snaps (CL: typing only on
+        # one sentence).
         prev_full_eff = prev_full
         if prev_full and full:
             cpl = 0
             m = min(len(prev_full), len(full))
             while cpl < m and prev_full[cpl] == full[cpl]:
                 cpl += 1
-            if cpl >= 2 and cpl >= len(committed):
+            boundary_stable = (cpl >= len(committed)
+                               or (len(full) > len(prev_full)
+                                   and cpl >= len(prev_full) - 2))
+            if cpl >= 2 and boundary_stable and cpl != len(full):
                 self._src_last_committed = committed
                 self._src_streaming_target = ""
                 self._src_streaming = False
