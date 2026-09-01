@@ -32,7 +32,8 @@ import threading
 import time
 from datetime import datetime
 
-from whisperlivekit.overlay_model import PROVISIONAL, FINAL_SAME, FINAL_ADD
+from whisperlivekit.overlay_model import (PROVISIONAL, FINAL_SAME, FINAL_ADD,
+                                          _common_prefix_len, _truncate_spans)
 from whisperlivekit.src_buffer import SrcReadingBuffer
 
 # AppKit is imported lazily at instantiation (see _create_window) so this module
@@ -407,16 +408,33 @@ class OverlayRenderer:
                     print(f"[ov] extends: {self._shown_en_plain!r} -> {cur_plain!r}", file=sys.stderr, flush=True)
                 self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
             else:
-                # new caption or rewrite: hard-swap (just appear, no typing)
-                import os
-                if os.environ.get("OV_DEBUG"):
-                    print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
-                self._append_stop.set()
-                self._streaming_active = False
-                attr = self._spans_to_attributed(state.current)
-                self._set_attr(self._field_en, attr)
-                self._shown_en_plain = cur_plain
-                self._shown_en_final = not is_provisional
+                # reword or new caption. A REWORD with a substantial common
+                # prefix keeps the prefix on screen and streams the divergent
+                # suffix (the MT self-corrected mid-draft — CL: non-appending
+                # provisional); a genuinely new caption hard-swaps.
+                cpl = _common_prefix_len(self._shown_en_plain, cur_plain)
+                if (cpl >= 8
+                        and cpl >= len(self._shown_en_plain) * 0.35
+                        and self._shown_en_plain.startswith(cur_plain[:cpl])):
+                    self._append_stop.set()
+                    self._streaming_active = False
+                    attr = self._spans_to_attributed(
+                        _truncate_spans(state.current, cpl))
+                    self._set_attr(self._field_en, attr)
+                    self._shown_en_plain = cur_plain[:cpl]
+                    self._shown_en_final = False
+                    self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
+                else:
+                    # new caption: hard-swap (just appear, no typing)
+                    import os
+                    if os.environ.get("OV_DEBUG"):
+                        print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
+                    self._append_stop.set()
+                    self._streaming_active = False
+                    attr = self._spans_to_attributed(state.current)
+                    self._set_attr(self._field_en, attr)
+                    self._shown_en_plain = cur_plain
+                    self._shown_en_final = not is_provisional
         elif (cur_plain and not is_provisional
               and not getattr(self, "_shown_en_final", False)):
             # same text, provisional → final: flip to bright IN PLACE (no retype)
@@ -501,6 +519,24 @@ class OverlayRenderer:
             self._src_last_committed = committed
             self._stream_src_delta(full)
             return
+        # reword (the hypothesis re-decoded): keep the common prefix on screen
+        # and type the divergent suffix — same grammar as the EN row. Only when
+        # the committed part is unchanged (the boundary text is stable).
+        prev_full_eff = prev_full
+        if prev_full and full:
+            cpl = 0
+            m = min(len(prev_full), len(full))
+            while cpl < m and prev_full[cpl] == full[cpl]:
+                cpl += 1
+            if cpl >= 2 and cpl >= len(committed):
+                self._src_last_committed = committed
+                self._src_streaming_target = ""
+                self._src_streaming = False
+                self._last_src_full = full[:cpl]
+                self._last_src_key = (full[:len(committed)], full[len(committed):cpl])
+                self._render_src_text(full[:cpl], len(committed))
+                self._stream_src_delta(full)
+                return
         # rewrite / shrink / first show: hard-swap (no typing)
         self._src_stop.set()
         self._src_streaming = False

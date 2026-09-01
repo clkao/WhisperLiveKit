@@ -121,6 +121,54 @@ class _noop:
     def __exit__(self, *a): pass
 
 
+def _truncate_spans(spans, n: int) -> list:
+    """Spans covering the first n characters (the boundary span is split)."""
+    out = []
+    used = 0
+    for sp in spans:
+        if used + len(sp.text) <= n:
+            out.append(sp)
+            used += len(sp.text)
+        elif used < n:
+            out.append(Span(sp.text[:n - used], sp.style))
+            used = n
+            break
+        else:
+            break
+    return out
+
+
+def _spans_after(spans, n: int) -> list:
+    """Spans covering everything beyond the first n characters."""
+    out = []
+    used = 0
+    for sp in spans:
+        t = sp.text
+        if used + len(t) <= n:
+            used += len(t)
+            continue
+        if used < n:
+            t = t[n - used:]
+            used = n
+        out.append(Span(t, sp.style))
+    return out
+
+
+def _common_prefix_len(a: str, b: str) -> int:
+    """Char common prefix, backtracked to a word boundary of `a` (CJK chars
+    are their own words — no backtrack needed there)."""
+    n = 0
+    m = min(len(a), len(b))
+    while n < m and a[n] == b[n]:
+        n += 1
+    if n < len(a) and n > 0:
+        # backtrack to the last space so the kept prefix ends on a word edge
+        cut = a.rfind(" ", 0, n + 1)
+        if cut > 0:
+            n = cut + 1
+    return n
+
+
 class OverlayDisplayModel:
     """Pure display-state state machine for the overlay's EN lines.
 
@@ -213,8 +261,22 @@ class OverlayDisplayModel:
             self._dirty = True
             return
         if shown and not self._en_is_final:
-            # draft rewrite: replace in place — the stale draft is discarded,
-            # NOT scrolled into history (it was wrong; history shows finals).
+            # draft rewrite: the MT self-corrected mid-draft. Keep the common
+            # prefix on screen (word-aligned) and enqueue only the divergent
+            # suffix as an AMEND — the correction types out instead of the
+            # whole line flashing (CL: non-appending provisional). A rewrite
+            # is never scrolled to history (it was wrong; history shows finals).
+            cpl = _common_prefix_len(shown, plain)
+            if cpl > 0:
+                self._en_plain = shown[:cpl]
+                self._en_spans = _truncate_spans(self._en_spans, cpl)
+                spans = _segments_to_spans(segments, is_final=False)
+                delta_spans = _spans_after(spans, cpl)
+                self._enqueue(delta_spans, plain[cpl:], started_at,
+                              is_final=False, amend=True)
+                self._en_shown_at = self._clock() - self._hold
+                self._dirty = True
+                return
             self._en_plain = ""
             self._en_spans = []
         spans = _segments_to_spans(segments, is_final=False)
@@ -266,7 +328,8 @@ class OverlayDisplayModel:
         spans = _segments_to_spans(segments, is_final=True)
         self._enqueue(spans, plain, started_at, is_final=True)
 
-    def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool, respect_hold: bool = False) -> None:
+    def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool,
+                 respect_hold: bool = False, amend: bool = False) -> None:
         utt_t = started_at.timestamp() if started_at is not None else None
         # If this final corrects a provisional of the same utterance currently on screen,
         # replace in place: drop the provisional so the drainer won't scroll it up.
@@ -275,7 +338,7 @@ class OverlayDisplayModel:
             self._en_plain = ""
             self._en_spans = []
         self._queue.clear()
-        self._queue.append((spans, plain, utt_t, is_final))
+        self._queue.append((spans, plain, utt_t, is_final, amend))
         if not respect_hold:
             self._en_shown_at = -self._hold  # release immediately on the next tick
         # else: the queued item waits for the shown caption's hold to elapse

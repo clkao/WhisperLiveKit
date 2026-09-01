@@ -101,3 +101,56 @@ def test_reword_retraction_held():
     m.set_partial("确的切除肿瘤组织。", committed_len=9)
     st = m.tick()
     assert st.partial == "确的切除肿瘤组织。"
+
+
+def test_reworded_provisional_amends():
+    """A reworded LONGER draft must amend (keep the common prefix, type the
+    divergent suffix), not hard-swap the whole line — for both the EN (MT)
+    row and the src (ASR) row."""
+    import time as _t
+    from whisperlivekit.overlay import OverlayRenderer as R
+    from whisperlivekit.overlay_model import PROVISIONAL
+
+    r = R(overlay_mode="both")
+
+    class C:
+        now = 0.0
+        def __call__(self): return self.now
+        def advance(self, s): self.now += s
+    clk = C()
+    r._model = OverlayDisplayModel(hold_sec=3.5, clock=clk)
+    class F: pass
+    r._field_en = en = object(); r._field_en_prev = object()
+    r._field_partial = partial = object()
+    events = []
+    r._set = lambda field, value: events.append(str(value)) if field is en else None
+
+    def fake_attr(self, spans):
+        if not spans:
+            return None
+        return ("DIM:" if spans[0].style == PROVISIONAL else "BRIGHT:") + \
+            "".join(sp.text for sp in spans)
+    R._spans_to_attributed = fake_attr
+    R._spans_to_attributed_simple = staticmethod(
+        lambda t, prov: ("DIM:" if prov else "BRIGHT:") + t)
+    r._set_attr = lambda field, attr: events.append(attr[:90]) if field is en else None
+
+    def tick_render(n=12):
+        for _ in range(n):
+            st = r._model.tick()
+            if st is not None:
+                r._reconcile(st)
+            time.sleep(0.02)
+
+    r.preview("mic", [(None, "Today we will discuss the applications of laser in medicine")], datetime.now())
+    tick_render(8)
+    # a reword arrives: LONGER but not a prefix-extension
+    r.preview("mic", [(None, "Today we will discuss laser applications in medicine and surgery.")], datetime.now())
+    for _ in range(30):  # pump the drainer so the amend pops and types out
+        st = r._model.tick()
+        if st is not None:
+            r._reconcile(st)
+        time.sleep(0.02)
+    time.sleep(0.6)  # let the streaming thread finish typing the correction
+    # the correction must type out (multiple renders), not flash in one frame
+    assert len(events) >= 3, f"reword provisional did not amend: {events!r}"
