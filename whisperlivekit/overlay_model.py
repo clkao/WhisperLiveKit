@@ -280,11 +280,14 @@ class OverlayDisplayModel:
             self._en_plain = ""
             self._en_spans = []
         spans = _segments_to_spans(segments, is_final=False)
-        # respect_hold only when a FINAL is on screen: the draft queues behind
-        # it so the reader keeps the polished sentence for its full hold.
-        # An empty or rewritten draft row shows immediately.
+        # drafts ALWAYS release immediately. Queuing a draft behind a shown
+        # final's hold starves it: during continuous speech the next final
+        # always lands before the hold elapses and clears the queue, so the
+        # reader never sees a provisional (CL: 'no provisional for mt?'). The
+        # draft covers the same clause content as the final it replaces, so
+        # nothing is lost by replacing it.
         self._enqueue(spans, plain, started_at, is_final=False,
-                      respect_hold=shown and self._en_is_final)
+                      respect_hold=False)
 
     def translation(self, segments: list, started_at) -> None:
         """Final translation. Only AMEND — don't retype what's already shown. Keep the
