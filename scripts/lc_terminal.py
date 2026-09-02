@@ -628,6 +628,11 @@ async def run_file(args, sink, ocr_loop=None, stop_event=None, on_hotwords=None)
                 return
             stopper.cancel()
             await feed_task
+            # Release the to_thread waiter. Event.wait is not interruptible by
+            # task cancellation, so a normal completion (no ^C) left the worker
+            # thread blocked in Event.wait forever — the executor's shutdown
+            # then joined it for 300s and the process never exited.
+            stop_event.set()
         else:
             await h.feed(args.audio, speed=1.0)
         await h.drain(8.0)
