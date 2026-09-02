@@ -295,3 +295,24 @@ Debug technique that found it: python -X faulthandler + kill -ABRT the
 python PID directly ($! after a compound `cd && python &` is the subshell,
 not python). Also: [mic-diag] log lines are AudioProcessor chunk counters,
 not a mic stream.
+
+## Addendum 8 — time frontier MEASURED on real clips; fractional-tail mechanism
+Commit bcb0467 (integration, not pushed): --simul-frontier time (default auto).
+Measured A/B, same audio, qwen3, same ASR text, LC_SIMUL_HEAD=9,5:
+- zh→en (zh_long.wav): text 0.63 (0.57/0.71/0.84/0.40) → time 0.87 (1.00/0.64/0.95/0.90). Churn identical (4/15 retractions both).
+- en→zh (demo_en_30s.wav): text 0.55 FAIL (0.20/1.00/1.00/0.00) → time 0.70 PASS (0.30/1.00/1.00/0.50). Churn 0.38→0.33.
+Mechanism: NOT word timestamps (qwen3 tokens are commit-granular, start==end).
+_accessible_text() fractionally releases the UNSTABLE TAIL: frac=(audio_pos-
+tail.start)/tail_dur, accessible += tail_text[:len*frac]. Time-proportional
+access to uncommitted text = word-level access without word timestamps.
+Risk: commits can land in ASR-revisable text (deviation from paper's
+committed-only frontier). Protections: dim/provisional grammar (draft
+retractions legal), display holds reword-retractions (amend-not-swap), final
+is full re-translation. Measured cost so far: zero added churn on both clips.
+Real name revision observed in en clip (伊利亚拉德→阿迪尔·比拉德) — display held
+bright text until final corrected it.
+BPE rounding-down absorbs mid-word fractional cuts for Latin scripts
+(docstring: committed_src_end_from_text rounds to whole BPE tokens).
+Nemotron note: 0.6b zh is garbage (ceiling) — time frontier's zh win is from
+fractional tail access on qwen3, NOT nemotron timestamps. Nemotron A/B
+deprioritized. Placement of bcb0467 undecided (candidate: #423 stacked).
