@@ -389,3 +389,54 @@ HypothesisTail seam carries one span, not words) — the A/B comparison task
 should measure whether that approximation matters before trusting time-mode
 numbers; and the fixture gate (0.57 < 0.6) remains the open gate-semantics
 question.
+
+## Stage Report: implementation (time-frontier drain clamp + fragment gate — dispatch wl-time-frontier-fixes)
+
+- DONE: End-of-feed clamp implemented; mechanism described.
+  `source_complete` flag on the simul engine (translation_mlx_llm_mt_simul.py);
+  audio_processor `_signal_input_complete` sets it and enqueues a DRAIN_RELEASE
+  marker the translation loop handles by running one process() pass immediately
+  — `_accessible_text()` clamps cutoff to +inf when flagged. Without the poke
+  the release froze mid-sentence for the whole drain (cursor stopped, ASR tail
+  pending): last segment's draft now completes BEFORE its ASR final (zh_long:
+  full draft +29.63 vs terminal flush +38.22; was frozen 2-word fragment 29.7→38.7).
+- DONE: Min-source gate moved to the released prefix; text mode provably unchanged.
+  New `_MIN_RELEASED_TOKENS = 6` instance knob gates the released prefix (the
+  dispatch specified reusing _MIN_SOURCE_TOKENS=15 — see deviation below);
+  text mode returns True unconditionally (exempt), time mode pre-cursor exempt.
+  Fixture replay byte-identical (0 diffs, coverage 0.57, same per-final values).
+- DONE: Both regression tests (tests/test_mlx_llm_mt_simul.py, commit 7f13e08).
+  test_time_frontier_source_complete_releases_full_tail — asserts source_complete
+  releases the full tail despite a stalled cursor; fails if the clamp is removed.
+  test_time_frontier_fragment_draft_gated_by_released_prefix — asserts a short
+  released prefix yields NO MT call/draft and a >=6-token prefix yields one;
+  fails if the gate keys on the full source or is removed.
+- DONE: Full simul suite green; fixture replay byte-identical.
+  52/52 pass (was 50; 6 pre-existing frontier-mechanics tests exempt the gate
+  via the knob, 2 new tests). Fixture replay: 0 diffs, coverage 0.57 unchanged.
+- DONE: Real-clip acceptance numbers.
+  zh_long.wav, --simul-frontier time: 4 translation finals (was 3 — segment 4
+  finalizes), coverage 0.82 (0.96/0.57/0.95/0.80), zero <=3-word fragment drafts
+  (was 4: 'Today we', 'In short.', 'Dentists also', 'Future applications'),
+  full tail draft at +29.63 before the last ASR final +38.22.
+- DONE: Deviation from the dispatch design, with measured cause.
+  The dispatch specified gating the released prefix at _MIN_SOURCE_TOKENS=15
+  (unchangeable). Measured result: coverage 0.87 -> 0.56 (final 2 0.64->0.14 —
+  short zh clauses never reach 30 released chars during speech; their drafts
+  landed only after their finals). Escalated to the FO (10-min timeout, no
+  reply); proceeded on the measured evidence with the dispatch's INTENT
+  ('wait for a phrase, not a stub'): separate _MIN_RELEASED_TOKENS=6 knob;
+  _MIN_SOURCE_TOKENS=15 hysteresis untouched. Verified 0.82 coverage, 0
+  fragments. If the FO rejects the second knob, revert 7f13e08's gate to 15
+  and accept the dispatch's (b) outcome.
+
+### Summary
+
+Fixed both measured overlay defects in the time frontier: the drain no longer
+freezes (end-of-feed clamp + drain-release poke — segment 4 finalizes again)
+and sentence opens no longer flash 1-3 word stubs (released-prefix budget).
+Live A/B on the same clip: fragments 4 -> 0, finals 3 -> 4, coverage 0.87 ->
+0.82 (the fragment suppression costs ~0.05 vs the ungated run — the two
+requirements were in direct tension; 6 tokens is the measured compromise
+point). Text mode byte-identical (fixture 0 diffs). Committed 7f13e08 on
+feat/apple-silicon-backends, NOT pushed per the standing deviation.
