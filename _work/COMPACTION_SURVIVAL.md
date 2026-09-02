@@ -276,3 +276,11 @@ Commit dda8aa1 on feat/apple-silicon-backends:
 5. Gotchas: _MIN_SOURCE_TOKENS is an INSTANCE attr (not class); ad-hoc
    coverage scripts must accumulate provisional words into `seen` per
    final (bitten twice — use simul_fixture.py replay, not ad-hoc loops).
+
+## Addendum 6 — paper is now the default commit policy
+CL: no backward-compat concerns, no users. Defaults switched to "paper" in
+config.py (mlx_llm_mt_simul_commit), core.py getattr fallback, the simul
+engine constructor, and lc_terminal --simul-commit. argmax/mass remain
+explicit choices. Fixture default replay = 0.59 (paper); live 0.69 PASS.
+Note: the simul constructor had the ONLY commit_mode default (the base
+class has none); the "two sites" I thought I saw were one.
