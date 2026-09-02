@@ -330,3 +330,12 @@ Validation is not approved in cycle 1. The required 4-test command passes and th
 ### Summary
 Fixed the AC-1 blocker from cycle-1 validation: NemotronMLXASR.__init__ now normalizes the user-supplied language tag against the model's prompt_dictionary before validation, mirroring livecaption's normalize_asr_language. The _normalize_language function resolves bare 2-letter primaries (zh→zh-CN, en→en-US) via default-tag mapping and primary-prefix fallback, raising ValueError only when no mapping is found. Eight unit tests cover the normalization (zh→zh-CN, en→en-US, exact passthrough, case-insensitivity, auto, unknown-raises, unique-prefix, default-preference-on-ambiguity). All 12 tests pass (4 original + 8 new). The nemotron-mlx-asr extra remains pure-MLX (mlx + mlx-audio, no torch/transformers).
 
+
+## Note: time-based frontier adapter placement (port dispatch wl-port-423-simul-fixes)
+
+The ensign porting the simul fixes to PR #423 evaluated where the AccessibleBoundary adapter belongs. Recommendation, consistent with this entity's own plan (see "This task ships the backend; the adapter + comparison consume it" above):
+
+- NOT inside PR #426. #426's review scope is a pure additive backend; the PR is open with that scope. Keeping it pure preserves the review surface.
+- The adapter should be a follow-up branch stacked on the rebased #426 head (currently d7c1e6d, on top of the #425/#423 stack), built when the research part starts — the entity already designates the adapter + comparison as research (no dev-workflow commission).
+- One small enabler belongs to the #423 subsystem, additive and behavior-preserving: the simul engine derives its frontier internally (`committed_src_end_from_text`); the adapter needs an override hook to supply a frontier index directly (nemotron word-end times → token index). Land that hook WITH the adapter, not in #423's current review cycle.
+- Evidence: per-token `AlignedToken.start` timestamps exist in `asr_nemotron_mlx.py`'s decode loop; the paper policy in `simul_mt_capture.py` is frontier-source-agnostic (consumes `committed_src_end` as an argument).
