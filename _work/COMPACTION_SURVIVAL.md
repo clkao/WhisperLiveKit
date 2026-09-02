@@ -240,3 +240,14 @@ unattainable; paper uses stabilized argmax vs frontier with mass gates at 0)
 Fix order: (1) word-level accessible frontier, (2) paper's decision rule,
 (3) then re-measure. The litmus stays scripts/check_simul_heads.py (draft
 coverage; 0.35 today, pass ≥ 0.6).
+
+## Addendum 4 — deterministic gate exists now
+scripts/simul_fixture.py: record (one live run → tests/golden/
+simul_zh_long_calls.jsonl, the engine's full interface stream) + replay
+(fresh engine, greedy sampler). Verified deterministic: 0 diffs in-process
+(--twice) AND across separate processes. Replays reproduce the live 4
+finals. Baseline: coverage 0.27 FAIL — the number the frontier + policy
+fixes must move to ≥ 0.6. Gotcha fixed en route: replay state reset must
+use engine.new_session() (hand-rolled field resets leak _last_buffer /
+_committed_start etc. → 23 diffs). Finals arrive via process() rows
+(_pending_finals flush), not validate rows.
