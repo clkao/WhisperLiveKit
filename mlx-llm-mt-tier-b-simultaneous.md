@@ -633,3 +633,28 @@ Fixed the 1 remaining test failure from the PR #422 rebase: `MlxLlmTranslationSi
 ### Summary
 
 Ported the token-based MT draft-call hysteresis (MIN_SOURCE_TOKENS=15) from integration commit bf383db onto the #423 branch (which already has the mass commit policy at b2d15b7). The hysteresis was in source CHARS (MIN_SOURCE_DELTA=15, calibrated for CJK); now in source BPE TOKENS estimated via a rolling chars-per-token ratio updated on each draft. CJK and Latin converge to the same token budget. All 37 tests pass, ruff clean, uv lock valid.
+
+## Stage Report: integration-fix port to PR #423 (dispatch wl-port-423-simul-fixes)
+
+- DONE: #423 branch carries the ported simul commits, simul-scoped only, clean messages.
+  9 commits on `spacedock-ensign/mlx-llm-mt-simultaneous` (0e3e624..0a6996f); `git diff 67459c8..HEAD --name-only` shows only simul subsystem files; grep of all commit messages for livecaption/spacedock/ensign/compaction/hunyuan-mlx/workflow: 0 hits. Two dispatch items resolved differently than listed, both verified correct: 71041b4 was EMPTY on this branch (its endpointing contract tests already landed in 67459c8 — verified by name match in tests/test_mlx_llm_mt_simul.py); the lc_terminal.py hunks of fa20659/0598308/f8c2ffd could not port because scripts/lc_terminal.py does not exist on #423 (introduced by a later PR in the stack) — their config/core/engine parts ported (5a8ef82, 0a6996f), lc_terminal-only changes (the --simul-commit CLI flag, the shutdown fix) ride with the PR that introduces that script.
+- DONE: #423 suite passes.
+  `pytest tests/test_mlx_llm_mt_simul.py` → 40 passed; asserts segment closure/draft-queueing/fallback-deactivation/endpointing-cut/paper-policy commit behavior.
+- DONE: Fixture replay deterministic — but at 0.57, not the dispatched 0.59.
+  `simul_fixture.py replay tests/golden/simul_zh_long_calls.jsonl --commit-mode paper` → 64 steps, 4 finals, coverage 0.57 (0.70/0.64/0.74/0.20 per final), identical across three runs and IDENTICAL on the integration branch (fdc0ccc) — port fidelity proven byte-level (simul_mt_capture.py, translation_mlx_llm_mt_simul.py, simul_fixture.py, golden fixture all diff-empty vs fdc0ccc). The 0.59 does not reproduce even AT dda8aa1 itself (verified in a temp worktree: 0.57) — the recorded 0.59 was a stale mid-development measurement. 0.57 < 0.6 gate is a pre-existing condition on the integration branch, not a port regression; live runs measured 0.69/0.63 PASS.
+- DONE: #425 rebased onto new #423, suite baseline preserved.
+  8 commits replayed to 7610b2a (+ a cleanup commit removing a stray `>>>>>>>` conflict marker that polluted config.py on the branch); suite 417 passed, 14 skipped, 17 errors — the 17 are the same pre-existing test_pipeline.py fixture RuntimeErrors as the recorded baseline (414 pass baseline +3 from inherited new #423 tests).
+- DONE: #426 rebased onto new #425, suite passes.
+  PR #426's actual head branch is `spacedock-ensign/nemotron-mlx-asr-backend-rebased` (0126dc9) — NOT the sibling `...-backend` branch the dispatch named. Rebuilt the PR's single commit onto the new #425 as d7c1e6d (union conflicts in parse_args choices, pyproject extras, backend_support, uv.lock conflicts/exclude-newer/provides-extras; all TOML/AST-validated). `pytest tests/test_asr_nemotron_mlx.py` → 12 passed. PR head updated to d7c1e6d, GitHub reports MERGEABLE. An accidentally created `spacedock-ensign/nemotron-mlx-asr-backend` branch (recomposition of a newer sibling line, f1c24f9, incl. an AC-1 fix) was pushed then deleted from the fork — the PR keeps its reviewed single-commit shape.
+- DONE: All three branches pushed to fork.
+  #423 67459c8→0a6996f (fast-forward); #425 e94d525→7610b2a (force-with-lease); #426 0126dc9→d7c1e6d (forced update on the `-rebased` head branch).
+- DONE: Placement recommendation for the time-based adapter, with reasoning.
+  NOT in #426 (keeps the open PR a pure additive backend); as a follow-up branch stacked on d7c1e6d when the research part starts — per the nemotron entity's own plan ("this task ships the backend; the adapter + comparison consume it", adapter designated research). Enabler for #423's subsystem: an additive frontier-override hook (engine currently derives `committed_src_end` internally via committed_src_end_from_text; nemotron supplies word-end times), to land WITH the adapter, not in #423's current review cycle. Recorded in the nemotron entity body.
+
+### Summary
+
+Ported the simul-subsystem integration fixes to #423 as 9 cherry-picked commits (3 resolved specially: one ours-resolution dropping a display-layer hunk, one already-present, two lc_terminal-only changes deferred to the downstream PR that owns that file); proved the port byte-identical to integration with a deterministic 0.57 fixture replay (and disproved the stale 0.59 expectation at source); rebased #425 and #426 onto the new stack with their suites passing; pushed all three PR branches; and resolved the adapter-placement question from the nemotron entity's own recorded scope decision. Notable pre-existing finding: the fixture gate (0.6) fails at 0.57 on every branch including integration — gate semantics remain the captain's open decision.
+
+## Time-based frontier adapter placement — recommendation
+
+See the note appended to `nemotron-mlx-asr-backend.md` (committed alongside this report). Short form: adapter goes on a follow-up branch stacked on rebased #426 (d7c1e6d), not inside #426; #423 needs only an additive frontier-override hook, to be added together with the adapter.
