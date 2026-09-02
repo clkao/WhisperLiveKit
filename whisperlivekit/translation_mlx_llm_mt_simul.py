@@ -79,6 +79,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         mass_threshold: float = 0.5,
         simul_soft_max_s: float = 4.0,
         simul_hard_max_s: float = 20.0,
+        frontier_mode: str = "text",
+        hold_back_s: float = 0.0,
     ):
         super().__init__(
             model_id=model_id,
@@ -90,6 +92,18 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         self._mass_threshold = mass_threshold
         self._simul_soft_max_s = simul_soft_max_s
         self._simul_hard_max_s = simul_hard_max_s
+        # Accessible-frontier source for the commit policy. "text": the
+        # ASR-committed text prefix (advances at the ASR commit cadence).
+        # "time": source words whose end time is behind the audio cursor
+        # (``audio_position``, a plain data field set by the audio processor)
+        # minus ``_hold_back_s`` — decouples the frontier from the commit
+        # cadence for backends with word-accurate token times (nemotron).
+        self._frontier_mode = frontier_mode
+        self._hold_back_s = hold_back_s
+        # Audio cursor (seconds of audio consumed), set externally by the
+        # audio processor each cycle. None = unknown (time mode then falls
+        # back to the text frontier).
+        self.audio_position: Optional[float] = None
         # Per-instance simultaneous state.
         self._tail: Optional[HypothesisTail] = None
         self._committed_simul: List[ASRToken] = []  # committed tokens (open utterance)
@@ -185,6 +199,8 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             warmup=False,
             commit_mode=self._commit_mode,
             mass_threshold=self._mass_threshold,
+            frontier_mode=self._frontier_mode,
+            hold_back_s=self._hold_back_s,
         )
 
     # ------------------------------------------------------------------
@@ -235,8 +251,10 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         release-without-call path.
 
         ``source_text`` is the full source the MT conditions on (committed
-        prefix + unstable tail). ``committed_text`` is the stable prefix
-        whose source tokens count as committed for the policy.
+        prefix + unstable tail). ``committed_text`` is the accessible source
+        prefix whose tokens count as committed for the policy — the ASR-committed
+        text under the text frontier, or the cursor-covered prefix under the
+        time frontier.
         """
         from mlx_lm import stream_generate  # lazy
 
@@ -370,6 +388,57 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
     def _committed_text(self) -> str:
         return "".join(t.text for t in self._committed_simul).strip()
 
+    def _accessible_text(self) -> str:
+        """Time-frontier mode: the source prefix the audio cursor has covered.
+
+        A committed token is accessible once its end time is at least
+        ``_hold_back_s`` behind the cursor. The tail is heard but unstable; its
+        words carry no per-word times through the ``HypothesisTail`` seam, so
+        the accessible tail prefix is interpolated proportionally over the
+        tail's own [start, end] window (documented approximation — the true
+        per-word times exist only inside the ASR backend). The result is a
+        character prefix of ``_source_text()``; ``committed_src_end_from_text``
+        then rounds down to whole BPE tokens, which absorbs mid-word cuts.
+
+        Falls back to the text frontier when no cursor has been seen yet
+        (``audio_position is None``) — identical to text mode.
+        """
+        now = self.audio_position
+        if now is None:
+            return self._committed_text()
+        cutoff = now - self._hold_back_s
+        parts = []
+        for t in self._committed_simul:
+            if (t.end or 0) <= cutoff:
+                parts.append(t.text)
+        accessible = "".join(parts).strip()
+        tail_text = (self._tail.text or "").strip() if self._tail else ""
+        if tail_text and accessible:
+            # Mirror _source_text's stale-tail drop (variant spellings defeat
+            # exact containment; the hypothesis predating the commit boundary
+            # means it never advanced past the committed words).
+            in_prefix = tail_text in accessible
+            predates = bool(self._committed_simul) and \
+                (self._tail.end or 0) <= (self._committed_simul[-1].end or 0)
+            if in_prefix or predates:
+                tail_text = ""
+        if tail_text and self._tail is not None:
+            dur = (self._tail.end or 0) - (self._tail.start or 0)
+            if dur > 0:
+                frac = min(1.0, max(0.0, (cutoff - (self._tail.start or 0)) / dur))
+            else:
+                frac = 1.0 if (self._tail.end or 0) <= cutoff else 0.0
+            accessible += tail_text[: int(len(tail_text) * frac)]
+        return accessible
+
+    def _frontier_text(self) -> str:
+        """The accessible source prefix for the commit policy: the committed
+        text under the text frontier, the cursor-covered prefix under the
+        time frontier."""
+        if self._frontier_mode == "time":
+            return self._accessible_text()
+        return self._committed_text()
+
     def _source_text(self) -> str:
         """Full source the MT conditions on: committed prefix + unstable tail.
 
@@ -481,6 +550,10 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         # 2. Open utterance: simultaneous provisional over committed + tail.
         source = self._source_text()
         committed = self._committed_text()
+        # The commit policy's accessible boundary: the committed prefix under
+        # the text frontier, or the cursor-covered prefix under the time
+        # frontier (always a prefix of ``source``).
+        accessible = self._frontier_text()
         has_content = bool(committed) or bool(
             self._tail and (self._tail.text or "").strip()
         )
@@ -504,19 +577,19 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         if self._last_draft is not None:
             char_delta = len(source) - len(self._last_source_text)
             token_delta = char_delta / self._chars_per_token
-            # The release maps the committed text against the CACHED source
-            # span — it only works while the committed text is a prefix of
+            # The release maps the accessible text against the CACHED source
+            # span — it only works while the accessible text is a prefix of
             # it (source invariant under the committed/tail split). When the
             # ASR committed words BEYOND the cached draft's span (new source
             # words), the boundary mapping fails and the release emits
             # nothing — the display starves until a fresh call. Require the
             # fresh draft in that case too.
-            release_ok = committed and self._last_source_text.startswith(committed)
+            release_ok = accessible and self._last_source_text.startswith(accessible)
             if token_delta < self._MIN_SOURCE_TOKENS and release_ok:
                 # Source unchanged or grew but not enough: release held
                 # tokens from the cached draft without a new MT call.
-                if committed:
-                    released = self._release_held(committed)
+                if accessible:
+                    released = self._release_held(accessible)
                     if released and len(released) > len(self._emitted_partial):
                         self._emitted_partial = released
             else:
@@ -524,7 +597,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                 self._mt_call_count += 1
                 _t0 = time.perf_counter()
                 try:
-                    committed_out = self._translate_simul(source, committed)
+                    committed_out = self._translate_simul(source, accessible)
                 except Exception as exc:
                     logger.warning("mlx-llm-mt-simul simul draft failed: %s", exc)
                     return None, self._buffer()
@@ -537,7 +610,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             self._mt_call_count += 1
             _t0 = time.perf_counter()
             try:
-                committed_out = self._translate_simul(source, committed)
+                committed_out = self._translate_simul(source, accessible)
             except Exception as exc:
                 logger.warning("mlx-llm-mt-simul simul draft failed: %s", exc)
                 return None, self._buffer()

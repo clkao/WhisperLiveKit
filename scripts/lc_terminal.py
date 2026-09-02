@@ -132,6 +132,9 @@ def _make_engine_kwargs(args) -> dict:
         kw["nemotron_mlx_asr_model"] = args.nemotron_mlx_asr_model
     if getattr(args, "simultaneous", False) and getattr(args, "simul_commit", None):
         kw["mlx_llm_mt_simul_commit"] = args.simul_commit
+    if getattr(args, "simultaneous", False) and getattr(args, "simul_frontier", None):
+        kw["mlx_llm_mt_simul_frontier"] = args.simul_frontier
+        kw["mlx_llm_mt_simul_hold_back_s"] = args.simul_hold_back
     elif args.backend == "qwen3-vllm-metal":
         kw["qwen3_vllm_metal_audio_backend"] = args.qwen3_vllm_metal_audio_backend
         kw["qwen3_vllm_metal_tower_checkpoint"] = args.qwen3_vllm_metal_tower_checkpoint
@@ -1115,6 +1118,15 @@ def main() -> None:
                         "or paper (the paper's stabilized-argmax rule: head-averaged rows, Welford z-norm, width-7 median "
                         "filter, argmax vs the accessible frontier, mass gates off — arxiv 2606.03967 §4.4). "
                         "Measured best on the replay fixture (coverage 0.59 vs 0.54 mass, 0.27 shipped).")
+    p.add_argument("--simul-frontier", choices=["auto", "text", "time"], default="auto",
+                   help="Accessible-frontier source for the commit policy: text (ASR-committed prefix, "
+                        "advances at the ASR commit cadence, works for every backend), time (source words "
+                        "whose end time is behind the audio cursor — needs word-accurate token times, "
+                        "i.e. nemotron), or auto (time for nemotron, text otherwise).")
+    p.add_argument("--simul-hold-back", type=float, default=0.0,
+                   help="Conservative hold-back for the time frontier, in seconds: source words become "
+                        "accessible only once their end time is this far behind the audio cursor "
+                        "(0 = the paper's 0ms; 0.25 = its conservative variant).")
 
     args = p.parse_args()
 

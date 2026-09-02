@@ -850,3 +850,176 @@ def test_release_requires_committed_within_cached_span():
     # the release cannot map the longer committed text — a fresh draft fires
     assert calls["n"] >= 2, "the fresh draft did not fire when the committed outgrew the cache"
     assert "DRAFT-2" in (buf.text or ""), (buf.text or "")
+
+
+# ---------------------------------------------------------------------------
+# time-based accessible frontier (opt-in; text frontier unchanged by default)
+# ---------------------------------------------------------------------------
+
+def test_frontier_default_is_text_and_text_mode_uses_committed():
+    """Default frontier_mode is "text"; text mode maps the committed text
+    exactly as before (the time machinery must not engage)."""
+    b = _make_simul()
+    assert b._frontier_mode == "text"
+    captured = {}
+
+    def fake_simul(source, committed):
+        captured["committed"] = committed
+        return "Hello"
+
+    b._translate_simul = fake_simul
+    b.audio_position = 10.0  # even with a cursor set, text mode ignores it
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
+    b.process()
+    assert captured["committed"] == "你好"
+
+
+def test_time_frontier_no_cursor_falls_back_to_text():
+    """Time mode without a cursor (audio_position None) is identical to text
+    mode — safe degradation, not a crash."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
+    b.process()
+    assert captured["committed"] == "你好"
+
+
+def test_time_frontier_extends_into_tail_by_cursor():
+    """Time mode: the accessible prefix extends INTO the tail proportionally
+    over the tail's window. Cursor 0.8 covers the committed token (end 0.5)
+    plus 0.3 of the tail's 0.5s window → 60% of its chars."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("abcd", 0.5, 1.0)])
+    b.audio_position = 0.8
+    b.process()
+    # committed "你好" + 60% of the 4-char tail "abcd" → "ab"
+    assert captured["committed"] == "你好ab"
+
+
+def test_time_frontier_fully_covered_tail_equals_source():
+    """Cursor past the tail end: the whole source is accessible (this is the
+    no-hold degenerate case the paper's hold-back guards)."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
+    b.audio_position = 1.5
+    b.process()
+    assert captured["committed"] == "你好世界"
+
+
+def test_time_frontier_respects_hold_back():
+    """Hold-back delays accessibility: with 0.5s hold-back and cursor 0.8,
+    a token ending at 0.5 is NOT yet accessible (0.5 > 0.8 - 0.5 is false →
+    0.5 <= 0.3 fails) and the tail (starting 0.5) is untouched."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+        hold_back_s=0.5,
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
+    b.audio_position = 0.8
+    b.process()
+    assert captured["committed"] == ""
+
+
+def test_time_frontier_hold_back_zero_includes_just_finished_word():
+    """0ms hold-back (the paper's default): a word whose end time equals the
+    cursor is accessible immediately."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5)])
+    b.audio_position = 0.5
+    b.process()
+    assert captured["committed"] == "你好"
+
+
+def test_time_frontier_stale_tail_still_dropped():
+    """Time mode keeps the stale-tail drop: a tail whose text is already in
+    the accessible committed prefix (or predates the commit boundary) is not
+    double-counted in the accessible prefix."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("你好", 0.4, 1.0)])
+    b.audio_position = 1.5
+    b.process()
+    # the tail's text is contained in the accessible prefix → dropped
+    assert captured["committed"] == "你好"
+
+
+def test_frontier_mode_carried_by_new_session():
+    """new_session() preserves the frontier mode and hold-back."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+        hold_back_s=0.25,
+    )
+    b2 = b.new_session()
+    assert b2._frontier_mode == "time"
+    assert b2._hold_back_s == 0.25
+    assert b2.audio_position is None  # fresh state, not inherited
+
+
+def test_config_frontier_fields_exist():
+    from whisperlivekit.config import WhisperLiveKitConfig
+
+    cfg = WhisperLiveKitConfig.from_kwargs(
+        target_language="en", translation_backend="mlx-llm-mt",
+        mlx_llm_mt_simultaneous=True,
+    )
+    assert cfg.mlx_llm_mt_simul_frontier == "auto"
+    assert cfg.mlx_llm_mt_simul_hold_back_s == 0.0
+    cfg2 = WhisperLiveKitConfig.from_kwargs(
+        target_language="en", translation_backend="mlx-llm-mt",
+        mlx_llm_mt_simultaneous=True,
+        mlx_llm_mt_simul_frontier="text", mlx_llm_mt_simul_hold_back_s=0.25,
+    )
+    assert cfg2.mlx_llm_mt_simul_frontier == "text"
+    assert cfg2.mlx_llm_mt_simul_hold_back_s == 0.25
+
+
+def test_core_factory_resolves_auto_frontier_per_backend():
+    """\"auto\" resolves to the time frontier for nemotron (word-accurate
+    token times) and to the text frontier for every other backend."""
+    import re
+
+    src = open("whisperlivekit/core.py").read()
+    # the resolution expression must exist and key on the nemotron backend
+    m = re.search(r'frontier = "time" if config\.backend == "nemotron-mlx-asr" else "text"', src)
+    assert m, "auto-frontier resolution must branch on the nemotron backend"
+    # and the constructor must receive the resolved value
+    assert "frontier_mode=frontier" in src

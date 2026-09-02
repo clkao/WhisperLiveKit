@@ -967,6 +967,12 @@ class AudioProcessor:
                 if item is SENTINEL:
                     logger.debug("Translation processor received sentinel. Finishing.")
                     break
+                # Time-frontier support: keep the simul translator's audio
+                # cursor current (the accessible-frontier input for backends
+                # with word-accurate token times). Plain data field; other
+                # backends are untouched.
+                if getattr(self.translation, "_simul_active", False) and self.state.end_buffer:
+                    self.translation.audio_position = self.state.end_buffer
 
                 new_translation = None
                 new_translation_buffer = None
