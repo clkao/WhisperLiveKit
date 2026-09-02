@@ -251,3 +251,28 @@ fixes must move to ≥ 0.6. Gotcha fixed en route: replay state reset must
 use engine.new_session() (hand-rolled field resets leak _last_buffer /
 _committed_start etc. → 23 diffs). Finals arrive via process() rows
 (_pending_finals flush), not validate rows.
+
+## Addendum 5 — the two fixes landed (coverage 0.27 → 0.59), gate not yet passed
+Commit dda8aa1 on feat/apple-silicon-backends:
+1. **Frontier mapping fix** (the real root cause): committed_src_end_from_text
+   froze at the first byte-split BPE token — tok.decode of a partial UTF-8
+   token yields trailing U+FFFD, startswith failed, the loop broke, cend
+   stuck at 3/21 while committed text grew 17→37 chars. Fix: strip trailing
+   U+FFFD in the decode walk (tokenizer-agnostic; mlx-lm's TokenizerWrapper
+   is NOT callable, so return_offsets_mapping is unusable). Coverage
+   0.27 → 0.54. NOTE: the earlier "frontier frozen at pause commits"
+   conclusion was WRONG — the ASR commit stream grows fine (fixture trace);
+   the mapping bug froze the POLICY's view of it.
+2. **Paper policy** mode="paper" in apply_commit_policy: head-averaged rows
+   over the 8 calibrated heads, per-head prefix-online Welford z-norm,
+   width-7 median filter, stabilized argmax vs frontier (argmax < cend+1),
+   mass gates off. 0.54 → 0.59 (final 3: 0.10 → 0.30).
+3. Hysteresis (MIN_SOURCE_TOKENS 15→1) does NOT help (0.57): the residual
+   gap is final 3's tail sentence — the ASR has not committed it when the
+   segment closes, so the final's quality pass is by construction its
+   first release. The 0.6 gate may be over-strict for short segments;
+   discuss with CL before gaming the metric.
+4. replay --commit-mode paper --min-source-tokens N = the A/B knobs.
+5. Gotchas: _MIN_SOURCE_TOKENS is an INSTANCE attr (not class); ad-hoc
+   coverage scripts must accumulate provisional words into `seen` per
+   final (bitten twice — use simul_fixture.py replay, not ad-hoc loops).
