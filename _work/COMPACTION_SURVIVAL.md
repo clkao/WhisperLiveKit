@@ -284,3 +284,14 @@ engine constructor, and lc_terminal --simul-commit. argmax/mass remain
 explicit choices. Fixture default replay = 0.59 (paper); live 0.69 PASS.
 Note: the simul constructor had the ONLY commit_mode default (the base
 class has none); the "two sites" I thought I saw were one.
+
+## Addendum 7 — lc_terminal shutdown hang fixed; paper policy is default
+Commit f8c2ffd: run_file's ^C race used asyncio.to_thread(stop_event.wait);
+Event.wait is not cancellable, so a normal file run (event never set) left
+the worker blocked forever → executor shutdown joined it 300s → process
+never exited. Fix: stop_event.set() after feed completes. Verified exit 0
+in 53s; live check_simul_heads coverage 0.63 PASS with defaults (paper).
+Debug technique that found it: python -X faulthandler + kill -ABRT the
+python PID directly ($! after a compound `cd && python &` is the subshell,
+not python). Also: [mic-diag] log lines are AudioProcessor chunk counters,
+not a mic stream.
