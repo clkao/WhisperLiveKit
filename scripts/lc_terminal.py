@@ -1104,7 +1104,7 @@ def main() -> None:
     # --- Simultaneous MT ---
     p.add_argument("--simultaneous", action="store_true", default=False,
                    help="Use the simultaneous-MT variant (AlignAtt commit policy, calibrated zh→en Hunyuan heads)")
-    p.add_argument("--simul-commit", choices=["argmax", "mass", "paper"], default="argmax",
+    p.add_argument("--simul-commit", choices=["argmax", "mass", "paper"], default="paper",
                    help="Simul commit policy: argmax (default, brittle — single spike on unstable tail holds the token), "
                         "mass (commit if majority of attention mass is on committed source, more provisional content), "
                         "or paper (the paper's stabilized-argmax rule: head-averaged rows, Welford z-norm, width-7 median "
