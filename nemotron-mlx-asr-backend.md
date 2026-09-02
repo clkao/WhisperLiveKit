@@ -339,3 +339,53 @@ The ensign porting the simul fixes to PR #423 evaluated where the AccessibleBoun
 - The adapter should be a follow-up branch stacked on the rebased #426 head (currently d7c1e6d, on top of the #425/#423 stack), built when the research part starts — the entity already designates the adapter + comparison as research (no dev-workflow commission).
 - One small enabler belongs to the #423 subsystem, additive and behavior-preserving: the simul engine derives its frontier internally (`committed_src_end_from_text`); the adapter needs an override hook to supply a frontier index directly (nemotron word-end times → token index). Land that hook WITH the adapter, not in #423's current review cycle.
 - Evidence: per-token `AlignedToken.start` timestamps exist in `asr_nemotron_mlx.py`'s decode loop; the paper policy in `simul_mt_capture.py` is frontier-source-agnostic (consumes `committed_src_end` as an argument).
+
+## Stage Report: implementation (time-based frontier — dispatch wl-simul-time-frontier-integration)
+
+- DONE: Frontier source is opt-in with default preserving current behavior.
+  config `mlx_llm_mt_simul_frontier` default "auto" resolves to "text" for every
+  backend except nemotron-mlx-asr ("time"); the engine default is "text" and
+  `_frontier_text()` returns `_committed_text()` unchanged in text mode —
+  43 pre-existing simul tests pass untouched.
+- DONE: Time mode computes the frontier from token end times (mechanism).
+  `_accessible_text()` (translation_mlx_llm_mt_simul.py) filters committed
+  ASRTokens by `end <= audio_position - hold_back_s`, interpolates the tail's
+  accessible portion over its [start, end] window, and reuses
+  `committed_src_end_from_text` for the text→BPE boundary (rounds down).
+  `audio_position` is a plain data field refreshed by the audio processor
+  each cycle (audio_processor.py translation_processor).
+- DONE: Nemotron wired to time mode; qwen3 untouched.
+  core.py resolves `auto` → "time" only for `config.backend == "nemotron-mlx-asr"`;
+  lc_terminal exposes `--simul-frontier {auto,text,time}` / `--simul-hold-back`.
+- DONE: Existing suite green; fixture replay deterministic and unchanged.
+  tests/test_mlx_llm_mt_simul.py 50/50 pass; full-suite delta vs the
+  pre-change baseline (git stash A/B): +10 passed, identical 12 failed/43
+  errors (all pre-existing); fixture replay 0 diffs, coverage 0.57 = baseline.
+- DONE: New tests assert falsifiable claims (tests/test_mlx_llm_mt_simul.py,
+  commit bcb0467): text mode ignores a set cursor; time mode without cursor
+  degrades to text; tail interpolation (cursor 0.8 over tail 0.5–1.0 → 60%
+  of tail chars accessible); fully-covered tail = whole source; hold-back
+  0.5s blocks a token ending 0.3s behind the cutoff; 0ms hold-back admits a
+  word ending exactly at the cursor; stale tail still dropped; new_session
+  carries mode+hold-back; config fields exist; auto-resolution branches on
+  the nemotron backend. Failing any requires the corresponding behavior change.
+- DONE: Deviation noted: work landed on integration branch feat/apple-silicon-backends
+  (commit bcb0467) per captain's dispatch deviation — NOT pushed, no PR;
+  placement decided later. One design deviation from the dispatch text: the
+  config default is "auto" (not "text") so nemotron+simul gets the time
+  frontier without a flag, while every existing setup still resolves to "text"
+  (behavior-preserving; the engine-level default remains "text").
+
+### Summary
+
+Implemented the time-based accessible frontier as a data seam (no adapter
+class): frontier_mode text|time|auto + hold-back knob, audio cursor fed by
+the audio processor, accessible prefix computed from token end times and
+mapped to BPE tokens by the existing boundary function. Behavior-preserving
+for all current setups (fixture replay byte-identical, 0 diffs); nemotron
+auto-wired to time mode. Committed bcb0467 on feat/apple-silicon-backends,
+not pushed. Residual: the tail's per-word times are interpolated (the
+HypothesisTail seam carries one span, not words) — the A/B comparison task
+should measure whether that approximation matters before trusting time-mode
+numbers; and the fixture gate (0.57 < 0.6) remains the open gate-semantics
+question.
