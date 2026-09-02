@@ -898,6 +898,8 @@ def test_time_frontier_extends_into_tail_by_cursor():
         model_id="hy-mt2-1.8b-8bit", target_language="en",
         source_language="zh", warmup=False, frontier_mode="time",
     )
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
     b._translate_text = lambda text: f"[EN:{text}]"
     b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
     captured = {}
@@ -916,6 +918,8 @@ def test_time_frontier_fully_covered_tail_equals_source():
         model_id="hy-mt2-1.8b-8bit", target_language="en",
         source_language="zh", warmup=False, frontier_mode="time",
     )
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
     b._translate_text = lambda text: f"[EN:{text}]"
     b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
     captured = {}
@@ -935,6 +939,8 @@ def test_time_frontier_respects_hold_back():
         source_language="zh", warmup=False, frontier_mode="time",
         hold_back_s=0.5,
     )
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
     b._translate_text = lambda text: f"[EN:{text}]"
     b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
     captured = {}
@@ -952,6 +958,8 @@ def test_time_frontier_hold_back_zero_includes_just_finished_word():
         model_id="hy-mt2-1.8b-8bit", target_language="en",
         source_language="zh", warmup=False, frontier_mode="time",
     )
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
     b._translate_text = lambda text: f"[EN:{text}]"
     b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
     captured = {}
@@ -970,6 +978,8 @@ def test_time_frontier_stale_tail_still_dropped():
         model_id="hy-mt2-1.8b-8bit", target_language="en",
         source_language="zh", warmup=False, frontier_mode="time",
     )
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
     b._translate_text = lambda text: f"[EN:{text}]"
     b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
     captured = {}
@@ -979,6 +989,63 @@ def test_time_frontier_stale_tail_still_dropped():
     b.process()
     # the tail's text is contained in the accessible prefix → dropped
     assert captured["committed"] == "你好"
+
+
+def test_time_frontier_source_complete_releases_full_tail():
+    """End-of-input clamp: with the feed complete, the whole tail is
+    accessible even though the cursor froze mid-tail (the tail's window is
+    anchored to the ASR clock, which outlives the feed — without the clamp
+    the fractional release froze at a partial sentence for the whole drain)."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    captured = {}
+    b._translate_simul = lambda source, committed: captured.update(committed=committed) or "Hello"
+    # the fragment gate is not this test's subject: exempt the tiny source
+    b._MIN_RELEASED_TOKENS = 0
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界你好吗", 0.5, 3.0)])
+    b.audio_position = 1.5  # cursor stalled 40% into the tail's window
+    b.process()
+    assert captured["committed"] == "你好世界"  # frozen fragment before the clamp
+    b.source_complete = True
+    b.process()
+    # source_complete clamps cutoff to +inf: full tail accessible regardless
+    # of the stalled cursor; without the clamp this stays '你好世界'
+    assert captured["committed"] == "你好世界你好吗"
+
+
+def test_time_frontier_fragment_draft_gated_by_released_prefix():
+    """The min-source fragment guard gates the RELEASED prefix, not the full
+    source: a short released prefix produces NO draft (no MT call), while a
+    released prefix above the token minimum does."""
+    b = MlxLlmTranslationSimul(
+        model_id="hy-mt2-1.8b-8bit", target_language="en",
+        source_language="zh", warmup=False, frontier_mode="time",
+    )
+    b._translate_text = lambda text: f"[EN:{text}]"
+    b._ensure_simul_model = lambda: (None, None)  # type: ignore[assignment]
+    calls = {"n": 0}
+
+    def counting_simul(source, committed):
+        calls["n"] += 1
+        return "Hello"
+
+    b._translate_simul = counting_simul
+    b.insert_tokens([_token("你好", 0.0, 0.5), _tail("你好世界", 0.5, 1.0)])
+    b.audio_position = 1.0
+    b.process()
+    # released prefix 8 chars ≈ 4 tokens < 6 → no call, no draft
+    assert calls["n"] == 0
+    assert b._last_draft is None
+    # grow the released prefix past the minimum (~30 chars for zh at the
+    # seeded 2.0 chars/token) → the draft is made
+    b.insert_tokens([_tail("你好世界这一整句话远远超过了", 0.5, 3.0)])
+    b.audio_position = 3.0
+    b.process()
+    assert calls["n"] == 1
 
 
 def test_frontier_mode_carried_by_new_session():

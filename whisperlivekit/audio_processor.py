@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 SENTINEL = object() # unique sentinel object for end of stream marker
+DRAIN_RELEASE = object() # poke the translation loop: input complete, evaluate the end-of-feed release now
 MIN_DURATION_REAL_SILENCE = 5
 
 
@@ -580,6 +581,15 @@ class AudioProcessor:
 
     async def _signal_input_complete(self) -> None:
         """Signal end-of-input to the first active processing queue."""
+        # Time-frontier support: the audio cursor stops advancing at
+        # end-of-feed while the ASR keeps draining its backlog, so the
+        # simul translator's fractional tail release would freeze mid-sentence
+        # until the terminal flush. Flag the clamp and poke the translation
+        # queue to evaluate the release now.
+        _t = getattr(self, "translation", None)
+        if _t is not None and getattr(self.translation, "_simul_active", False) and self.translation_queue:
+            self.translation.source_complete = True
+            await self.translation_queue.put(DRAIN_RELEASE)
         if self.transcription_queue:
             await self.transcription_queue.put(SENTINEL)
             return
@@ -967,18 +977,33 @@ class AudioProcessor:
                 if item is SENTINEL:
                     logger.debug("Translation processor received sentinel. Finishing.")
                     break
-                # Time-frontier support: keep the simul translator's audio
-                # cursor current (the accessible-frontier input for backends
-                # with word-accurate token times). Plain data field; other
-                # backends are untouched.
-                if getattr(self.translation, "_simul_active", False) and self.state.end_buffer:
-                    self.translation.audio_position = self.state.end_buffer
+                else:
+                    # Time-frontier support: keep the simul translator's audio
+                    # cursor current (the accessible-frontier input for backends
+                    # with word-accurate token times). Plain data field; other
+                    # backends are untouched.
+                    if getattr(self.translation, "_simul_active", False) and self.state.end_buffer:
+                        self.translation.audio_position = self.state.end_buffer
 
                 new_translation = None
                 new_translation_buffer = None
                 fresh_mt = False
 
-                if isinstance(item, Silence):
+                if item is DRAIN_RELEASE:
+                    # End-of-input poke: clamp the time frontier to full access
+                    # (source_complete) and evaluate one release pass now —
+                    # without this the fractional tail release freezes at a
+                    # partial sentence for the whole drain (the cursor stopped
+                    # but the ASR's terminal flush is still pending).
+                    if getattr(self.translation, "_simul_active", False):
+                        self.translation.source_complete = True
+                        new_translation, new_translation_buffer = await asyncio.to_thread(
+                            self.translation.process
+                        )
+                        fresh_mt = False
+                    else:
+                        continue
+                elif isinstance(item, Silence):
                     # Endpointing: only a pause that crosses the segmentation
                     # threshold closes the utterance (the golden's sentence
                     # boundaries). Every short clause pause used to flush a

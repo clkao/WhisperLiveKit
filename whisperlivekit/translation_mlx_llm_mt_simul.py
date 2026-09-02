@@ -104,6 +104,11 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         # audio processor each cycle. None = unknown (time mode then falls
         # back to the text frontier).
         self.audio_position: Optional[float] = None
+        # End-of-input flag, set by the audio processor when the audio feed
+        # is complete. The cursor (audio_position) stops at end-of-feed but
+        # the ASR's tail keeps pending on its own clock — without this clamp
+        # the fractional tail release froze mid-sentence for the whole drain.
+        self.source_complete: bool = False
         # Per-instance simultaneous state.
         self._tail: Optional[HypothesisTail] = None
         self._committed_simul: List[ASRToken] = []  # committed tokens (open utterance)
@@ -125,6 +130,17 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         # the calibration TS (higher TS → model commits more decisively →
         # smaller threshold is safe); for now a fixed 15.
         self._MIN_SOURCE_TOKENS: int = 15
+        # Minimum RELEASED-prefix tokens before the first draft publishes
+        # (time frontier). The source-growth hysteresis (_MIN_SOURCE_TOKENS)
+        # measures the full source; the released prefix is what a fragment
+        # flashes from, so it gets its own, smaller budget: 6 source tokens
+        # ≈ 'Today we will discuss' — suppresses 1-3 word stubs at sentence
+        # opens without withholding drafts until mid-utterance (the measured
+        # cost of gating the released prefix at the full 15: coverage
+        # 0.87 -> 0.56 on the zh_long clip). Exempt in text mode (released
+        # prefix = committed text, historically ungated) and before the
+        # first cursor update.
+        self._MIN_RELEASED_TOKENS: int = 6
         # Stable, append-only provisional target emitted so far this utterance.
         self._emitted_partial: str = ""
         self._capture: Optional[dict] = None
@@ -404,9 +420,16 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         (``audio_position is None``) — identical to text mode.
         """
         now = self.audio_position
-        if now is None:
+        if self.source_complete:
+            # End-of-input: everything spoken has been fed; release the whole
+            # tail instead of freezing at the cursor's last position (the
+            # tail's window is anchored to the ASR clock, which outlives the
+            # feed — frac never reached 1.0 on its own).
+            cutoff = float("inf")
+        elif now is None:
             return self._committed_text()
-        cutoff = now - self._hold_back_s
+        else:
+            cutoff = now - self._hold_back_s
         parts = []
         for t in self._committed_simul:
             if (t.end or 0) <= cutoff:
@@ -438,6 +461,20 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         if self._frontier_mode == "time":
             return self._accessible_text()
         return self._committed_text()
+
+    def _accessible_gate_open(self, accessible: str) -> bool:
+        """Fragment guard for the time frontier: a first draft is only
+        published once the RELEASED prefix carries at least
+        _MIN_RELEASED_TOKENS source tokens (estimated via the rolling
+        chars-per-token ratio). Gating the full source instead let 1-3 word
+        stubs flash at sentence opens — the released prefix is what the draft
+        commits against, so it is what the budget must measure. Text mode
+        (whose released prefix is the committed text, historically ungated)
+        and time mode before the first cursor update are exempt: their
+        behavior is unchanged."""
+        if self._frontier_mode != "time" or self.audio_position is None:
+            return True
+        return len(accessible) / self._chars_per_token >= self._MIN_RELEASED_TOKENS
 
     def _source_text(self) -> str:
         """Full source the MT conditions on: committed prefix + unstable tail.
@@ -605,6 +642,13 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
                     self._mt_total_time_s += time.perf_counter() - _t0
                 self._last_source_text = source
                 self._emitted_partial = committed_out
+        elif not self._accessible_gate_open(accessible):
+            # Time-frontier fragment guard: the released prefix is still a
+            # 1-3 word stub — hold the first draft until the cursor releases
+            # a phrase. (Reachable only when no draft exists yet: the gate is
+            # monotonic within an utterance — accessible only grows — so a
+            # published draft implies the gate stayed open.)
+            return None, self._buffer()
         else:
             # No draft yet: must make a new call.
             self._mt_call_count += 1
