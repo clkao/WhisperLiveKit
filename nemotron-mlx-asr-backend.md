@@ -440,3 +440,52 @@ Live A/B on the same clip: fragments 4 -> 0, finals 3 -> 4, coverage 0.87 ->
 requirements were in direct tension; 6 tokens is the measured compromise
 point). Text mode byte-identical (fixture 0 diffs). Committed 7f13e08 on
 feat/apple-silicon-backends, NOT pushed per the standing deviation.
+
+## Stage Report: implementation (overlay sentence-queue — dispatch wl-time-frontier-sentence-queue)
+
+- DONE: Sentence splitter + queue-per-sentence implemented (name the mechanism).
+  `_split_sentences` (Latin .!? + CJK .！？, terminator attached) routes each
+  completed sentence as its own bright `_Item` (sent_idx + provisional flag) in
+  the hold queue; the current line carries only the in-progress fragment, which
+  parks behind bright items and returns after their hold.
+- DONE: Amend confined within a sentence; completed bright sentences never retract.
+  Provenance-tracked reconcile: translation() amends only the line holding a
+  draft-routed (provisional) sentence of the SAME utterance (word diff, green
+  adds); prior-utterance queued items are kept; cross-utterance amends are
+  structurally impossible.
+- DONE: Tests: what each asserts + the change that fails it.
+  test_multi_sentence_final_queues_each_sentence (a 2-sentence final queues s2
+  behind s1's hold — fails if the final displays as one line);
+  test_commit_crossing_terminator_freezes_completed_sentence (the frozen text
+  is stable across fragment growth — fails if the line keeps growing across
+  '.'); test_reworded_final_amends_only_current_sentence (in-place word diff,
+  never a blank — fails on any bright retraction);
+  test_dermatology_tail_displays_before_next_caption ('spots and tattoos'
+  displays before the next caption — fails on the original complaint).
+- DONE: Replay trace showing the dermatology tail now displays.
+  replay_canonical_overlay.py --target /tmp/events-zh-en.jsonl: +24.3s frames
+  show 'Dentists …reducing…pain.' then 'Dermatologists use lasers to remove
+  spots and tattoos.' as its own held line (was: the tail never displayed).
+- DONE: Full suite + simul fixture unchanged.
+  Full suite 484 passed / 12 failed / 43 errors = pre-existing baseline exactly
+  (clean tree: 480 passed — +4 from the new tests, 0 new failures); simul
+  fixture replay byte-identical (64 steps, 4 finals, 0 diffs, 0.57).
+- DONE: Any deviation and why.
+  (1) A draft ending exactly on a terminator stays on the legacy line (no
+  freeze) — freezing would brighten text the MT may still reword; freeze only
+  fires when a fragment follows. (2) A draft that IS one complete sentence
+  routes as a provisional bright queue item (same authoritative semantics).
+  (3) The final's cross-utterance reconcile keys on item provenance
+  (provisional vs final-routed), not raw sentence position — position-only
+  matching amended a prior utterance's on-screen sentence (caught by replay).
+
+### Summary
+
+Implemented the captain's sentence-queue design in overlay_model.py: the
+translated stream partitions at sentence terminators, completed sentences
+enter the hold queue as their own bright items (bounded 3), fragments type on
+the current line behind them, and finals reconcile per-utterance without
+retracting completed bright sentences. Four regression tests + the extended
+target-row replay prove the dermatology tail displays. Generation untouched
+(simul fixture byte-identical). Commit 0bac199 on feat/apple-silicon-backends
+(not pushed, per the captain-ordered deviation).
