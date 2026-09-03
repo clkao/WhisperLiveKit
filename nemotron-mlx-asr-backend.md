@@ -534,3 +534,25 @@ the legacy final path showed a new final immediately over pending ones. The
 keep-predicate (drafts supersede only drafts) + FIFO enqueue-behind fix both;
 the drained replay now proves every completed sentence displays in order on
 the real captured stream. Commit 60285cb on feat/apple-silicon-backends.
+
+## Stage Report: implementation (overlay sentence-queue — cycle 3, dispatch wl-time-frontier-sentence-queue)
+
+- DONE: promote-in-place replaces the queue round-trip for the sentence the reader is watching type
+  Commit b965d59 (feat/apple-silicon-backends, not pushed). At a terminator crossing, the completed sentence scrolls bright to the prev line and the fragment keeps typing on the current line — a layout split; the view's same-text provisional→final branch flips style without retyping. No queue round-trip for the visible sentence.
+- DONE: multi-sentence drafts now route per-sentence
+  The cycle-1 early return (`not fragment`) swallowed drafts that end on a terminator and span multiple sentences — they rode one growing line (the retype source on chunky-commit streams). Now only genuinely single-sentence drafts take the legacy path.
+- DONE: final reconcile amends by position (prev in place, line fragment in place, remainder enqueues)
+  `_en_prev_sent_idx` / `_en_line_sent` track where each routed sentence landed; `_amend_routed_sentence` corrects a promoted sentence in its scrolled position. No whole-line clear+re-render anywhere in the sentence path.
+- DONE: regression tests (2)
+  `test_promote_in_place_flips_bright_without_retype` — the completed sentence appears bright exactly once (as prev), never enqueued, line keeps the fragment, never clears. Fails on cycle-2 code (queue round-trip re-renders it).
+  `test_promote_in_place_final_amends_without_retype` — the final amends prev/line in place; the never-typed tail sentence enqueues instead of a whole-line re-render.
+- DONE: acceptance trace (REPLAY_PACE=0.8 scripts/replay_canonical_overlay.py /tmp/time_fixed2.jsonl --target)
+  Bright chain: 'Dentists also use laser technology for oral surgery.' (prev) → 'It reduces bleeding, sweating, and pain.' → 'Dermatologists use lasers to remove spots and tattoos.' → 'In summary…'. The dim multi-sentence line ('…surgery. This reduces…pain.') appears 0 times in the trace (was the retype signature); 'Dermatologists…tattoos.' bright ×2 (provisional + final style).
+- DONE: suites — display 54 passed (36 model incl. 2 new); full suite 489 passed / 12 failed / 43 errors = pre-existing baseline exactly (+2 new passing); simul golden fixture replay byte-identical (0 diffs, 0.57); src row 4 pre-existing flickers unchanged.
+- SKIPPED: widening the bounded-3 queue
+  The >3-back-to-back-finals burst eviction documented in cycle 2 remains; not exercised by the verified stream. Unchanged scope.
+- FAILED: none
+
+### Summary
+
+Round 3 eliminates the dim→bright identical-content retype by promoting the watched sentence in place (scroll bright to prev at the terminator; fragment keeps typing) instead of routing every completed sentence through the queue. The reconcile now amends by sentence position across prev/line/queue, and multi-sentence drafts route per-sentence. Two regression tests pin the no-retype contract. Residual: bounded-3 queue eviction under >3 back-to-back finals (documented, pre-existing).
