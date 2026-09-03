@@ -1079,14 +1079,18 @@ def test_config_frontier_fields_exist():
     assert cfg2.mlx_llm_mt_simul_hold_back_s == 0.25
 
 
-def test_core_factory_resolves_auto_frontier_per_backend():
-    """\"auto\" resolves to the time frontier for nemotron (word-accurate
-    token times) and to the text frontier for every other backend."""
+def test_core_factory_resolves_auto_frontier_to_time():
+    """"auto" resolves to the time frontier for every simul-capable backend
+    (measured better on every calibrated direction); "text" is the explicit
+    opt-out. Fails if the resolution regresses to a per-backend branch that
+    selects text (e.g. `"time" if backend == ... else "text"`)."""
     import re
 
     src = open("whisperlivekit/core.py").read()
-    # the resolution expression must exist and key on the nemotron backend
-    m = re.search(r'frontier = "time" if config\.backend == "nemotron-mlx-asr" else "text"', src)
-    assert m, "auto-frontier resolution must branch on the nemotron backend"
+    # the resolution must be an unconditional time flip under auto
+    m = re.search(r'if frontier == "auto":\s*\n\s*frontier = "time"\s*$', src, re.M)
+    assert m, "auto-frontier resolution must unconditionally select the time frontier"
+    assert not re.search(r'else "text"', src), (
+        "auto must not fall back to the text frontier for any backend")
     # and the constructor must receive the resolved value
     assert "frontier_mode=frontier" in src

@@ -1119,10 +1119,10 @@ def main() -> None:
                         "filter, argmax vs the accessible frontier, mass gates off — arxiv 2606.03967 §4.4). "
                         "Measured best on the replay fixture (coverage 0.59 vs 0.54 mass, 0.27 shipped).")
     p.add_argument("--simul-frontier", choices=["auto", "text", "time"], default="auto",
-                   help="Accessible-frontier source for the commit policy: text (ASR-committed prefix, "
-                        "advances at the ASR commit cadence, works for every backend), time (source words "
-                        "whose end time is behind the audio cursor — needs word-accurate token times, "
-                        "i.e. nemotron), or auto (time for nemotron, text otherwise).")
+                   help="Accessible-frontier source for the commit policy: time (source words "
+                        "whose end time is behind the audio cursor — the default via auto, "
+                        "measured best), text (ASR-committed prefix, advances at the ASR commit "
+                        "cadence — the explicit opt-out), or auto (resolves to time).")
     p.add_argument("--simul-hold-back", type=float, default=0.0,
                    help="Conservative hold-back for the time frontier, in seconds: source words become "
                         "accessible only once their end time is this far behind the audio cursor "

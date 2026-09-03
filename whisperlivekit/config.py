@@ -62,11 +62,10 @@ class WhisperLiveKitConfig:
     mlx_llm_mt_simultaneous: bool = False
     mlx_llm_mt_simul_commit: str = "paper"  # paper | mass | argmax (paper = arXiv 2606.03967 §4.4, measured best)
     # Accessible-frontier source for the commit policy. "text": the ASR-committed
-    # text prefix (works for every backend; advances at the ASR commit cadence).
-    # "time": source tokens whose word end time is behind the audio cursor
-    # (minus hold-back) are accessible — decouples from the commit cadence;
-    # needs word-accurate token times (nemotron). "auto": "time" for the
-    # nemotron backend, "text" otherwise.
+    # text prefix (advances at the ASR commit cadence). "time": source tokens
+    # whose word end time is behind the audio cursor (minus hold-back) are
+    # accessible — decouples from the commit cadence. "auto": "time" (measured
+    # better on every calibrated direction); "text" is the explicit opt-out.
     mlx_llm_mt_simul_frontier: str = "auto"
     # Conservative hold-back for the time frontier: source words are only
     # accessible once their end time is at least this far behind the audio

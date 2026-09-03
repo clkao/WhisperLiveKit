@@ -348,14 +348,14 @@ class TranscriptionEngine:
                     from whisperlivekit.translation_mlx_llm_mt_simul import (
                         MlxLlmTranslationSimul,
                     )
-                    # Frontier source: "auto" resolves to the time frontier for
-                    # backends with word-accurate token times (nemotron emits
-                    # per-token start/end mid-decode), text otherwise. The text
-                    # frontier advances at the ASR commit cadence; the time
-                    # frontier tracks the audio cursor.
+                    # Frontier source: "auto" resolves to the time frontier
+                    # (measured better on every calibrated direction — qwen3
+                    # zh->en 0.82-0.87 vs 0.63-0.69, en->zh 0.70 vs 0.55 — and
+                    # the text path lacks the fragment guard + end-of-feed
+                    # clamp). "text" remains the explicit opt-out.
                     frontier = getattr(config, "mlx_llm_mt_simul_frontier", "auto")
                     if frontier == "auto":
-                        frontier = "time" if config.backend == "nemotron-mlx-asr" else "text"
+                        frontier = "time"
                     self.translation_model = MlxLlmTranslationSimul(
                         model_id=model_id,
                         target_language=config.target_language,
