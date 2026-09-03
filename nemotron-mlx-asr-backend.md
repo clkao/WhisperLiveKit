@@ -489,3 +489,48 @@ retracting completed bright sentences. Four regression tests + the extended
 target-row replay prove the dermatology tail displays. Generation untouched
 (simul fixture byte-identical). Commit 0bac199 on feat/apple-silicon-backends
 (not pushed, per the captain-ordered deviation).
+
+## Stage Report: implementation (overlay sentence-queue — cycle 2, dispatch wl-time-frontier-sentence-queue)
+
+- DONE: Pending bright sentences survive new finals (finals accumulate, FIFO,
+  never jump the queue).
+  `_keep_committed()` replaces the three wholesale queue-clears: drafts clear
+  only draft items; `_translation_legacy`'s new-final path enqueues with
+  respect_hold=True when committed sentences are pending (immediate release
+  only when nothing is pending). Commit 60285cb.
+- DONE: End-of-stream regression test — drainer pumped past the last event.
+  test_drained_replay_displays_every_completed_sentence replays the checked-in
+  golden stream (tests/golden/zh_long_time_frontier.jsonl, captured from the
+  fixed generation) through the display model and pumps 30s past the end;
+  fails on cycle-1 code (verified via git stash) and passes on this fix.
+- DONE: The dermatology scenario runs through the drained-replay path.
+  The same test asserts 'Dermatologists use lasers to remove spots and
+  tattoos.' and 'It reduces bleeding, sweating, and pain.' appear in the
+  drained reader-visible sequence of the REAL captured stream — not just
+  model-level assertions.
+- DONE: Re-verified with the FO's command against /tmp/time_fixed2.jsonl.
+  REPLAY_PACE=0.8 replay --target: 'Dentists also use laser technology for
+  oral surgery.' bright -> 'It reduces bleeding, sweating, and pain.' (held
+  the line, then prev) -> 'Dermatologists use lasers to remove spots and
+  tattoos.' BRIGHT -> 'In summary...' bright. FIFO order, no drops.
+- DONE: Prior guarantees kept.
+  Display suites 52 passed (49 + 3 new); full suite 487 passed / 12 failed /
+  43 errors = the pre-existing baseline exactly (+3 new tests, 0 new
+  failures); simul golden replay byte-identical (64 steps, 4 finals, 0 diffs,
+  0.57); src row unchanged (4 pre-existing promote-transition flickers).
+- DONE: Any deviation and why.
+  (1) The golden stream is checked in as tests/golden/zh_long_time_frontier.jsonl
+  (captured event log; ground truth) so the drained-replay test has no /tmp
+  dependency. (2) The multi-sentence final's later sentences can still lose
+  their hold slot to a burst of later finals when the bounded-3 queue
+  overflows — not hit in the verified stream (max 3 pending); noted as
+  residual risk, not widened scope.
+
+### Summary
+
+Root-caused the rejected round: two wholesale queue-clears (the legacy draft
+append path and the legacy final path) dropped queued committed sentences, and
+the legacy final path showed a new final immediately over pending ones. The
+keep-predicate (drafts supersede only drafts) + FIFO enqueue-behind fix both;
+the drained replay now proves every completed sentence displays in order on
+the real captured stream. Commit 60285cb on feat/apple-silicon-backends.
