@@ -276,6 +276,13 @@ class OverlayDisplayModel:
         self._en_line_prov: bool = False  # the line holds a DRAFT-routed sentence of this utterance
         self._en_frag: str = ""         # the fragment text currently on the line
         self._queued_draft: Optional[_Item] = None  # in-progress fragment waiting behind bright sentences
+        # in-place promotion (round 3): the sentence the reader is watching type
+        # promotes at its terminator WITHOUT a queue round-trip — it scrolls
+        # bright to the prev line and the fragment keeps typing. These track
+        # where each routed sentence landed so the final's reconcile amends
+        # the right surface instead of clearing and re-rendering (the retype).
+        self._en_prev_sent_idx: int = -1   # sentence scrolled to prev (draft-routed)
+        self._en_line_sent: int = -1       # sentence the current line's fragment belongs to
         # source partial
         self._partial: str = ""
         self._last_partial: str = ""  # for change detection
@@ -328,10 +335,12 @@ class OverlayDisplayModel:
             self._en_draft_full = plain
             self._preview_legacy(segments, started_at, plain)
             return
-        if not self._en_sent_texts and not fragment:
+        if not self._en_sent_texts and not fragment and len(completed) <= 1:
             # The draft ends exactly on a terminator: still a single caption —
             # the legacy path holds it (the final re-words it anyway). Freezing
-            # here would brighten a draft the MT may still reword.
+            # here would brighten a draft the MT may still reword. A draft that
+            # already spans MULTIPLE sentences routes below instead: those
+            # sentences must not ride one growing line (round 1).
             self._en_draft_full = plain
             self._preview_legacy(segments, started_at, plain)
             return
@@ -339,16 +348,58 @@ class OverlayDisplayModel:
         # ---- sentence-aware routing ----
         # Route newly completed sentences (positional match: the committed
         # draft grows append-only; a rewrite re-derives per position below).
+        # Round 3: the sentence the reader is WATCHING type (the line is a
+        # draft that starts with it) promotes IN PLACE — it scrolls bright to
+        # the prev line and the fragment keeps typing. No queue round-trip, no
+        # re-render of identical text. The queue is reserved for genuinely
+        # backlogged content (sentences that complete while a different
+        # caption holds the line, multi-crossing updates, final-only
+        # sentences).
         prev_texts = self._en_sent_texts
+        new_completed = [(i, s) for i, s in enumerate(completed)
+                         if i >= len(prev_texts)]
+        # Promote IN PLACE every completing sentence the line already carries
+        # (the reader watched it type): each scrolls bright to the prev line,
+        # the line keeps the remainder. Content the line never showed queues
+        # instead — an unseen sentence must not pop onto history untyped.
+        remaining = self._en_plain if (not self._en_is_final and self._en_plain) else None
         for i, s in enumerate(completed):
             if i < len(prev_texts):
                 if s != prev_texts[i]:
                     self._amend_routed_sentence(i, s, started_at)
+                continue
+            if (i < len(prev_texts) + len(new_completed) and remaining
+                    and (remaining.startswith(s) or s.startswith(remaining))):
+                # scroll the just-completed sentence bright to the prev line;
+                # the line continues with what it still holds of the draft
+                self._en_prev_plain = s
+                self._en_prev_spans = [Span(s, FINAL_SAME)]
+                self._en_prev_at = self._clock()
+                self._en_prev_sent_idx = i
+                remaining = remaining[len(s):].lstrip() if remaining.startswith(s) else ""
             else:
                 self._enqueue_sentence(s, i, started_at, authoritative=False)
         self._en_sent_texts = completed
         self._en_draft_full = plain
-        self._update_fragment(fragment, segments, appended, started_at, plain)
+        if self._en_prev_sent_idx >= 0 and remaining is not None:
+            # the line keeps only the in-progress fragment. When the line held
+            # the promoted sentence's tail, the remainder is already consumed
+            # by the promotion; when the line was mid-sentence (a strict
+            # prefix of it), the untyped tail pops in on the prev line and the
+            # line takes the new draft's fragment. Either way this is a layout
+            # split, not a re-render of typed content.
+            self._en_plain = fragment
+            self._en_spans = [Span(fragment, PROVISIONAL)] if fragment else []
+            self._en_frag = fragment
+            self._en_is_final = False
+            self._en_current_sent = -1
+            self._en_line_prov = False
+            self._en_line_sent = len(completed) if fragment else -1
+            self._en_shown_at = self._clock() - self._hold  # fragments don't hold
+            self._dirty = True
+        else:
+            self._en_line_sent = len(completed) if fragment else -1
+            self._update_fragment(fragment, segments, appended, started_at, plain)
         self._dirty = True
 
     def _keep_committed(self) -> None:
@@ -441,6 +492,12 @@ class OverlayDisplayModel:
         - still queued       -> replace the queued item
         - already history    -> leave (the next sentence scrolls in soon)
         """
+        if idx == self._en_prev_sent_idx and self._en_prev_plain:
+            # the sentence already scrolled to history: correct it there
+            self._en_prev_plain = text
+            self._en_prev_spans = [Span(text, FINAL_SAME)]
+            self._dirty = True
+            return
         if idx == self._en_current_sent and self._en_plain:
             self._en_spans = _diff_spans(self._en_plain, text)
             self._en_plain = text
@@ -522,6 +579,10 @@ class OverlayDisplayModel:
         sents, fragment = _split_sentences(plain)
         if not sents and fragment:
             sents, fragment = [fragment], ""
+        # pending committed sentences from PRIOR utterances survive (finals
+        # accumulate); this utterance's draft-routed queued items are replaced
+        # by the authoritative sentences below
+        kept = [it for it in self._queue if not getattr(it, "provisional", False)]
         if len(sents) <= 1 and not self._en_sent_texts:
             # single-sentence utterance with no draft-routed sentences: the
             # legacy whole-line path (unchanged semantics)
@@ -531,20 +592,36 @@ class OverlayDisplayModel:
             self._queued_draft = None
             return
 
+        # prev line: this utterance's draft-promoted sentence — the final is
+        # authoritative; reword it in place (the history line corrects, no
+        # re-render of a different sentence)
+        if 0 <= self._en_prev_sent_idx < len(sents):
+            auth = sents[self._en_prev_sent_idx]
+            if auth != self._en_prev_plain:
+                self._en_prev_plain = auth
+                self._en_prev_spans = [Span(auth, FINAL_SAME)]
+                self._dirty = True
+        # the line: a dim draft fragment of a known sentence is superseded IN
+        # PLACE by that sentence's authoritative text (the delta types out) —
+        # clearing it and queueing the sentence instead re-rendered content
+        # the reader had just watched type (round-3: the dentist retype).
+        line_j = -1
+        if self._en_plain and not self._en_is_final and 0 <= self._en_line_sent:
+            line_j = min(self._en_line_sent, len(sents) - 1)
         cur_i = self._en_current_sent if (self._en_is_final and self._en_line_prov) else -1
-        if self._en_plain and not self._en_is_final:
-            # a dim draft (fragment or legacy) on the line: superseded — its
-            # content is covered by the final's authoritative sentences
-            self._en_plain = ""
-            self._en_spans = []
-            self._en_frag = ""
-            self._en_current_sent = -1
-            cur_i = -1
-        # Rebuild the queue: keep prior-utterance pending items, replace this
-        # utterance's draft-routed sentence items with the authoritative ones.
-        kept = [it for it in self._queue if not getattr(it, "provisional", False)]
         start = 0
-        if cur_i is not None and cur_i >= 0 and cur_i < len(sents):
+        if line_j >= 0:
+            auth = sents[line_j]
+            self._en_spans = _diff_spans(self._en_plain, auth)
+            self._en_plain = auth
+            self._en_is_final = True
+            self._en_line_prov = True
+            self._en_current_sent = line_j
+            self._en_frag = ""
+            self._en_shown_at = self._clock()
+            self._dirty = True
+            start = line_j + 1
+        elif cur_i is not None and cur_i >= 0 and cur_i < len(sents):
             # the sentence on the line amends in place when reworded
             if sents[cur_i] != self._en_plain:
                 self._en_spans = _diff_spans(self._en_plain, sents[cur_i])
@@ -568,6 +645,8 @@ class OverlayDisplayModel:
         # authoritative baseline for the next draft cycle; the draft routing
         # is per-utterance (the next utterance's sentences start fresh at 0)
         self._en_sent_texts = []
+        self._en_prev_sent_idx = -1
+        self._en_line_sent = -1
         self._en_draft_full = plain
         self._en_frag = fragment
         self._dirty = True

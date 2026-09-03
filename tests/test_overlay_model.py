@@ -709,3 +709,59 @@ def test_new_final_enqueues_behind_pending_sentences_fifo():
     st = m.state()
     shown = plain(st) + "|" + prev_plain(st)
     assert "Third sentence" in shown, f"the new final never displayed: {shown!r}"
+
+
+# ---- promote-in-place (round 3: no identical-content retype) ----
+
+def test_promote_in_place_flips_bright_without_retype():
+    """The sentence the reader is watching type promotes at its terminator as
+    a single style flip (bright, scrolled to the prev line) — never a
+    clear+re-render of identical text (round 3: the dentist retype, where the
+    line reset and the queue re-rendered the words the reader had just read)."""
+    m, clk = make()
+    S1 = "Dentists also use laser technology for oral surgery."
+    m.preview(segs("Dentists also use laser technology for "), started_at=U1)
+    m.tick()
+    # the draft crosses the terminator: the completed sentence promotes
+    m.preview(segs(S1 + " This reduces"), started_at=U1)
+    m.tick()
+    st = m.state()
+    # the completed sentence is bright exactly once — on the prev line
+    assert prev_plain(st) == S1, prev_plain(st)
+    assert prev_plain(st) not in plain(st), "promoted sentence re-rendered on the current line"
+    # the line keeps only the in-progress fragment (a layout split, not a clear)
+    assert plain(st) == "This reduces", plain(st)
+    # no queue round-trip: the completed sentence was never enqueued
+    assert all(it.plain != S1 for it in m._queue), \
+        [it.plain for it in m._queue]
+    # the current line never went clear between the dim and bright frames of
+    # the same content (the clear+retype signature)
+    assert plain(st) != "" , "line cleared at the boundary"
+
+
+def test_promote_in_place_final_amends_without_retype():
+    """The final amends the promoted sentence in its scrolled position and the
+    never-typed tail sentence enqueues — no whole-line re-render."""
+    m, clk = make()
+    S1 = "Dentists also use laser technology for oral surgery."
+    m.preview(segs("Dentists also use laser technology for "), started_at=U1)
+    m.tick()
+    m.preview(segs(S1 + " This reduces"), started_at=U1)
+    m.tick()
+    st = m.state()
+    assert prev_plain(st) == S1
+    # the final's authoritative wording amends the promoted sentence in place
+    m.translation(segs(S1 + " It reduces bleeding, sweating, and pain. "
+                       "Dermatologists use lasers to remove spots and tattoos."),
+                  started_at=U1)
+    st = m.state()
+    assert prev_plain(st) == S1, "promoted sentence was re-rendered instead of amended"
+    # the reworded sentence is on the line (bright) or queued — never a full
+    # re-render of S1
+    cur = plain(st)
+    assert cur != S1, "S1 re-typed on the current line"
+    # the tail sentence the reader never saw is queued (or on the line), not lost
+    all_pending = cur + "".join(it.plain for it in m._queue)
+    assert "Dermatologists use lasers to remove spots and tattoos." in all_pending or \
+           "Dermatologists use lasers to remove spots and tattoos." in prev_plain(st), \
+           (cur, [it.plain for it in m._queue])
