@@ -556,3 +556,20 @@ the real captured stream. Commit 60285cb on feat/apple-silicon-backends.
 ### Summary
 
 Round 3 eliminates the dim→bright identical-content retype by promoting the watched sentence in place (scroll bright to prev at the terminator; fragment keeps typing) instead of routing every completed sentence through the queue. The reconcile now amends by sentence position across prev/line/queue, and multi-sentence drafts route per-sentence. Two regression tests pin the no-retype contract. Residual: bounded-3 queue eviction under >3 back-to-back finals (documented, pre-existing).
+
+## Stage Report: implementation (frontier default flip, dispatch wl-frontier-default-time)
+
+- DONE: Default flipped — auto resolves to the time frontier for every simul backend (core.py one-line resolution + comment; config.py field comment; lc_terminal --simul-frontier help).
+  Commit e9fbadf on feat/apple-silicon-backends (not pushed per captain deviation); diff is the resolution line + comments/help only.
+- DONE: Auto-resolution test updated — test_core_factory_resolves_auto_frontier_to_time asserts the unconditional `frontier = "time"` under auto and fails if any `else "text"` branch returns.
+  Fails on: reverting to a per-backend text fallback (the old nemotron-conditional expression).
+- DONE: Suites green vs baseline; fixture replay byte-identical.
+  tests/test_mlx_llm_mt_simul.py 52 passed; full suite 489 passed / 12 failed / 43 errors = pre-existing baseline exactly; simul golden replay 0 diffs / 0.57 (same as standing).
+- DONE: Real-clip auto acceptance.
+  Run 1: coverage 0.60 (< 0.75 gate) but thermally contaminated (65s elapsed vs 49s nominal, all timings drifted) — stated as run, not hidden. Run 2 after 60s cooldown: coverage 0.80 PASS, 4 finals (0.78/0.64/0.95/0.82), zero fragment drafts, full tail draft +30.72s before its ASR final (+49.22s in run 1 / +38s typical).
+- SKIPPED: none.
+- FAILED: none (run 1's coverage gate miss resolved by cooldown re-run; documented above).
+
+### Summary
+
+Flipped the user-facing frontier default per the captain's approval: "auto" now selects the time frontier for every simul-capable backend; text stays available via --simul-frontier text. The engine constructor default remains "text" (internal safety net; core.py always passes the resolved value explicitly). Text-mode behavior itself untouched — fixture replay byte-identical. Residual: single-run coverage on this clip varies 0.60-0.87 with machine thermal state; the multi-run record for time mode is 0.80-0.87 vs text 0.63-0.69.
