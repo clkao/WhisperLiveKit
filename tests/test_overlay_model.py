@@ -602,3 +602,110 @@ def test_dermatology_tail_displays_before_next_caption():
     st = m.state()
     assert plain(st) == "Dentists also use laser technology for oral surgery, reducing bleeding, sweating, and pain." or \
            "spots and tattoos" in plain(st) + prev_plain(st), plain(st)
+
+
+# ---- end-of-stream drained replay (round-2: queued sentences must display) ----
+
+TIME_FRONTIER_GOLDEN = os.path.join(os.path.dirname(__file__), "golden",
+                                    "zh_long_time_frontier.jsonl")
+
+
+def _drained_replay(path, hold=3.5, drain_seconds=30.0):
+    """Replay a captured event stream through the REAL display model with the
+    drainer pumped past the last event — what a viewer sees when the stream
+    ends and real time keeps running. Returns the ordered list of distinct
+    lines that reached the current line."""
+    events = EventLog.load(path).events
+    t0 = events[0].t
+    m, clk = make(hold=hold)
+    base = datetime(2026, 1, 1)
+    seen = []
+
+    for e in events:
+        clk.advance(0.8)  # ~real-time pacing per event
+        when = base + timedelta(seconds=e.t - t0)
+        if e.type == "transcription_provisional":
+            m.set_partial(e.text)
+        elif e.type == "transcription_final":
+            m.clear_partial()
+        elif e.type == "translation_provisional":
+            m.preview([(None, e.text)], when)
+        elif e.type == "translation_final":
+            m.translation([(None, e.text)], when)
+        st = m.tick()
+        if st is not None:
+            cur = "".join(s.text for s in st.current)
+            if cur and cur != (seen[-1] if seen else None):
+                seen.append(cur)
+    # pump the drainer past the end of the stream (the reader's clock keeps
+    # running): every completed sentence must reach the line
+    for _ in range(int(drain_seconds / 0.1)):
+        clk.advance(0.1)
+        st = m.tick()
+        if st is not None:
+            cur = "".join(s.text for s in st.current)
+            if cur and cur != (seen[-1] if seen else None):
+                seen.append(cur)
+    return seen
+
+
+def test_drained_replay_displays_every_completed_sentence():
+    """End-of-stream guarantee: replaying the captured zh_long time-frontier
+    stream through the display model and draining past the last event, EVERY
+    completed sentence of every final displays — including the dermatology
+    tail ('spots and tattoos') that motivated the sentence queue. Fails if a
+    queued sentence is dropped by a later draft or a queue-jumping final."""
+    assert os.path.exists(TIME_FRONTIER_GOLDEN), "golden stream missing"
+    seen = _drained_replay(TIME_FRONTIER_GOLDEN)
+    for sentence in (
+        "Dermatologists use lasers to remove spots and tattoos.",
+        "It reduces bleeding, sweating, and pain.",
+        "In summary, laser plays an increasingly important role in modern medicine.",
+    ):
+        assert any(sentence in s for s in seen), \
+            f"never displayed: {sentence!r}; saw: {seen!r}"
+
+
+def test_pending_sentences_survive_next_utterance_draft():
+    """A new utterance's DRAFT must not drop queued committed sentences
+    (round-2: the 'In short.' draft wiped the dentist final's backlog)."""
+    m, clk = make()
+    m.translation(segs("Dentists also use lasers for oral surgery. It reduces bleeding, "
+                       "sweating, and pain. Dermatologists use lasers to remove spots and tattoos."),
+                  started_at=U1)
+    m.tick()
+    st = m.state()
+    assert plain(st) == "Dentists also use lasers for oral surgery.", plain(st)
+    # the next utterance's fragment draft arrives while two sentences are queued
+    m.preview(segs("In short."), started_at=U2)
+    m.tick()
+    seen = [plain(m.state())]
+    for _ in range(60):
+        clk.advance(0.25)
+        m.tick()
+        seen.append(plain(m.state()))
+    joined = "\n".join(seen)
+    assert "It reduces bleeding, sweating, and pain." in joined, f"draft dropped a queued sentence: {joined!r}"
+    assert "spots and tattoos" in joined, f"draft dropped the tail sentence: {joined!r}"
+
+
+def test_new_final_enqueues_behind_pending_sentences_fifo():
+    """A new final enqueues BEHIND pending completed sentences and pops in
+    order — it never jumps the queue (round-2: 'In summary' went straight to
+    bright over the dentist final's pending sentences)."""
+    m, clk = make()
+    m.translation(segs("First sentence here. Second sentence here."), started_at=U1)
+    m.tick()
+    assert plain(m.state()) == "First sentence here."
+    # second final arrives while the second sentence is still queued
+    m.translation(segs("Third sentence entirely different."), started_at=U2)
+    m.tick()
+    # FIFO: the pending second sentence displays next, NOT the new final
+    clk.advance(2.0); m.tick()
+    st = m.state()
+    shown = plain(st) + "|" + prev_plain(st)
+    assert "Second sentence here" in shown, f"queue jumped: {shown!r}"
+    clk.advance(3.0); m.tick()
+    st = m.state()
+    shown = plain(st) + "|" + prev_plain(st)
+    assert "Third sentence" in shown, f"the new final never displayed: {shown!r}"

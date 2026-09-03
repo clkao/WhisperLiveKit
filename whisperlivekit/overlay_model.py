@@ -351,6 +351,19 @@ class OverlayDisplayModel:
         self._update_fragment(fragment, segments, appended, started_at, plain)
         self._dirty = True
 
+    def _keep_committed(self) -> None:
+        """Drop queued DRAFT items, keep queued COMMITTED (final) sentences.
+
+        'Drafts supersede' was written for draft-routed items; applied
+        wholesale it dropped queued completed sentences (bright, committed
+        content the reader has not seen yet) the moment the next utterance's
+        draft arrived. A draft may only supersede other drafts — never a
+        completed sentence (round-2: the dentist-final backlog was wiped by
+        the next segment's 'In short.' draft).
+        """
+        if any(not getattr(it, "is_final", False) for it in self._queue):
+            self._queue = [it for it in self._queue if getattr(it, "is_final", False)]
+
     def _preview_legacy(self, segments: list, started_at, plain: str) -> None:
         """Pre-sentence-queue draft behavior (no boundary crossed yet)."""
         shown = self._en_plain
@@ -363,7 +376,7 @@ class OverlayDisplayModel:
             self._en_is_final = False
             # keep the next final immediately releasable
             self._en_shown_at = self._clock() - self._hold
-            self._queue.clear()  # a queued item is stale — the line shows the latest
+            self._keep_committed()  # drafts supersede drafts, never completed sentences
             self._dirty = True
             return
         if shown and not self._en_is_final:
@@ -592,19 +605,26 @@ class OverlayDisplayModel:
                 self._en_spans = _segments_to_spans(segments, is_final=True)
                 self._en_is_final = True
                 self._en_shown_at = self._clock()
-                # the final supersedes anything queued (e.g. its own still-pending
+                # the final supersedes queued DRAFTS (e.g. its own still-pending
                 # draft): leaving it queued would pop a stale dim draft over this
-                # bright final if the speaker pauses past the hold.
-                self._queue.clear()
+                # bright final if the speaker pauses past the hold. Committed
+                # sentences from PRIOR finals stay queued — finals accumulate.
+                self._keep_committed()
                 self._dirty = True
                 return
             # shown draft, no common prefix: discard the draft in place and
             # enqueue the final (falls through to the enqueue below)
             self._en_plain = ""
             self._en_spans = []
-        # no shown provisional: full enqueue
+        # no shown provisional: full enqueue. FIFO behind pending committed
+        # sentences: a new final must never jump the queue ahead of completed
+        # sentences the reader has not seen yet (round-2: 'In summary' jumped
+        # the dentist final's queued sentences). Immediate release only when
+        # nothing committed is pending.
         spans = _segments_to_spans(segments, is_final=True)
-        self._enqueue(spans, plain, started_at, is_final=True)
+        respect = any(getattr(it, "is_final", False) for it in self._queue)
+        self._enqueue(spans, plain, started_at, is_final=True,
+                      respect_hold=respect)
 
     def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool,
                  respect_hold: bool = False, amend: bool = False, sent_idx: int = -1) -> None:
@@ -628,10 +648,11 @@ class OverlayDisplayModel:
             self._queue.append(item)
             del self._queue[:-3]
         else:
-            # a draft supersedes queued drafts AND queued sentences: the line
-            # shows the latest. (Bright sentence items are never dropped here —
-            # a draft never preempts committed content; it waits behind it.)
-            self._queue.clear()
+            # a draft supersedes queued DRAFTS — never committed sentences:
+            # a queued final is content the reader has not seen yet; dropping
+            # it lost the tail sentences of a multi-sentence final whenever the
+            # next utterance's draft arrived (round-2: dermatology regression).
+            self._keep_committed()
             self._queue.append(item)
         if not respect_hold:
             self._en_shown_at = -self._hold  # release immediately on the next tick

@@ -81,6 +81,15 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
                 r._reconcile(st)
             time.sleep(0.02)
 
+    # pump the drainer past the last event so queued sentences drain as they
+    # would in real time (the reader's clock keeps running after the last event)
+    if trace_target:
+        for _ in range(int(12 / pace)):
+            st = r._model.tick()
+            if st is not None:
+                r._reconcile(st)
+            snap_target(time.monotonic() - t0, "drain")
+            time.sleep(0.02)
     if trace_target:
         print(f"=== target-row reader-visible sequence: {path} ===")
         for elapsed, etype, line in target_trace:
@@ -109,4 +118,4 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
 
 
 if __name__ == "__main__":
-    replay_canonical(sys.argv[1] if len(sys.argv) > 1 else "/tmp/canonical_zh_long_qwen3.jsonl")
+    replay_canonical(sys.argv[1] if len(sys.argv) > 1 else "/tmp/canonical_zh_long_qwen3.jsonl", pace=float(__import__("os").environ.get("REPLAY_PACE", "0.25")))
