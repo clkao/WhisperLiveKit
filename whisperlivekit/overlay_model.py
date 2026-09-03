@@ -154,6 +154,52 @@ def _spans_after(spans, n: int) -> list:
     return out
 
 
+
+@dataclass
+class _Item:
+    """One hold-queue entry (a caption to show when its hold elapses).
+
+    sent_idx: position of this sentence within the utterance's sentence
+    stream (-1 = whole-line item, the pre-sentence-queue shape). The
+    translation() reconcile uses it to amend/replace routed sentences
+    without touching what is already scrolled into history.
+    provisional: routed from the running draft (not yet confirmed by a
+    final) — translation() replaces these with authoritative sentences.
+    """
+    spans: List[Span]
+    plain: str
+    utt_t: Optional[float]
+    is_final: bool
+    amend: bool = False
+    sent_idx: int = -1
+    provisional: bool = False
+
+
+def _diff_spans(old: str, new: str) -> List[Span]:
+    """Word-level diff spans old->new: unchanged words bright (FINAL_SAME),
+    changed/added words green (FINAL_ADD); deletions omitted — the same
+    styling the caller-provided diff spans use for whole-line amends."""
+    import difflib
+    ow, nw = old.split(), new.split()
+    spans: List[Span] = []
+    sm = difflib.SequenceMatcher(a=ow, b=nw, autojunk=False)
+    for op, i1, i2, j1, j2 in sm.get_opcodes():
+        words = ow[i1:i2] if op == "equal" else nw[j1:j2]
+        if not words:
+            continue
+        style = FINAL_SAME if op == "equal" else FINAL_ADD
+        # CJK has no spaces (each char is its own word) — rejoin tightly;
+        # Latin words rejoin with single spaces
+        if all(len(w) <= 1 for w in words) and not any(ch.isspace() for ch in words):
+            text = "".join(words)
+        else:
+            text = " ".join(words)
+        if spans:
+            text = " " + text
+        spans.append(Span(text, style))
+    return spans
+
+
 def _common_prefix_len(a: str, b: str) -> int:
     """Char common prefix, backtracked to a word boundary of `a` (CJK chars
     are their own words — no backtrack needed there)."""
@@ -167,6 +213,29 @@ def _common_prefix_len(a: str, b: str) -> int:
         if cut > 0:
             n = cut + 1
     return n
+
+
+# Sentence terminators for the caption sentence queue: Latin and CJK.
+_SENTENCE_TERMINATORS = set(".!?。！？")
+
+
+def _split_sentences(text: str) -> Tuple[List[str], str]:
+    """Split a caption text at sentence terminators.
+
+    Returns (complete_sentences, trailing_fragment). Each sentence keeps its
+    terminator attached; the trailing run without a terminator is the
+    in-progress fragment ('' when the text ends on a terminator). The split is
+    deliberately naive (no abbreviation handling) — same policy as the
+    generation-side sentence pacing; a false split mid-abbreviation costs one
+    early line break, not a content change.
+    """
+    sentences: List[str] = []
+    start = 0
+    for i, ch in enumerate(text):
+        if ch in _SENTENCE_TERMINATORS:
+            sentences.append(text[start:i + 1].lstrip())
+            start = i + 1
+    return sentences, text[start:].lstrip()
 
 
 class OverlayDisplayModel:
@@ -196,7 +265,17 @@ class OverlayDisplayModel:
         self._en_prev_spans: List[Span] = []
         self._en_prev_at: float = 0.0
         # pending (the most recent enqueue, waiting for the drainer to show it)
-        self._queue: List[Tuple[List[Span], str, Optional[float], bool]] = []
+        self._queue: List = []
+        # sentence-partitioned state: the translated stream is routed per
+        # sentence — a completed sentence (draft crossed a terminator, or a
+        # final) becomes its own bright hold-queue item; the current line
+        # carries only the in-progress sentence's fragment.
+        self._en_draft_full: str = ""   # cumulative draft text seen this utterance
+        self._en_sent_texts: List[str] = []  # routed sentence texts, in order
+        self._en_current_sent: int = -1  # sentence index on the current line (-1 = fragment/none)
+        self._en_line_prov: bool = False  # the line holds a DRAFT-routed sentence of this utterance
+        self._en_frag: str = ""         # the fragment text currently on the line
+        self._queued_draft: Optional[_Item] = None  # in-progress fragment waiting behind bright sentences
         # source partial
         self._partial: str = ""
         self._last_partial: str = ""  # for change detection
@@ -232,22 +311,49 @@ class OverlayDisplayModel:
     def preview(self, segments: list, started_at) -> None:
         """Provisional translation with the append effect.
 
-        - extends the shown draft  -> APPEND in place: the line grows on screen,
-          no scroll-up, no retype, no hold. The new words just appear at the
-          end of the existing draft (the view streams the delta word-by-word).
-        - rewrites the draft       -> replace IN PLACE: the stale draft is
-          discarded (not scrolled to history — it was wrong, it is not
-          history-worthy), the new draft shows after the hold.
-        - unchanged                -> skip.
-
-        Utterance identity is structural (provisional vs final state), NOT the
-        started_at timestamp: callers pass datetime.now() per update, so
-        timestamp equality cannot detect same-utterance transitions.
+        Sentence-partitioned: when the running draft crosses a sentence
+        terminator, the completed sentence becomes its own bright hold-queue
+        item and the line carries only the in-progress fragment. Before the
+        first terminator the legacy single-line draft behavior applies
+        (append effect / rewrite / enqueue).
         """
         plain = _segments_plain(segments)
-        shown = self._en_plain
-        if plain == shown:
+        if plain == self._en_draft_full:
             return  # skip (unchanged)
+        appended = bool(self._en_draft_full) and plain.startswith(self._en_draft_full)
+        completed, fragment = _split_sentences(plain)
+
+        if not self._en_sent_texts and len(completed) == 0:
+            # No sentence boundary crossed yet: legacy one-line draft behavior.
+            self._en_draft_full = plain
+            self._preview_legacy(segments, started_at, plain)
+            return
+        if not self._en_sent_texts and not fragment:
+            # The draft ends exactly on a terminator: still a single caption —
+            # the legacy path holds it (the final re-words it anyway). Freezing
+            # here would brighten a draft the MT may still reword.
+            self._en_draft_full = plain
+            self._preview_legacy(segments, started_at, plain)
+            return
+
+        # ---- sentence-aware routing ----
+        # Route newly completed sentences (positional match: the committed
+        # draft grows append-only; a rewrite re-derives per position below).
+        prev_texts = self._en_sent_texts
+        for i, s in enumerate(completed):
+            if i < len(prev_texts):
+                if s != prev_texts[i]:
+                    self._amend_routed_sentence(i, s, started_at)
+            else:
+                self._enqueue_sentence(s, i, started_at, authoritative=False)
+        self._en_sent_texts = completed
+        self._en_draft_full = plain
+        self._update_fragment(fragment, segments, appended, started_at, plain)
+        self._dirty = True
+
+    def _preview_legacy(self, segments: list, started_at, plain: str) -> None:
+        """Pre-sentence-queue draft behavior (no boundary crossed yet)."""
+        shown = self._en_plain
         if shown and not self._en_is_final and plain.startswith(shown):
             # append effect: the draft grew — extend the line in place.
             # No scroll-up, no retype, no hold: the new words appear at the end
@@ -272,8 +378,9 @@ class OverlayDisplayModel:
                 self._en_spans = _truncate_spans(self._en_spans, cpl)
                 spans = _segments_to_spans(segments, is_final=False)
                 delta_spans = _spans_after(spans, cpl)
-                self._enqueue(delta_spans, plain[cpl:], started_at,
-                              is_final=False, amend=True)
+                self._enqueue_item(_Item(delta_spans, plain[cpl:], self._utt(started_at),
+                                    is_final=False, amend=True),
+                              respect_hold=shown and self._en_is_final)
                 self._en_shown_at = self._clock() - self._hold
                 self._dirty = True
                 return
@@ -286,13 +393,174 @@ class OverlayDisplayModel:
         # display (the old starvation came from 2s fragment finals, fixed
         # generation-side). The draft covers the same content plus the new
         # clause, so a late release loses nothing.
-        self._enqueue(spans, plain, started_at, is_final=False,
+        self._enqueue_item(_Item(spans, plain, self._utt(started_at), is_final=False),
                       respect_hold=shown and self._en_is_final)
 
+    def _utt(self, started_at) -> Optional[float]:
+        return started_at.timestamp() if started_at is not None else None
+
+    def _enqueue_sentence(self, text: str, sent_idx: int, started_at,
+                          authoritative: bool = False) -> None:
+        """Route a completed sentence as its own bright hold-queue item.
+
+        Inserted BEFORE any queued fragment draft (the sentence is older
+        content than the in-progress sentence); the queued draft always stays
+        last so the reader sees sentences in order. ``sent_idx`` is the
+        utterance-local sentence position; ``provisional`` marks items routed
+        from the draft stream (the final's reconcile replaces them with the
+        authoritative wording).
+        """
+        item = _Item([Span(text, FINAL_SAME)], text, self._utt(started_at),
+                     is_final=True, sent_idx=sent_idx,
+                     provisional=not authoritative)
+        # insertion point: before a trailing queued draft (the fragment),
+        # after any earlier queued sentences
+        cut = len(self._queue)
+        while cut > 0 and self._queue[cut - 1] is self._queued_draft:
+            cut -= 1
+        self._queue.insert(cut, item)
+        del self._queue[:-3]  # bounded: bright sentences accumulate (max 3)
+
+    def _amend_routed_sentence(self, idx: int, text: str, started_at) -> None:
+        """A re-route (reword) of an already-routed sentence.
+
+        - on the current line: amend in place (word diff, green adds)
+        - still queued       -> replace the queued item
+        - already history    -> leave (the next sentence scrolls in soon)
+        """
+        if idx == self._en_current_sent and self._en_plain:
+            self._en_spans = _diff_spans(self._en_plain, text)
+            self._en_plain = text
+            self._en_shown_at = self._clock()
+            self._dirty = True
+            return
+        for q in self._queue:
+            if getattr(q, "sent_idx", -1) == idx and getattr(q, "provisional", False):
+                q.plain = text
+                q.spans = [Span(text, FINAL_SAME)]
+                return
+        # in history (or nowhere): leave — the next sentence scrolls in soon
+
+    def _update_fragment(self, fragment: str, segments: list,
+                         appended: bool, started_at, prev_draft: str) -> None:
+        """Show/queue the in-progress sentence's fragment.
+
+        - bright sentence on the line -> the fragment waits in _queued_draft
+          (updated in place; drafts supersede, bright items are never dropped)
+        - fragment on the line        -> append effect within the sentence,
+          or a word-aligned rewrite (reword) that types the correction
+        """
+        if fragment == self._en_frag and not self._queued_draft:
+            return
+        if self._en_current_sent >= 0:
+            # a bright sentence holds the line — park the fragment behind it
+            if fragment:
+                self._queued_draft = _Item([Span(fragment, PROVISIONAL)], fragment,
+                                           self._utt(started_at), is_final=False)
+            else:
+                self._queued_draft = None
+            return
+        shown = self._en_plain
+        if shown and self._en_frag and appended and fragment.startswith(self._en_frag):
+            # append effect within the sentence (the delta types on); the draft
+            # grew by exactly the delta beyond the previous full draft
+            spans = _segments_to_spans(segments, is_final=False)
+            delta = _spans_after(spans, len(prev_draft))
+            self._en_plain = fragment
+            self._en_spans = self._en_spans + delta
+            self._en_frag = fragment
+            self._en_is_final = False
+            self._en_shown_at = self._clock() - self._hold
+            self._dirty = True
+            return
+        if shown and self._en_frag:
+            # rewrite within the sentence: keep the common prefix, enqueue the
+            # divergent suffix as an amend (the correction types out)
+            cpl = _common_prefix_len(self._en_frag, fragment)
+            if cpl > 0:
+                self._en_plain = self._en_frag[:cpl]
+                self._en_spans = _truncate_spans(self._en_spans, cpl)
+                delta = _Item([Span(fragment[cpl:], PROVISIONAL)], fragment[cpl:],
+                              self._utt(started_at), is_final=False, amend=True)
+                self._enqueue_item(delta, respect_hold=False)
+                self._en_frag = fragment
+                self._en_shown_at = self._clock() - self._hold
+                self._dirty = True
+                return
+        # fresh fragment line (a new sentence started on the current line)
+        self._en_plain = fragment
+        self._en_spans = [Span(fragment, PROVISIONAL)] if fragment else []
+        self._en_frag = fragment
+        self._en_current_sent = -1
+        self._en_is_final = False
+        self._en_shown_at = self._clock() - self._hold
+        self._dirty = True
+
     def translation(self, segments: list, started_at) -> None:
-        """Final translation. Only AMEND — don't retype what's already shown. Keep the
-        shown prefix (flip to final style), only enqueue the delta (new suffix)."""
+        """Final translation, partitioned by sentence.
+
+        The final is AUTHORITATIVE for its own utterance: it replaces the
+        draft-routed sentence items (reworded ones amend the line/queue; new
+        ones enqueue), while completed sentences from EARLIER utterances still
+        queued or on screen are left untouched. Each sentence is its own
+        display item and earns its own hold.
+        """
         plain = _segments_plain(segments)
+        sents, fragment = _split_sentences(plain)
+        if not sents and fragment:
+            sents, fragment = [fragment], ""
+        if len(sents) <= 1 and not self._en_sent_texts:
+            # single-sentence utterance with no draft-routed sentences: the
+            # legacy whole-line path (unchanged semantics)
+            self._translation_legacy(segments, started_at, plain)
+            self._en_draft_full = plain
+            self._en_frag = ""
+            self._queued_draft = None
+            return
+
+        cur_i = self._en_current_sent if (self._en_is_final and self._en_line_prov) else -1
+        if self._en_plain and not self._en_is_final:
+            # a dim draft (fragment or legacy) on the line: superseded — its
+            # content is covered by the final's authoritative sentences
+            self._en_plain = ""
+            self._en_spans = []
+            self._en_frag = ""
+            self._en_current_sent = -1
+            cur_i = -1
+        # Rebuild the queue: keep prior-utterance pending items, replace this
+        # utterance's draft-routed sentence items with the authoritative ones.
+        kept = [it for it in self._queue if not getattr(it, "provisional", False)]
+        start = 0
+        if cur_i is not None and cur_i >= 0 and cur_i < len(sents):
+            # the sentence on the line amends in place when reworded
+            if sents[cur_i] != self._en_plain:
+                self._en_spans = _diff_spans(self._en_plain, sents[cur_i])
+                self._en_plain = sents[cur_i]
+                self._en_is_final = True
+                self._en_shown_at = self._clock()
+                self._dirty = True
+            start = cur_i + 1
+        elif self._en_plain and self._en_is_final:
+            # a whole-line final (legacy shape) holds the line: all of this
+            # final's sentences queue behind it (back-to-back pacing)
+            start = 0
+        new_items = [
+            _Item([Span(s, FINAL_SAME)], s, self._utt(started_at),
+                  is_final=True, sent_idx=i)
+            for i, s in enumerate(sents) if i >= start
+        ]
+        self._queue = (kept + new_items)[-3:]
+        if not self._en_plain and self._queue:
+            self._en_shown_at = -self._hold  # first item releases immediately
+        # authoritative baseline for the next draft cycle; the draft routing
+        # is per-utterance (the next utterance's sentences start fresh at 0)
+        self._en_sent_texts = []
+        self._en_draft_full = plain
+        self._en_frag = fragment
+        self._dirty = True
+
+    def _translation_legacy(self, segments: list, started_at, plain: str) -> None:
+        """Pre-sentence-queue final path (single-sentence captions)."""
         shown = self._en_plain
         if shown:
             # common-prefix diff: keep the shown prefix, only show the delta
@@ -339,24 +607,32 @@ class OverlayDisplayModel:
         self._enqueue(spans, plain, started_at, is_final=True)
 
     def _enqueue(self, spans: List[Span], plain: str, started_at, is_final: bool,
-                 respect_hold: bool = False, amend: bool = False) -> None:
-        utt_t = started_at.timestamp() if started_at is not None else None
+                 respect_hold: bool = False, amend: bool = False, sent_idx: int = -1) -> None:
+        self._enqueue_item(_Item(spans, plain, self._utt(started_at), is_final,
+                                 amend=amend, sent_idx=sent_idx),
+                           respect_hold=respect_hold)
+
+    def _enqueue_item(self, item: _Item, respect_hold: bool = False) -> None:
+        utt_t = item.utt_t
         # If this final corrects a provisional of the same utterance currently on screen,
         # replace in place: drop the provisional so the drainer won't scroll it up.
-        if (is_final and utt_t is not None
+        if (item.is_final and utt_t is not None
                 and self._en_utt == utt_t and not self._en_is_final):
             self._en_plain = ""
             self._en_spans = []
-        if is_final:
+        if item.is_final:
             # FINALS ACCUMULATE — a queued final is committed content and must
             # display; clearing the queue (the draft rule) dropped finals that
             # landed back-to-back (CL: 'not queueing translated strings if
             # they happen immediately after the last'). Drafts supersede.
-            self._queue.append((spans, plain, utt_t, is_final, amend))
+            self._queue.append(item)
             del self._queue[:-3]
         else:
+            # a draft supersedes queued drafts AND queued sentences: the line
+            # shows the latest. (Bright sentence items are never dropped here —
+            # a draft never preempts committed content; it waits behind it.)
             self._queue.clear()
-            self._queue.append((spans, plain, utt_t, is_final, amend))
+            self._queue.append(item)
         if not respect_hold:
             self._en_shown_at = -self._hold  # release immediately on the next tick
         # else: the queued item waits for the shown caption's hold to elapse
@@ -374,13 +650,27 @@ class OverlayDisplayModel:
         min_show = max(1.0, self._hold / 2)
         cur_changed = False
         prev_changed = False
+        min_show = max(1.0, self._hold / 2)
+        cur_changed = False
+        prev_changed = False
         if self._queue and now - self._en_shown_at >= min(self._hold, min_show):
             item = self._queue.pop(0)
-            if len(item) == 5:
-                spans, plain, utt_t, is_final, amend = item
+            if isinstance(item, _Item):
+                spans, plain, utt_t = item.spans, item.plain, item.utt_t
+                is_final, amend = item.is_final, item.amend
             else:
-                spans, plain, utt_t, is_final = item
-                amend = False
+                if len(item) == 5:
+                    spans, plain, utt_t, is_final, amend = item
+                else:
+                    spans, plain, utt_t, is_final = item
+                    amend = False
+            self._en_current_sent = getattr(item, "sent_idx", -1)
+            # provenance: only a DRAFT-routed sentence (provisional, this
+            # utterance) may be amended by this utterance's final; a final-
+            # routed or legacy line is a previous utterance's caption
+            self._en_line_prov = bool(getattr(item, "provisional", False)
+                                      and getattr(item, "sent_idx", -1) >= 0)
+            self._en_frag = ""
             if amend:
                 # Append-flagged delta sentence: grow the current line (it
                 # already holds the committed prefix). No scroll — the line
@@ -414,14 +704,31 @@ class OverlayDisplayModel:
                 self._en_shown_at = now
                 cur_changed = True
         else:
+            # the parked fragment draft returns after the bright sentence's
+            # full hold — the sentence earns its hold BEFORE the in-progress
+            # line resumes typing (a draft never preempts committed content)
+            if (self._queued_draft and self._en_is_final
+                    and now - self._en_shown_at >= self._hold):
+                d = self._queued_draft
+                self._queued_draft = None
+                self._en_plain = d.plain
+                self._en_spans = list(d.spans)
+                self._en_utt = d.utt_t
+                self._en_is_final = False
+                self._en_current_sent = -1
+                self._en_frag = d.plain
+                self._en_shown_at = now - self._hold  # drafts don't hold
+                cur_changed = True
             # expire the current line if its hold elapsed with nothing queued — but
             # ONLY for finals. A provisional is a draft the viewer expects to be
             # followed by the committed/final; it must persist until replaced, not
             # vanish after the hold (a vanishing draft reads as a dropped caption).
-            if (self._en_plain and self._en_is_final
+            elif (self._en_plain and self._en_is_final
                     and now - self._en_shown_at >= self._hold):
                 self._en_plain = ""
                 self._en_spans = []
+                self._en_is_final = False
+                self._en_current_sent = -1
                 cur_changed = True
             # expire the src row after the hold with no ASR activity (mic silence):
             # a stale reading buffer that never clears reads as a stuck caption.

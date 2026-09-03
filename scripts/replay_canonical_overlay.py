@@ -35,6 +35,9 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
     # capture what actually renders (typing thread + hard-swaps both funnel
     # through _set / _render_src_text; AppKit is None here so both go to _set)
     rendered: list[tuple[float, str, str]] = []  # (elapsed, kind, text)
+    # target-row (EN) rendered line per caption event, for the reader-visible
+    # sentence-sequence trace (--target)
+    target_trace: list[tuple[float, str, str]] = []
 
     class F: pass
     r._field_partial = fp = object()
@@ -43,6 +46,18 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
         if field is fp:
             rendered.append((time.monotonic() - t0, "render", str(value)))
     r._set = traced_set
+
+    import sys as _sys
+    trace_target = "--target" in _sys.argv
+
+    def snap_target(elapsed, etype):
+        if not trace_target:
+            return
+        m = r._model
+        cur = "".join(sp.text for sp in m._en_spans)
+        prev = "".join(sp.text for sp in m._en_prev_spans)
+        tag = "BRIGHT" if m._en_is_final else "dim   "
+        target_trace.append((elapsed, etype, f"[{tag}] {cur!r}" + (f"  (prev {prev!r})" if prev else "")))
 
     for e in events:
         clk.advance(pace)
@@ -55,6 +70,8 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
             r.preview("mic", [(None, e.text)], now)
         elif e.type == "translation_final":
             r.translation("mic", [(None, e.text)], now)
+        if e.type.startswith("translation"):
+            snap_target(time.monotonic() - t0, e.type.replace("translation_", ""))
         # pump the drainer across the event's pacing window so the typing
         # thread's intermediate frames are captured
         end = time.monotonic() + pace
@@ -63,6 +80,12 @@ def replay_canonical(path: str, hold: float = 3.5, pace: float = 0.25) -> None:
             if st is not None:
                 r._reconcile(st)
             time.sleep(0.02)
+
+    if trace_target:
+        print(f"=== target-row reader-visible sequence: {path} ===")
+        for elapsed, etype, line in target_trace:
+            print(f"  [+{elapsed:7.2f}] {etype:10s} {line}")
+        return
 
     print(f"=== {len(rendered)} rendered src frames from {path} ===")
     flickers = 0

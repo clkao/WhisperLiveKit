@@ -501,3 +501,104 @@ def test_src_buffer_suppresses_promoted_sentence_in_tail():
     # once the hypothesis moves past the promoted text, suppression ends
     display = b.tail("镭射技术可以精确")
     assert display == "镭射技术可以精确"
+
+
+# ---- sentence-partitioned commit display (the captain's sentence queue) ----
+
+def drain(m, clk, steps=1):
+    for _ in range(steps):
+        clk.advance(0.1)
+        st = m.tick()
+        if st is not None:
+            pass
+    return m.state()
+
+
+def test_multi_sentence_final_queues_each_sentence():
+    """A multi-sentence final queues each sentence as its own bright item —
+    each earns its own hold instead of one long line being replaced whole."""
+    m, clk = make()
+    m.translation(segs("Dentists also use lasers. This reduces bleeding."), started_at=U1)
+    st = m.tick()
+    st = m.state()
+    assert plain(st) == "Dentists also use lasers.", plain(st)
+    # the second sentence is queued and paces after the first's hold
+    clk.advance(1.0); st = drain(m, clk)
+    assert plain(st) == "Dentists also use lasers.", "second sentence preempted the first's hold"
+    clk.advance(2.0); st = m.tick(); st = m.state()
+    assert plain(st) == "This reduces bleeding.", plain(st)
+    assert prev_plain(st) == "Dentists also use lasers.", prev_plain(st)
+
+
+def test_commit_crossing_terminator_freezes_completed_sentence():
+    """When the growing commit/draft crosses '.', the completed sentence
+    freezes (bright) and the line carries only the next sentence's fragment —
+    the completed sentence is never extended by the next sentence's words."""
+    m, clk = make()
+    m.preview(segs("Dentists also use lasers for oral surgery."), started_at=U1)
+    m.tick()
+    clk.advance(0.2)
+    # the draft crosses the terminator and starts the next sentence
+    m.preview(segs("Dentists also use lasers for oral surgery. This reduces"), started_at=U1)
+    m.tick()
+    st = m.state()
+    assert "Dentists also use lasers for oral surgery." in plain(st) or \
+           "Dentists also use lasers for oral surgery." in prev_plain(st), \
+        f"completed sentence not frozen: {plain(st)!r} / {prev_plain(st)!r}"
+    # the completed sentence's text is stable while the next sentence grows
+    text_now = prev_plain(st) or plain(st)
+    assert text_now.endswith("surgery.")
+    m.preview(segs("Dentists also use lasers for oral surgery. This reduces bleeding"), started_at=U1)
+    m.tick()
+    st = m.state()
+    shown = plain(st) + " " + prev_plain(st)
+    assert "Dentists also use lasers for oral surgery." in shown, \
+        f"completed sentence lost on fragment growth: {shown!r}"
+
+
+def test_reworded_final_amends_only_current_sentence():
+    """A reworded final amends the sentence on the line; a completed bright
+    sentence already scrolled to history is never retracted."""
+    m, clk = make()
+    # commit stream: sentence 1 completes and freezes (bright on the line)
+    m.preview(segs("Dentists also use lasers for oral surgery. This reduces"), started_at=U1)
+    m.tick()
+    st = m.state()
+    assert "Dentists also use lasers for oral surgery." in plain(st) + prev_plain(st)
+    clk.advance(1.0); m.tick()
+    assert "Dentists also use lasers for oral surgery." in plain(m.state()), \
+        "the bright sentence did not survive its hold"
+    # the final re-words the sentence: amend in place (green adds), never a
+    # blank flash between the old wording and the new
+    m.translation(segs("Dentists also use laser technology for oral surgery, reducing bleeding."), started_at=U1)
+    m.tick()
+    st = m.state()
+    cur, prev = plain(st), prev_plain(st)
+    shown = cur + " " + prev
+    assert "surgery" in shown and "reducing bleeding" in shown, f"current sentence lost: {cur!r} / {prev!r}"
+    assert cur != "", "the line blanked on the final (retraction)"
+
+
+def test_dermatology_tail_displays_before_next_caption():
+    """The captain's scenario: the commit stream showed only
+    'Dermatologists use lasers to remove' when the segment's final arrived —
+    the tail ('spots and tattoos') must display as part of the completed
+    sentence before the next sentence's caption takes the line."""
+    m, clk = make()
+    m.preview(segs("This reduces bleeding, sweating, pain. Dermatologists use lasers to remove"), started_at=U1)
+    m.tick()
+    # the final lands while the reader is mid-'remove'
+    m.translation(segs("Dentists also use laser technology for oral surgery, reducing bleeding, sweating, and pain. "
+                       "Dermatologists use lasers to remove spots and tattoos."), started_at=U1)
+    m.tick()
+    st = m.state()
+    seen = [plain(st), prev_plain(st)]
+    clk.advance(2.0); m.tick(); st = m.state()
+    shown = plain(st) + " | " + prev_plain(st)
+    assert "spots and tattoos" in shown, f"the tail never displayed: {shown!r}"
+    # and both sentences pace: the second sentence holds before the next final
+    clk.advance(1.0)
+    m.tick()
+    st = m.state()
+    assert plain(st) == "Dentists also use laser technology for oral surgery, reducing bleeding, sweating, and pain." or \
+           "spots and tattoos" in plain(st) + prev_plain(st), plain(st)
