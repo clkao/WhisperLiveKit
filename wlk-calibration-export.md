@@ -54,3 +54,18 @@ translate-on-close. That fallback was lost in the maintainer's integration.
 
 - Files live on the integration branch; cut the PR branch from origin/main.
 - The maintainer's #444 may touch calibrations — rebase-check before opening.
+
+## Stage Report: calibration-export (cycle 1)
+
+- DONE: zh→en and ja→zh calibration JSONs load via upstream load_calibration, exact prompt match
+  Both files round-trip through `load_calibration(None, repo, src, tgt)`; prompts equal `resolve_prompt(profile, …)` byte-for-byte (test_simul_calibration_files.py).
+- DONE: zh→en engine constructs (proof it no longer raises)
+  Mocked-weights construction of MlxLlmTranslationSimul succeeds for zh→en and ja→zh (top head (9,5), paper mode); negative control (missing file) still raises.
+- DONE: The deactivate-policy question drafted for the PR description
+  Included in the commit message tail (hard-fail now on main vs silent-deactivate as shipped before; AlignAtt4LLM hard-fails by RuntimeError). FO folds into the PR body.
+- DONE: Suite green vs baseline
+  8 failed / 311 passed / 43 errors with the files vs 8 failed / 314 passed / 43 errors at clean origin/main — the 3 new tests pass; the failure/error set is identical (pre-existing: canary, deepgram, qwen3 shims; verified by stash-compare).
+
+### Summary
+
+Branch `wlk/calibration-export` (6188fd2, from origin/main 363e4f6) adds the two calibration JSONs built from the Alignatt4LLM verdicts (`translation_heads_tencent_Hy-MT2-1_8B_{zh-en,ja-zh}.json`, PyTorch bf16 detection, transfer to 8bit mlx verified) in the upstream schema — runtime provenance (pinned revision f54bb3b8, quantization, source sha256 computed from the alignment files, per-check stable_vs_full flags) and honest provenance (source `attempted_pairs: null`, empty failures list — the source verdicts recorded none). Provenance note in each file states the bf16→8bit transfer evidence. NOT pushed; NOT PR'd — awaits FO review. Residual: the ja→zh file's `used_pairs: 219` is above the loader's 100 floor but is a thin corpus (noted for the maintainer); en→zh file already on main was untouched.
