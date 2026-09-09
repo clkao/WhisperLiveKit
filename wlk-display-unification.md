@@ -118,3 +118,22 @@ run), with the dedupe/_simul_active guard contracts under fixture-level
 tests. Suite: 376 passed, failure set a strict subset of the origin/main
 baseline. Commit 0143f1e on wlk/display-unification. NOT pushed, NOT PR'd —
 awaits FO review.
+
+## Stage Report: display-unification (cycle 3 — progress contract)
+
+- DONE: Zero getattr probes / zero private-attribute reads on translation objects in translation_processor.py
+  Grep-verified: `grep 'translation\._'` → no hits; the only remaining getattrs are main's pre-existing PUBLIC optional-method lookups (`close` line 20, `finish` line 81 — main's own idiom, untouched) plus `_ProgressReader`'s two public-contract accessors with documented third-party defaults.
+- DONE: Zero silent except blocks in the emission path
+  The one `except Exception` (translation_processor.py:54) is the sanctioned progress()-raise path: logs once per session naming the backend class and disables provisional drafts (returns None → emission skipped) — verified by test_progress_raise_disables_drafts_with_one_warning (asserts exactly 1 warning, no provisional, loop continues, `_Broken` named).
+- DONE: Capability via class attribute (base False, simul True)
+  `MlxLlmTranslation.provides_drafts = False`; `MlxLlmTranslationSimul.provides_drafts = True` — matches upstream's class-based routing idiom. The simul `progress()` override is a pure re-expose of existing private state (zero renames); the base default is honest-empty, proven against the REAL base class constructed with warmup=False (test_base_backend_contract_defaults_are_honest).
+- DONE: Event semantics identical to cycle 2; goldens byte-identical
+  All 6 cycle-2 emission tests pass with unchanged assertions (mock updated to the contract, not the semantics); display suite 65 passed incl. golden replays over zh_long_time_frontier.jsonl (overlay + TUI drained-replay).
+- DONE: Suite green vs baseline
+  Full suite: 379 passed / 3 failed / 43 errors — failures are exactly the pre-existing canary(2)+deepgram(1) environment set. Cycle-3 initially regressed 3 tests (SimpleNamespace fakes in test_translation_mlx ×2 / test_translation_alignatt lacked event_tap — masked by cycle 2's defensive getattr); fixed with no-op EventTap() mirrors of production init, re-run green.
+- DONE: Any deviation and why
+  Two documented deviations from the dispatch letter: (1) plain `translation.provides_drafts` attribute reads would crash third-party backends (nllw OnlineTranslation, alignatt sidecar) that flow through run_translation but predate the contract — reads go through `_ProgressReader`, which getattr's the PUBLIC contract names with documented no-draft defaults (no private probes; third-party backends report honestly-empty). (2) The dispatch's "dedupe keyed on d.source_text" would have CHANGED cycle-2 semantics (cycle 2 deduped on draft text alone); the binding "semantics identical" constraint won — dedupe key stays the draft text. Also: `scripts/simul_fixture.py` does not exist on this branch (integration-branch tooling, task-F disposition), so the generation-side gate here is upstream's simul tests (test_translation_mlx.py simul tests: construct MlxLlmTranslationSimul with a test calibration, exercise draft release + failure paths — green) plus the provably-additive engine diff (class attr + one method, process() untouched).
+
+### Summary
+
+Replaced cycle-2's private-attribute reach-through with an explicit display contract: `TranslationProgress` dataclass + `provides_drafts` class attribute + `progress()` method (base default honest-empty; simul pure re-expose), read via a `_ProgressReader` that handles third-party backends and turns progress() failures into one visible warning + session-scoped draft-display disable. Fixed 3 latent test fakes the removed getattr had masked. 65 display tests + 9 emission tests + 30 translation tests green; full suite 379/3/43 with the failure set exactly the pre-existing canary+deepgram baseline. Commit 9bc03f5 on wlk/display-unification; NOT pushed, NOT PR'd — awaits FO review.
