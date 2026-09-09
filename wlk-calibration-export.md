@@ -69,3 +69,40 @@ translate-on-close. That fallback was lost in the maintainer's integration.
 ### Summary
 
 Branch `wlk/calibration-export` (6188fd2, from origin/main 363e4f6) adds the two calibration JSONs built from the Alignatt4LLM verdicts (`translation_heads_tencent_Hy-MT2-1_8B_{zh-en,ja-zh}.json`, PyTorch bf16 detection, transfer to 8bit mlx verified) in the upstream schema — runtime provenance (pinned revision f54bb3b8, quantization, source sha256 computed from the alignment files, per-check stable_vs_full flags) and honest provenance (source `attempted_pairs: null`, empty failures list — the source verdicts recorded none). Provenance note in each file states the bf16→8bit transfer evidence. NOT pushed; NOT PR'd — awaits FO review. Residual: the ja→zh file's `used_pairs: 219` is above the loader's 100 floor but is a thin corpus (noted for the maintainer); en→zh file already on main was untouched.
+
+## Stage Report: calibration-export (cycle 2 — captain review fixes)
+
+- DONE: Ship zh→en ONLY — ja→zh calibration file removed from the branch
+  Thin corpus (219 used pairs, no live validation); returns when a real
+  ja→zh calibration exists. Commit cb667e6.
+- DONE: Tautological tests replaced with a golden-attention test
+  tests/fixtures/zh_en_attention_golden.npz (61KB): 3 informative
+  apply_commit_policy calls captured from the REAL calibrated engine during
+  the deterministic fixture replay (raw per-head decode-step attention rows,
+  recorded frontier + result). The test loads heads FROM THE BUNDLED FILE,
+  rebuilds upstream-format capture dicts, runs upstream apply_commit_policy,
+  and asserts the commit length equals the engine's recorded decision on
+  every record.
+- DONE: Sensitivity proven at two tiers
+  test_wrong_calibration_is_detected: top-1 head substitution must move the
+  stabilized argmax trajectory (measured: 1/3 records differ); top-3
+  substitution must flip a recorded commit decision (2/3 differ). Honest
+  finding: the paper policy's head averaging is intentionally robust — a
+  single wrong head does NOT flip decisions, so the decision-tier control
+  requires multi-head corruption. Fixture is checked in; assertions are
+  deterministic on it.
+- DONE: Suite green vs baseline
+  Full suite 8 failed / 313 passed / 43 errors — failure+error set identical
+  to clean origin/main baseline (8 failed / 314 passed pre-change; the -1
+  passed is the removed duplicate ja→zh direction in the old tautological
+  test). 5/5 calibration tests pass.
+- DONE: zh→en engine constructs (re-verified after ja→zh removal)
+  test_bundled_zh_en_calibration_loads + the cycle-1 mocked-weights
+  construction path remain green.
+
+### Summary
+
+Branch wlk/calibration-export (cb667e6, 2 commits on origin/main 363e4f6):
+one calibration file (zh→en), one test file with golden-attention proof +
+two-tier sensitivity control. ja→zh dropped per captain review. NOT pushed,
+NOT PR'd — awaits FO/captain review.
