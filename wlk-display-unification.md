@@ -73,3 +73,48 @@ Upstream main has NEITHER file (display surface is `web/live_transcription.js`
 ### Summary
 
 Ported the unified display layer (model + overlay view + TUI-as-thin-view + tests + goldens + replay instrument) onto origin/main as commit f8110c9 on wlk/display-unification; 56 display-suite tests pass, full-suite failures byte-identical to baseline. Residual risk: the production event-tap EMISSION points for translation events (translation_final/translation_provisional inside the translation loop) live on the integration branch's audio_processor.py; on main's restructured translation_processor.py they are not yet wired — the model/views/tests are complete and generation-independent, but production emission needs a small wiring commit (in audio_processor.py init + translation_processor.py loop) before live runs emit events; ASR-side emission points on main were not verified. NOT pushed, NOT PR'd — awaits FO review.
+
+## Stage Report: display-unification (cycle 2 — emission wiring)
+
+- DONE: All four event types emitted from main's restructured pipeline
+  audio_processor __init__ attaches EventTap+DisplayAdapter (+EventLog when
+  args.event_log set); transcription_final/provisional emitted at the ASR
+  commit block, the streaming timeout-refresh, and the terminal finish()
+  flush; translation_final/provisional emitted from run_translation
+  (translation_processor.py) — finals for single-or-list results,
+  provisionals with committed/source snapshots + fresh flag.
+- DONE: Dedupe + _simul_active guard semantics preserved (tests)
+  tests/test_translation_emission.py (6 tests, no live model): finals emit
+  single+list; provisionals REQUIRE _simul_active (base-path buffer =
+  untranslated source must not flash); identical consecutive provisionals
+  deduped; fresh=True only when _mt_call_count advances; final suppresses
+  the provisional in the same batch; state contract unchanged.
+- DONE: Event log from a live run round-trips; golden replay still passes
+  lc_terminal --event-log over demo_en_30s.wav captured 37 events
+  (15 prov/12 final ASR + 10 translation finals) through the full pipeline.
+  DisplayAdapter over the golden zh_long_time_frontier.jsonl renders all 4
+  final pairs. Golden replays (overlay model + TUI unified) green.
+- DONE: Suite green vs baseline; ASR-side emission points verified
+  Full suite -p no:randomly: 376 passed / 3 failed / 43 errors. Failure set
+  is a strict SUBSET of clean origin/main (identical canary x2 +
+  deepgram x1; all 43 errors pre-existing). My change FIXED the 9
+  object.__new__-fixture failures the tap exposed (fixture completeness:
+  event_tap/_last_asr_prov/_last_mt_prov/processing_error/sep now set,
+  mirroring production __init__). NOTE: 6 of those 9 were ALSO failing on
+  the integration branch tip (same AttributeError there — carried, never
+  fixed upstream-side); 3 (silent-backend watchdog) fail on the integration
+  branch due to the local-only heard_speech commit (bf789a7) reading
+  self.transcription the upstream fixture fake lacks — pre-existing, NOT
+  emission-related, left as-is (upstream code path unaffected).
+  Machine note: the qwen3-asr-causal submodule had to be initialized in the
+  worktree (git submodule update --init) — fresh worktrees need this.
+- FAILED: none
+
+### Summary
+
+Cycle 2 closes the emission gap: main's restructured pipeline now emits the
+full caption event stream, live-verified end-to-end (37 events from a real
+run), with the dedupe/_simul_active guard contracts under fixture-level
+tests. Suite: 376 passed, failure set a strict subset of the origin/main
+baseline. Commit 0143f1e on wlk/display-unification. NOT pushed, NOT PR'd —
+awaits FO review.
