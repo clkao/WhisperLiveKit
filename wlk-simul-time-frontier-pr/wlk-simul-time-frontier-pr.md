@@ -56,3 +56,46 @@ Measured A/B (same audio, same ASR text, zh_long + demo_en_30s):
 - Review sequence: after B, parallel with G (fold G's decision in).
 - Prerequisite check: task A's calibration files (zh→en simul on main needs
   them to even construct the engine).
+
+## Stage Report: simul-time-frontier-pr (continuation — previous worker died on ENOSPC)
+
+- DONE: 4-commit branch wlk/simul-time-frontier from origin/main
+  c8e71d2 (dot-form model-id aliases, audit item b833489),
+  13c5383 (time frontier port: frontier_mode/hold_back config, core wiring,
+  engine _accessible_text with fractional tail release; test_simul_frontier.py),
+  d6e7796 (auto→time for every simul backend, e9fbadf port),
+  b92d9ec (end-of-feed clamp via DRAIN_RELEASE + released-prefix fragment
+  guard _MIN_RELEASED_TOKENS=6 with rolling chars-per-token, 7f13e08 port).
+- DONE: Port was a re-application, not a cherry-pick
+  The maintainer's lifecycle restructure moved the translation loop to
+  translation_processor.py; the DRAIN_RELEASE marker is handled there
+  (evaluate the clamped release, no token insertion). The engine-side
+  clamp/gate re-expose the ported semantics.
+- DONE: Commit points verified green
+  Each commit checked out and tested: 13c5383 (21 pass), d6e7796 (21),
+  b92d9ec (24) — the auto-flip test and guard tests land with their
+  implementations (one re-split was needed; earlier interim commits had
+  test/implementation ordering flaws, fixed by reset + re-commit).
+- DONE: Suite + ruff
+  Full suite 323 passed / 8 failed / 4 errors — failure set verified
+  identical to origin/main (canary x2, deepgram, qwen3 shims x5 — the shims
+  fail identically on pristine main: missing standalone qwen3_asr_causal
+  package in the venv; ffmpeg coalescing errors). ruff clean.
+- DONE: pr.md drafted in the entity folder
+  Before/after structure matching #449's style; stacks-on-#448 dependency
+  documented; the A/B numbers and the paper-deviation statement included.
+- SKIPPED: live A/B re-run on the ported code
+  Disk at 5.4GB free and the measurement protocol needs full model runs;
+  the semantics are pinned by the unit tests, and the numbers cited are the
+  measured integration-branch results. A live confirmation run is listed
+  for the FO/captain before merge.
+- FAILED: none
+
+### Summary
+
+The simul PR branch is complete and review-ready at wlk/simul-time-frontier
+(4 commits). Two deviations from the dispatch letter: the worker's partial
+WIP was completed rather than restarted, and the live A/B confirmation is
+deferred to the captain's machine (disk pressure). The gate-semantics
+decision (task wlk-fixture-gate-semantics) remains open for the PR
+description edit.
