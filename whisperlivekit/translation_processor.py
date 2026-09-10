@@ -5,7 +5,13 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-from whisperlivekit.processing_queue import SENTINEL, PipelineClosed, PipelineOverloaded, get_all_from_queue
+from whisperlivekit.processing_queue import (
+    DRAIN_RELEASE,
+    SENTINEL,
+    PipelineClosed,
+    PipelineOverloaded,
+    get_all_from_queue,
+)
 from whisperlivekit.timed_objects import ChangeSpeaker, Silence
 
 logger = logging.getLogger(__name__)
@@ -32,6 +38,11 @@ async def run_translation(queue, translation, state, lock) -> None:
             if item is SENTINEL:
                 finalize = getattr(translation, "finish", translation.validate_buffer_and_reset)
                 new_translation, new_translation_buffer = await asyncio.to_thread(finalize)
+            elif item is DRAIN_RELEASE:
+                # End-of-feed poke from the audio processor: the audio cursor
+                # has stopped, so the simul translator re-evaluates its
+                # clamped release now. No new tokens to insert.
+                new_translation, new_translation_buffer = await asyncio.to_thread(translation.process)
             elif isinstance(item, Silence):
                 if item.is_starting:
                     new_translation, new_translation_buffer = await asyncio.to_thread(

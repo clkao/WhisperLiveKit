@@ -18,6 +18,7 @@ from whisperlivekit.core import (
 )
 from whisperlivekit.metrics_collector import SessionMetrics
 from whisperlivekit.processing_queue import (
+    DRAIN_RELEASE,
     SENTINEL,
     PipelineClosed,
     PipelineOverloaded,
@@ -500,6 +501,14 @@ class AudioProcessor:
 
     async def _signal_input_complete(self) -> None:
         """Signal end-of-input to the first active processing queue."""
+        # Time-frontier support: the audio cursor stops advancing at
+        # end-of-feed while the ASR keeps draining its backlog, so the simul
+        # translator's fractional tail release would freeze mid-sentence
+        # until the terminal flush. Flag the clamp and poke the translation
+        # queue to evaluate the release now.
+        if self.translation_queue and hasattr(self.translation, "source_complete"):
+            self.translation.source_complete = True
+            await self.translation_queue.put(DRAIN_RELEASE)
         if self.transcription_queue:
             await self.transcription_queue.put(SENTINEL)
             return

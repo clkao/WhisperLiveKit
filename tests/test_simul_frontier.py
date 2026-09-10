@@ -79,6 +79,7 @@ def test_time_mode_no_cursor_falls_back_to_text(tmp_path):
     """Time mode without a cursor (audio_position None) is identical to text
     mode — safe degradation, not a crash."""
     b = _make_simul(tmp_path, frontier_mode="time")
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
     captured = {}
     b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
@@ -91,6 +92,7 @@ def test_time_mode_extends_into_tail_by_cursor(tmp_path):
     over the tail's window. Cursor 0.8 covers the committed token (end 0.5)
     plus 0.3 of the tail's 0.5s window -> 60% of its chars."""
     b = _make_simul(tmp_path, frontier_mode="time")
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
     captured = {}
     b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("abcd", 0.5, 1.0)])
@@ -104,6 +106,7 @@ def test_time_mode_fully_covered_tail_equals_source(tmp_path):
     """Cursor past the tail end: the whole source is accessible (the
     no-hold degenerate case the paper's hold-back guards)."""
     b = _make_simul(tmp_path, frontier_mode="time")
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
     captured = {}
     b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
@@ -130,6 +133,7 @@ def test_time_mode_hold_back_zero_includes_just_finished_word(tmp_path):
     """0ms hold-back (the paper's operating point): a word is accessible the
     moment its end time reaches the cursor."""
     b = _make_simul(tmp_path, frontier_mode="time", hold_back_s=0.0)
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
     captured = {}
     b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("世界", 0.5, 1.0)])
@@ -142,6 +146,7 @@ def test_time_mode_stale_tail_still_dropped(tmp_path):
     """A hypothesis predating the commit boundary never extends the
     accessible prefix, same as the text frontier's stale-tail rule."""
     b = _make_simul(tmp_path, frontier_mode="time")
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
     captured = {}
     b._translate_simul = lambda source, committed: captured.setdefault("committed", committed) or "Hello"
     b.insert_tokens([_token("你好", 0.0, 0.5), _tail("你好", 0.0, 0.4)])
@@ -176,3 +181,51 @@ def test_core_factory_resolves_auto_frontier_to_time():
     m = re.search(r'if frontier == "auto":\n\s+frontier = "time"', src)
     assert m, "auto must resolve to the time frontier unconditionally"
     assert "frontier_mode=frontier" in src
+
+
+def test_end_of_feed_clamp_releases_full_tail(tmp_path):
+    """End-of-feed clamp: once source_complete is set, the whole unstable tail
+    is accessible even though the audio cursor has stopped advancing (the
+    tail's time window is anchored to the ASR clock, which outlives the feed;
+    without the clamp the fractional release froze mid-sentence for the whole
+    drain)."""
+    b = _make_simul(tmp_path, frontier_mode="time")
+    b._MIN_RELEASED_TOKENS = 0  # frontier-mechanics test; the fragment guard is covered separately
+    b.audio_position = 2.0
+    b.insert_tokens([_token("Hello", 0.0, 1.0), _tail("world and more words here", 1.0, 5.0)])
+    # Before the clamp: the tail is only fractionally accessible (cursor 2.0
+    # inside a 1.0-5.0 window).
+    partial = b._accessible_text()
+    assert "Hello" in partial and "more words" not in partial
+    # After the clamp: everything spoken has been fed; release it all.
+    b.source_complete = True
+    full = b._accessible_text()
+    assert full.startswith("Hello") and "more words here" in full
+
+
+def test_fragment_guard_holds_stub_drafts(tmp_path):
+    """Fragment guard (time frontier): a first draft publishes only once the
+    RELEASED prefix carries at least _MIN_RELEASED_TOKENS (6) source tokens.
+    A 1-3 word stub must not flash at a sentence open."""
+    b = _make_simul(tmp_path, frontier_mode="time")
+    b.audio_position = 0.5
+    b.insert_tokens([_token("今", 0.0, 0.5), _tail("天来讨论", 0.5, 1.0)])
+    released = b._accessible_text()
+    assert b._accessible_gate_open(released) is False
+    result = b.process()
+    assert result[0] is None, "a stub released prefix must not publish a draft"
+    # Enough released text opens the gate.
+    b.audio_position = 1.0
+    b.insert_tokens([_token("我们今天来讨论镭射技术在医学上的应用。", 0.5, 1.0)])
+    assert b._accessible_gate_open(b._accessible_text()) is True
+
+
+def test_fragment_guard_exempts_text_mode_and_uncursed_time(tmp_path):
+    """The guard only gates the time frontier with a live cursor: text mode
+    (released prefix == committed text, historically ungated) and time mode
+    before the first cursor update behave exactly as before."""
+    bt = _make_simul(tmp_path)
+    assert bt._accessible_gate_open("今") is True  # text mode: never gated
+    bc = _make_simul(tmp_path, frontier_mode="time")
+    assert bc.audio_position is None
+    assert bc._accessible_gate_open("今") is True  # no cursor yet: not gated
