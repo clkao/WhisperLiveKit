@@ -37,7 +37,7 @@ either way.
 
 ## Calibration quality notes
 
-- Top head: layer 9, head 5 (TS score 0.79 on the 8bit MLX checkpoint,
+- Top head: layer 9, head 5 (TS score 0.77 on the 8bit MLX checkpoint,
   0.79 on the PyTorch bf16 reference), the same primary head as the en→zh
   and ja→zh calibrations, which supports these being general alignment
   heads rather than direction-specific ones.
