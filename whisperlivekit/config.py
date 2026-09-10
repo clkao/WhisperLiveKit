@@ -65,8 +65,7 @@ class WhisperLiveKitConfig:
     # text prefix (works for every backend; advances at the ASR commit cadence).
     # "time": source tokens whose word end time is behind the audio cursor
     # (minus hold-back) are accessible — decouples the frontier from the commit
-    # cadence. "auto": "time" for backends with word-accurate token times,
-    # "text" otherwise.
+    # cadence. "auto" resolves to "time" for every simul-capable backend.
     mlx_llm_mt_simul_frontier: str = "auto"
     # Conservative hold-back for the time frontier: source words are only
     # accessible once their end time is at least this far behind the audio

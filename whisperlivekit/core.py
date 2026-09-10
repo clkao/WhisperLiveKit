@@ -316,7 +316,7 @@ class TranscriptionEngine:
                     # time frontier tracks the audio cursor.
                     frontier = config.mlx_llm_mt_simul_frontier
                     if frontier == "auto":
-                        frontier = "time" if config.backend == "nemotron-mlx-asr" else "text"
+                        frontier = "time"
                     self.translation_model = MlxLlmTranslationSimul(
                         calibration_file=config.mlx_llm_mt_calibration,
                         model_id=model_id,

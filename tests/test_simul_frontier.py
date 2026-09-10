@@ -55,10 +55,11 @@ def _tail(text, start=0.0, end=0.0):
     return HypothesisTail(start=start, end=end, text=text)
 
 
-def test_frontier_default_resolves_to_text_for_non_time_backends(tmp_path):
-    """Default frontier_mode is "auto"; for a backend without word-accurate
-    token times it resolves to text, and text mode maps the committed text
-    exactly as before (the time machinery must not engage)."""
+def test_engine_default_frontier_is_text(tmp_path):
+    """The engine-level default frontier_mode is "text": without an explicit
+    frontier the committed text maps exactly as before (the time machinery
+    must not engage). The core factory resolves the config's "auto" to
+    "time" before constructing (see the factory test below)."""
     b = _make_simul(tmp_path)
     assert b._frontier_mode == "text"
     captured = {}
@@ -164,12 +165,14 @@ def test_config_frontier_fields_exist():
     assert config.mlx_llm_mt_simul_hold_back_s == 0.0
 
 
-def test_core_factory_resolves_auto_frontier_per_backend():
-    """"auto" resolves to the time frontier for backends with word-accurate
-    token times and to the text frontier for every other backend."""
+def test_core_factory_resolves_auto_frontier_to_time():
+    """"auto" resolves to the time frontier for every simul backend: the
+    measured A/B (zh→en 0.63→0.83, en→zh 0.55→0.70 on real clips) showed the
+    time frontier dominates, and the text frontier lacks the fragment guard
+    and drain clamp. "text" remains the explicit opt-out."""
     import re
 
     src = open("whisperlivekit/core.py").read()
-    m = re.search(r'frontier = "time" if config\.backend == "nemotron-mlx-asr" else "text"', src)
-    assert m, "auto-frontier resolution must branch on the backend"
+    m = re.search(r'if frontier == "auto":\n\s+frontier = "time"', src)
+    assert m, "auto must resolve to the time frontier unconditionally"
     assert "frontier_mode=frontier" in src
