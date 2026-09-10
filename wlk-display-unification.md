@@ -210,3 +210,38 @@ emission wiring, progress contract, --event-log server flag, overlay view.
 The terminal view lives on wlk/tui-view, stacked, as the seed for the
 wlk-tui package (entity wlk-tui-package.md updated below). Ready for FO
 review and push on captain approval.
+
+## Stage Report: display-unification (cycle 6 — view code moves out)
+
+- DONE: PR branch trimmed to the model layer
+  Removed from wlk/display-unification (commit 1896443): whisperlivekit/
+  overlay.py (AppKit view, no entry point on main), src_buffer.py (view-side
+  src-row state machine), overlay_events.py (imported by nothing — dead),
+  event_diff.py (stream-diff helper; its three assertions inlined into
+  tests/test_caption_events.py as transparent counting logic, one threshold
+  fix: fragmentation fires at >= 2x golden finals). tests/test_overlay_model.py
+  and tests/test_overlay_replay.py keep only model-level tests; the view/
+  src-buffer tests moved to the stacked branch. scripts/replay_canonical_overlay.py
+  rewritten as a model-only instrument: drives OverlayDisplayModel directly,
+  traces the committed caption line through the hold-drain (verified: the
+  golden's full bright chain — 'It reduces bleeding...', 'Dermatologists...
+  spots and tattoos.', 'In summary...' — all display, no retype).
+- DONE: Stacked branch retains the views
+  wlk/tui-view forked at 0c83284, BEFORE the trim, so it already carries
+  overlay.py, src_buffer.py, the view-level replay script and the src-buffer
+  tests; an accidental duplicate test section was reverted (the interim
+  commit dropped). tui.py + test_tui_unified.py from aae6299 unchanged.
+- DONE: Verification
+  PR branch: 364 passed / 3 failed / 4 errors — failure+error set identical
+  to origin/main (canary x2, deepgram, ffmpeg coalescing); ruff clean; zero
+  references to overlay/src_buffer/event_diff/overlay_events/AppKit/tui.
+  Stacked branch: 375 passed, same failure set, ruff clean.
+
+### Summary
+
+The display PR now ships exactly the semantics layer: caption event stream,
+display model, emission wiring, progress contract, --event-log server flag,
+model-level replay instrument and tests (+4,163 -7 over 30 files before this
+cycle; smaller after the trim). The overlay and terminal views live on
+wlk/tui-view (stacked), seeding the wlk-tui package. Ready for FO review
+and push on captain approval.
