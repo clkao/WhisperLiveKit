@@ -245,3 +245,49 @@ model-level replay instrument and tests (+4,163 -7 over 30 files before this
 cycle; smaller after the trim). The overlay and terminal views live on
 wlk/tui-view (stacked), seeding the wlk-tui package. Ready for FO review
 and push on captain approval.
+
+## Stage Report: display-unification (cycle 7 — first-principles rename)
+
+- DONE: overlay_model.py -> caption_display.py; OverlayDisplayModel -> CaptionDisplay
+  Rationale recorded in the module docstring: "model" collides with the
+  repo's ML-model meaning (model_mapping.py, model_paths.py); "overlay"
+  named a view on a view-agnostic component. Commit 513b6fa.
+- DONE: display_adapter.py absorbed into caption_display.py; duplicate
+  DisplayState name resolved
+  The adapter's simple reducer moves in as CaptionLineAccumulator with
+  state CaptionLineState (the styled-spans DisplayState keeps its name).
+  audio_processor now holds self.caption_lines; test_harness reads it via
+  the renamed attribute. Module count reduced by one.
+- DONE: Threading contract documented in caption_display.py's module docstring
+  Events are forwarded synchronously on the event loop thread; both
+  classes are single-threaded from that thread; native views marshal
+  state across to their own threads.
+- DONE: Full reference sweep clean; docstrings de-scoped
+  git grep for OverlayDisplayModel/overlay_model/display_adapter/
+  DisplayAdapter: 0 hits. Remaining "overlay" mentions in the diff are in
+  pre-existing origin/main docstrings (translation_mlx_llm_mt.py), left
+  untouched to keep the diff scoped.
+- DONE: Suites + lint + replay verified after rename
+  Full suite 364 passed / 3 failed / 4 errors — failure+error set
+  identical to origin/main (canary x2, deepgram, ffmpeg coalescing).
+  ruff clean. Replay of tests/golden/zh_long_time_frontier.jsonl through
+  CaptionDisplay shows the full bright chain (It reduces bleeding... ->
+  Dermatologists... spots and tattoos) with no retype. Note: run the
+  replay with PYTHONPATH pointing at the worktree; the editable venv
+  install resolves whisperlivekit to the main checkout, which predates
+  the rename.
+- DONE: tui-view note
+  wlk/tui-view is now one rename behind (forked at 0c83284); it will be
+  rebased onto the renamed PR branch when the wlk-tui package work starts.
+
+### Summary
+
+Final component list (source of truth for the PR description):
+whisperlivekit/caption_events.py (CaptionEvent, EventTap, EventLog,
+FanOutSink), whisperlivekit/caption_display.py (CaptionDisplay policy
+state machine + DisplayState styled spans + CaptionLineAccumulator
+stream-level line state), timed_objects.py (TranslationProgress),
+emission points in audio_processor.py + translation_processor.py,
+provides_drafts/progress() backend contract, --event-log server flag
+(parse_args + config). Zero behavior change: all suites return the same
+sets as before the rename. NOT pushed; awaiting FO review.
