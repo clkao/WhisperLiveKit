@@ -32,3 +32,37 @@ Add `mlx-sortformer` as a diarization backend using mlx-audio's MLX conversion o
 - Speaker markers appear in TUI/overlay when multiple speakers detected.
 - uv lock --check passes. ruff check clean. Tests pass without MLX installed.
 - No NeMo dependency required.
+
+## Stage Report: branch cut (implementation — port to origin/main)
+
+- DONE: Backend slotted into main's diarization/ package structure
+  Branch wlk/diarization-mlx (3 commits on origin/main: e5786b9 backend +
+  wiring, 3e5bd93 pyproject extra, 4a6fdbb tests). The backend module is
+  the c87e4ba-era final version (API mirrors the NeMo backend); main's
+  audio_processor diarization loop already uses the same contract
+  (insert_audio_chunk/insert_silence/diarize), so c87e4ba's substance is
+  satisfied by construction on main's restructured pipeline.
+- DONE: mlx-audio optional + lazy-import verified
+  Extra diarization-mlx-sortformer added (darwin/arm64 marker, matching the
+  source commit f9b5768); the module imports with mlx_audio absent
+  (test_module_import_is_lazy); loader import is inside __init__.
+- DONE: Tests green vs baseline; contract test present
+  8 new hermetic tests pass. Full suite failure set run-to-run identical to
+  origin/main in the same checkout (canary x2, deepgram, qwen3-shim x5 —
+  environmental; note: the qwen3-shim failures appear on pristine main in
+  this worktree, so they predate this change). ruff clean.
+- DONE: Live smoke with the real model
+  31.5s zh_long.wav clip: RTF 0.024, 12 segments, single speaker correctly
+  identified end to end through the ported contract (matches the original
+  integration-branch probe: loads in ~6.6s, single-speaker zh clip).
+- SKIPPED: none
+- FAILED: none
+
+### Summary
+
+Ported the MLX sortformer diarization backend onto origin/main as a peer
+backend in whisperlivekit/diarization/. One deliberate 1-line parity
+change beyond the source commits: sortformer_max_speakers validation now
+accepts mlx-sortformer (the source predates that validation; the MLX
+backend applies the same cap, so peer parity is the intent). pr.md drafted
+in this folder for FO review. NOT pushed — awaits FO review.
