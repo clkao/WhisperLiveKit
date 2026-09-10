@@ -66,3 +66,37 @@ It renders from the shared caption display model (no independent display
 logic). When this package work starts per the captain decision, it
 consumes the event-stream contract from that branch; the tui.py there is
 the starting point, not the integration branch's copy.
+
+## Stage Report: wlk-tui-package (client bundle reconciliation)
+
+- DONE: Client bundle restored onto wlk/tui-view (commit 5328fba)
+  From the integration tip: whisperlivekit/{overlay.py,src_buffer.py,
+  inline_diff.py,screen_ocr.py} + scripts/{lc_terminal.py,
+  test_overlay_fullscreen.py}. overlay.py imports adapted to the renamed
+  caption_display (CaptionDisplay). lc_terminal keeps its own --event-log
+  (post-hoc tap hook — TestHarness constructs AudioProcessor without user
+  args, so the server-side flag path is not reachable from the harness).
+- DONE: View-level tests extracted
+  tests/test_src_buffer.py (3 tests: full zh sequence, CJK/Latin join,
+  promoted-sentence suppression) extracted from the stale untracked
+  test_overlay_model.py duplicate (model tests live on the PR branch as
+  test_caption_display.py; the untracked duplicate was removed).
+- DONE: Live proof
+  lc_terminal --event-log over zh_long.wav on the stacked branch: exit 0 in
+  53s, 51 events, 4 finals, draft coverage 0.75 PASS. The full client
+  bundle works against the renamed display layer.
+- DONE: ruff clean; suite 364 passed / same failure set as origin/main.
+- SKIPPED: src-row typing-frame trace variant of the replay instrument
+  (noted in cycle 6 as living here) — the view-level trace was lost in the
+  rebase; restore on demand from wlk/display-unification-old history if
+  needed for overlay flicker debugging.
+- FAILED: none
+
+### Summary
+
+wlk/tui-view now carries the complete client bundle (terminal driver +
+overlay + src buffer + support modules) stacked on the renamed display
+branch, live-verified. The package extraction (pyproject/packaging) is the
+next step when the captain starts task C in earnest. Note: tui-view was
+re-stacked onto 513b6fa (renamed) during the earlier session; the overlay
+restore includes the pre-rename→post-rename import adaptation.
