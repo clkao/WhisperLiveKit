@@ -137,3 +137,48 @@ awaits FO review.
 ### Summary
 
 Replaced cycle-2's private-attribute reach-through with an explicit display contract: `TranslationProgress` dataclass + `provides_drafts` class attribute + `progress()` method (base default honest-empty; simul pure re-expose), read via a `_ProgressReader` that handles third-party backends and turns progress() failures into one visible warning + session-scoped draft-display disable. Fixed 3 latent test fakes the removed getattr had masked. 65 display tests + 9 emission tests + 30 translation tests green; full suite 379/3/43 with the failure set exactly the pre-existing canary+deepgram baseline. Commit 9bc03f5 on wlk/display-unification; NOT pushed, NOT PR'd — awaits FO review.
+
+## Stage Report: display-unification (cycle 4 — scope change: TUI moves out)
+
+- DONE: tui.py, tests/test_tui_unified.py, and scripts/lc_terminal.py removed from the PR branch
+  Captain decision: the terminal client becomes the standalone wlk-tui package
+  (entity wlk-tui-package.md). The TUI work is preserved in this branch's
+  history (f8110c9's tui.py is the seed); nothing is lost. Note: lc_terminal
+  could not stay without tui.py (its whole display path is TuiRenderer/
+  MultiRenderer), so both moved out together — this also resolves the open
+  "drop lc_terminal from the PR?" question in favor of dropping it.
+- DONE: Dangling references cleaned
+  overlay.py (2 comments), display_adapter.py (2 doc refs), audio_processor.py
+  (1 comment) reworded; test_overlay_model.py's three TuiRenderer tests
+  removed; test_overlay_replay.py's zh_ja_fallback test lost its vestigial
+  lc_terminal import (the module was exec'd but never used) — assertions
+  unchanged and still pass.
+- DONE: --event-log moved to the server CLI (parse_args + WhisperLiveKitConfig)
+  Without lc_terminal the JSONL log was unreachable in production. The flag
+  flows: parse_args -> config.from_namespace -> AudioProcessor tap (which
+  already read args.event_log). Verified: parse_args(['--event-log', ...])
+  sets it; default None.
+- DONE: Ruff clean — the branch adds zero violations
+  origin/main passes ruff clean (verified in a detached worktree), so the
+  branch must too: 49 violations fixed (auto-fixes + manual: doubled
+  docstring, E402 imports, E701/E702 statement splits, F841 unused locals in
+  overlay.py/overlay_model.py where the assignment was pure documentation).
+  `ruff check .` now passes clean on the branch.
+- DONE: Suite vs baseline
+  Branch: 3 failed / 373 passed / 13 skipped / 4 errors. Main (same
+  interpreter, detached worktree at 363e4f6): 8 failed / 308 passed / 4
+  errors. The branch's failure set is a STRICT SUBSET of main's — the 5
+  test_qwen3_backend_shims failures on main pass on the branch; the
+  canary(2)/deepgram(1) failures and asr_coalescing_pipeline errors(4) are
+  identical. Zero new failures. Display/emission/model suites all green.
+- FAILED: none
+
+### Summary
+
+Scope change executed: the PR now ships the caption event stream, the display
+model, emission wiring, the backend contract, and the overlay view — one
+view, view-agnostic model. The terminal renderer's next home is the wlk-tui
+package (its seed lives in this branch's history at f8110c9). The --event-log
+CLI flag keeps the JSONL log reachable without the dev driver. Ruff-clean,
+failure set a strict subset of main's. NOT pushed, NOT PR'd — awaits FO
+review. Commit e63c3d4 on wlk/display-unification.
