@@ -310,6 +310,13 @@ class TranscriptionEngine:
                     from whisperlivekit.translation_mlx_llm_mt_simul import (
                         MlxLlmTranslationSimul,
                     )
+                    # Frontier source: "auto" resolves to the time frontier for
+                    # backends with word-accurate token times, text otherwise.
+                    # The text frontier advances at the ASR commit cadence; the
+                    # time frontier tracks the audio cursor.
+                    frontier = config.mlx_llm_mt_simul_frontier
+                    if frontier == "auto":
+                        frontier = "time" if config.backend == "nemotron-mlx-asr" else "text"
                     self.translation_model = MlxLlmTranslationSimul(
                         calibration_file=config.mlx_llm_mt_calibration,
                         model_id=model_id,
@@ -319,6 +326,8 @@ class TranscriptionEngine:
                         mass_threshold=getattr(config, "mlx_llm_mt_simul_mass_threshold", 0.5),
                         simul_soft_max_s=getattr(config, "mlx_llm_mt_simul_soft_max_s", 4.0),
                         simul_hard_max_s=getattr(config, "mlx_llm_mt_simul_hard_max_s", 20.0),
+                        frontier_mode=frontier,
+                        hold_back_s=getattr(config, "mlx_llm_mt_simul_hold_back_s", 0.0),
                     )
                 else:
                     self.translation_model = MlxLlmTranslation(

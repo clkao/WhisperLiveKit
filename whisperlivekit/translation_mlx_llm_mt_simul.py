@@ -29,7 +29,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
     def __init__(self, model_id="hy-mt2-1.8b-8bit", target_language="en",
                  source_language="", warmup=True, commit_mode="paper",
                  mass_threshold=0.5, simul_soft_max_s=4.0, simul_hard_max_s=20.0,
-                 calibration_file=None):
+                 calibration_file=None, frontier_mode="text", hold_back_s=0.0):
         super().__init__(model_id, target_language, source_language, warmup=False)
         self._calibration_file = calibration_file
         self._calibration = load_calibration(calibration_file, self._config.repo, source_language, target_language)
@@ -44,6 +44,18 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             raise ValueError("Require 0 < mass threshold <= 1 and 0 < soft duration <= hard duration")
         self._commit_mode, self._mass_threshold = commit_mode, mass_threshold
         self._simul_soft_max_s, self._simul_hard_max_s = simul_soft_max_s, simul_hard_max_s
+        # Accessible-frontier source for the commit policy. "text": the
+        # ASR-committed text prefix (advances at the ASR commit cadence).
+        # "time": source words whose end time is behind the audio cursor
+        # (``audio_position``, a plain data field set by the translation
+        # loop) minus ``_hold_back_s`` — decouples the frontier from the
+        # commit cadence.
+        self._frontier_mode = frontier_mode
+        self._hold_back_s = hold_back_s
+        # Audio cursor (seconds of audio consumed), refreshed by the
+        # translation loop each cycle. None = unknown (time mode then falls
+        # back to the text frontier).
+        self.audio_position: float | None = None
         self._committed_simul = []
         self._tail = None
         self._last_draft = None
@@ -62,6 +74,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
             warmup=False, commit_mode=self._commit_mode, mass_threshold=self._mass_threshold,
             simul_soft_max_s=self._simul_soft_max_s, simul_hard_max_s=self._simul_hard_max_s,
             calibration_file=self._calibration_file,
+            frontier_mode=self._frontier_mode, hold_back_s=self._hold_back_s,
         )
 
     def _ensure_simul_model(self):
@@ -144,6 +157,52 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
         separator = "" if self._source_language.startswith(("zh", "ja", "cmn", "yue")) else " "
         return separator.join(t.text.strip() for t in self._committed_simul)
 
+    def _accessible_text(self) -> str:
+        """Time-frontier mode: the source prefix the audio cursor has covered.
+
+        A committed token is accessible once its end time is at least
+        ``_hold_back_s`` behind the cursor. The tail is heard but unstable; its
+        words carry no per-word times through the ``HypothesisTail`` seam, so
+        the accessible tail prefix is interpolated proportionally over the
+        tail's own [start, end] window (documented approximation — the true
+        per-word times exist only inside the ASR backend). The result is a
+        character prefix of ``_source_text()``; ``committed_src_end_from_text``
+        then rounds down to whole BPE tokens, which absorbs mid-word cuts.
+
+        Falls back to the text frontier when no cursor has been seen yet
+        (``audio_position is None``) — identical to text mode.
+        """
+        now = self.audio_position
+        if now is None:
+            return self._committed_text()
+        cutoff = now - self._hold_back_s
+        separator = "" if self._source_language.startswith(("zh", "ja", "cmn", "yue")) else " "
+        accessible = separator.join(
+            t.text.strip() for t in self._committed_simul if (t.end or 0) <= cutoff
+        )
+        tail_text = self._tail.text.strip() if self._tail else ""
+        if tail_text and self._committed_simul and self._tail.end <= self._committed_simul[-1].end:
+            # Mirror _source_text's stale-tail drop: the hypothesis predates
+            # the commit boundary, so it never advanced past the committed
+            # words and must not extend the accessible prefix.
+            tail_text = ""
+        if tail_text and self._tail is not None:
+            dur = (self._tail.end or 0) - (self._tail.start or 0)
+            if dur > 0:
+                frac = min(1.0, max(0.0, (cutoff - (self._tail.start or 0)) / dur))
+            else:
+                frac = 1.0 if (self._tail.end or 0) <= cutoff else 0.0
+            tail_text = tail_text[: int(len(tail_text) * frac)]
+        return separator.join(part for part in (accessible, tail_text) if part)
+
+    def _frontier_text(self) -> str:
+        """The accessible source prefix for the commit policy: the committed
+        text under the text frontier, the cursor-covered prefix under the
+        time frontier."""
+        if self._frontier_mode == "time":
+            return self._accessible_text()
+        return self._committed_text()
+
     def _source_text(self):
         committed = self._committed_text()
         tail = self._tail.text.strip() if self._tail else ""
@@ -188,7 +247,7 @@ class MlxLlmTranslationSimul(MlxLlmTranslation):
     def process(self):
         if self._pending_finals:
             return self._drain_finals()
-        source, committed = self._source_text(), self._committed_text()
+        source, committed = self._source_text(), self._frontier_text()
         if not source or not committed:
             return None, self._buffer()
         started = time.perf_counter()
