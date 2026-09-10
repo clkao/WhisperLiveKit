@@ -57,3 +57,12 @@ consumer of WLK's display output, not a WLK-internal renderer.
 - The integration branch itself is NOT a tracked task: it freezes as a
   reference (evidence, goldens, the C target) — no rebase planned; all PRs
   (A, B, D) cut fresh from origin/main.
+
+## Note: seed location update (2026-09-10)
+
+The terminal view's current form is branch `wlk/tui-view` — stacked on
+`wlk/display-unification` (the display-model PR branch), commit aae6299.
+It renders from the shared caption display model (no independent display
+logic). When this package work starts per the captain decision, it
+consumes the event-stream contract from that branch; the tui.py there is
+the starting point, not the integration branch's copy.

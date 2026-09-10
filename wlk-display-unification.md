@@ -182,3 +182,31 @@ package (its seed lives in this branch's history at f8110c9). The --event-log
 CLI flag keeps the JSONL log reachable without the dev driver. Ruff-clean,
 failure set a strict subset of main's. NOT pushed, NOT PR'd — awaits FO
 review. Commit e63c3d4 on wlk/display-unification.
+
+## Stage Report: display-unification (cycle 5 — history rebuild + stacked TUI branch)
+
+- DONE: PR branch history rebuilt without the TUI
+  wlk/display-unification = 4 commits on origin/main (9199cc5 model+events,
+  980ef9a emission, 1a14f8f progress contract, 0c83284 --event-log flag +
+  lint hygiene). Tree verified byte-identical to the pre-rebuild verified
+  tree (git diff vs e63c3d4: empty). Old history preserved at
+  wlk/display-unification-old (e63c3d4). No TUI appears anywhere in PR
+  branch history.
+- DONE: TUI on its own stacked branch
+  wlk/tui-view = wlk/display-unification + 1 commit (aae6299): tui.py +
+  test_tui_unified.py restored from f8110c9, one unused-variable ruff fix.
+  Both TUI tests pass (2); full suite 375 passed / 3 failed / 4 errors —
+  failure+error set identical to origin/main (canary x2, deepgram,
+  ffmpeg coalescing); ruff clean on both branches.
+- SKIPPED: none
+- FAILED: the dispatched worker run died on a connection error after
+  completing the rebuild + branch move; FO completed the remaining steps
+  (tui-view branch, suite/ruff verification) directly.
+
+### Summary
+
+The PR branch now carries only what it ships: event stream, display model,
+emission wiring, progress contract, --event-log server flag, overlay view.
+The terminal view lives on wlk/tui-view, stacked, as the seed for the
+wlk-tui package (entity wlk-tui-package.md updated below). Ready for FO
+review and push on captain approval.
