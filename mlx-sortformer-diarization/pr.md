@@ -49,6 +49,9 @@ imports cleanly without it.
 
 ## Checklist
 
+- [x] I searched for an existing issue or discussion and linked it when
+      relevant. (No existing issue covers an MLX-native diarization
+      backend.)
 - [x] I added or updated tests for behavior changes.
 - [ ] I updated documentation for user-facing changes. (The backend is
       discoverable through `--diarization-backend --help`; a README mention
