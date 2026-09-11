@@ -157,3 +157,41 @@ is reproducible in ~10 minutes.
 
 Cleanup: scratch venv/worktree/branch removed; bf16 cache deleted; q8
 output deleted (reproducible via the recipe).
+
+## q8 re-measure (vendor fix): RESOLVED — en blocker gone
+
+Root cause of the earlier BLOCKED verdict (two stacked causes, neither in
+the vendored qwen2 forward):
+
+1. **Checkpoint inconsistency**: the released streaming checkpoint declares
+   `decoder_config.tie_word_embeddings: true` but ships a
+   `language_model.lm_head.weight` that is byte-identical to the tied
+   embedding (verified: max abs diff 0.0). mlx_audio.convert's strict
+   weight loading rejects the extra key.
+2. **The spike's manual conversion** quantized non-divisible layers (input
+   dim 32 with group size 64), producing broken QuantizedLinear weights —
+   the empty-input crash. The vendored `qwen2.py` forward is fine under
+   canonical `mlx.nn.quantize` with a divisibility-guarded predicate (299
+   modules, streaming step succeeds).
+
+Fix (vendor branch `clkao/mlx-audio@fix/vibevoice-quantized-qwen2`):
+`Model.sanitize` drops the lm_head weight when it is byte-identical to the
+tied embedding (lossless), and raises a clear error if a checkpoint ships
+an untied head that actually differs. `mlx_audio.convert` now completes for
+this family (bf16 output 4.2GB, all sidecars).
+
+q8 re-measure (converted checkpoint + canonical in-memory quantize, same
+clips and protocol as the bf16 spike):
+
+| clip | bf16 whole RTF | q8 whole RTF | q8 window RTF | finish vs audio |
+|---|---|---|---|---|
+| zh_long (31.6s) | 0.795 | **0.369** | 0.147 | +17.7s ahead |
+| demo_en_30s (30.0s) | 1.09-1.44 | **0.453** | 0.233 | +15.7s ahead |
+
+**The en-throughput blocker is resolved**: q8 runs 2.2-3× faster than
+real-time on both languages. zh quality unchanged vs bf16 (same transcript;
+雷射 variant + one char error, same error family as qwen3's 汗纹身).
+
+Upstream PR body drafted: upstream-pr.md (convert + sanitize fix, not
+opened). Vendor branch pushed; the converted checkpoint (/tmp/vv-converted)
+is re-generable via the fixed convert command.
