@@ -121,3 +121,39 @@ figure drifts (700,000 documents vs the actual 780B tokens).
   was left untouched (scratch venv at /tmp/vv-venv, removed after the
   spike).
 - The bf16 model cache (5.6GB) was deleted after measurement (re-downloadable).
+
+## q8 re-measure attempt (follow-up): BLOCKED by an mlx-audio bug
+
+Question: does 8-bit quantization fix the en-throughput blocker (bf16 en
+RTF 1.09-1.44)?
+
+What was done:
+- `mlx_audio.convert` (git main) crashes on this checkpoint: its strict
+  `load_weights` rejects params the MLX Model does not declare
+  (`language_model.lm_head.weight` — untied head; then
+  `semantic_tokenizer.encoder.*` keys). Worked around with a manual
+  conversion script (load bf16 via `mlx_audio.stt.load_model`, quantize
+  with an explicit predicate, save safetensors + config with a
+  quantization block). Result: 2.46GB q8 (vs 5.6GB bf16), loads in 1.4s.
+- Quantize-everything (Linear/Embedding with `to_quantized`, divisibility
+  guard): model loads, but the FIRST forward pass crashes inside
+  mlx-audio's `lm/models/qwen2.py` attention — `queries.reshape(B, L,
+  n_heads, -1)` on an empty array (the layer input is empty).
+- Quantize `language_model.*` ONLY (tokenizers/encoders stay bf16 — the
+  input path is untouched): the SAME crash at the same place. So the bug
+  is mlx-audio's qwen2 forward with QuantizedLinear/Embedding weights,
+  not the tokenizer path and not the conversion.
+- Also found en route: `mlx_audio.convert` cannot quantize this model
+  family at all today, and no mlx-community q8/q4 of the streaming 1.5B
+  exists (the 7B-4bit does; a 1.5B ONNX export exists separately).
+
+Verdict update: the q8 re-measure is BLOCKED by the mlx-audio bug. The
+bf16 en-throughput verdict (RTF 1.09-1.44, at/beyond real-time) stands as
+measured. 8-bit remains a plausible-but-unverified lever: it should be
+re-tested when mlx-audio fixes quantized inference for the VibeVoice
+streaming path (or when an mlx-community q8 of the streaming 1.5B
+appears). The conversion recipe above works up to the mlx-audio bug and
+is reproducible in ~10 minutes.
+
+Cleanup: scratch venv/worktree/branch removed; bf16 cache deleted; q8
+output deleted (reproducible via the recipe).
