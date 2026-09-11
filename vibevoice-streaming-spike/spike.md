@@ -195,3 +195,55 @@ real-time on both languages. zh quality unchanged vs bf16 (same transcript;
 Upstream PR body drafted: upstream-pr.md (convert + sanitize fix, not
 opened). Vendor branch pushed; the converted checkpoint (/tmp/vv-converted)
 is re-generable via the fixed convert command.
+
+## FLEURS comparison vs nemotron (n=10 clips/language, q8, hotwords off)
+
+Method: the pinned FLEURS-90 manifest (origin/main), first 10 recordings per
+language by the manifest's selection rule; VibeVoice-ASR-Streaming-1.5B q8
+(/tmp/vv-converted), stream_transcribe, hotwords off (same condition as
+#444's nemotron runs). Metrics: zh CER with whitespace removed; en/fr WER on
+the manifest's normalized_reference (lowercase, punctuation dropped — a
+stated deviation from the harness's exact normalization pipeline). `[Silence]`
+padding markers are stripped from hypotheses before scoring (they are
+non-speech output; scoring them inflates CER/WER — the naive first pass
+scored zh 27.15 for what is 15.23 after stripping).
+
+| language | VibeVoice-Streaming-1.5B q8 | nemotron 0.6B (#444, 30 clips x3) |
+|---|---|---|
+| en WER | **19.89** | 19.27 |
+| fr WER | 45.52 | **14.97** |
+| zh CER | **15.23** | 22.62 |
+
+Latency (spike economics: per-clip wall vs duration, drain = wall - duration;
+negative = transcription finished ahead of the audio): zh drains -3 to -8s
+ahead; en mixed (one 20.4s clip finished 5.6s ahead, one 10.1s clip 1.2s
+behind — en sits near the real-time line at bf16 cadence; the q8 re-measure
+above shows 0.453 whole-file RTF, comfortably ahead). First-visible floor is
+the protocol's ~3.5s window+lookahead for every clip.
+
+Findings:
+
+1. **zh: VibeVoice wins clearly** (15.2 vs 22.6 CER). The transcripts are
+   semantically faithful; residual errors are homophone substitutions
+   (卖家/麦加) and number formats.
+2. **en: statistical tie** with nemotron (19.9 vs 19.3).
+3. **fr: nemotron wins decisively** (45.5 vs 15.0). Two causes: the
+   streaming model **drifted to Portuguese on one clip** (auto-detect with
+   no language pin — it translated rather than transcribed), and several
+   clips show paraphrase-level word errors. VibeVoice streaming exposes no
+   language pin in the mlx-audio interface; nemotron's runs used explicit
+   language routing.
+4. Speaker attribution (Speaker N tags) arrived natively on every clip —
+   the free diarization win holds at corpus scale.
+5. Comparison caveats: n=10 single-pass vs nemotron's 30 x3 pooled; the
+   exact #444 normalization pipeline was approximated (stated above); the
+   harness's quality pooling pools edit counts across the set — aggregate
+   here is a per-clip mean, close but not identical.
+
+Comparison statement: for zh (and presumably the other non-EU-heavy
+languages in its 10), VibeVoice-Streaming-1.5B is a genuine
+quality-upgrade-over-nemotron candidate with free diarization and hotwords,
+at the cost of a ~3.5s caption floor and no native timestamps. For French
+(and potentially other EU languages where its auto-detect drifts), the 0.6B
+nemotron is the better-behaved backend today. A language-pin in the
+streaming interface would be the single highest-value fix to re-test fr.
