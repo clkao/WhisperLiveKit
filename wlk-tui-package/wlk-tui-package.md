@@ -100,3 +100,33 @@ branch, live-verified. The package extraction (pyproject/packaging) is the
 next step when the captain starts task C in earnest. Note: tui-view was
 re-stacked onto 513b6fa (renamed) during the earlier session; the overlay
 restore includes the pre-rename→post-rename import adaptation.
+
+## Stage Report: two-pass re-decode port (wl-two-pass-port)
+
+- DONE: Two-pass re-decode implemented in the #425-era native-stream backend
+  whisperlivekit/asr_mlx_qwen3.py (commit fc8469d on wlk/tui-view): the
+  processor retains utterance audio; finish() re-decodes the whole utterance
+  via mlx_qwen3_asr.transcribe (with the per-session hotword context) when
+  mlx_qwen3_asr_second_pass is on. A re-decode confirming the committed
+  prefix emits only the suffix; one revising it emits the full corrected
+  text (documented limitation: stale streaming prefix remains). Failures or
+  empty re-decodes fall back to the streaming text with a non-fatal warning.
+  Streaming-only finalize keeps the strict prefix contract (native revision
+  raises), matching the #425 maintainer contract.
+- DONE: The --second-pass/--no-second-pass flag is now functional
+  Unit-tested both ways in tests/test_mlx_qwen3.py (4 new tests: correction
+  emission, suffix-only confirmation, disabled skip, empty fallback).
+- DONE: Verification
+  Full suite on wlk/tui-view: 401 passed / 8 failed / 4 errors — the
+  failure+error set is exactly the pre-existing baseline (canary x2,
+  deepgram, qwen3 shims x5 which also fail on pristine origin/main, ffmpeg
+  coalescing). ruff clean. Disk allowed no live lc_terminal smoke (not run).
+- FAILED: none
+
+### Summary
+
+The client bundle's --second-pass toggle is functional. Adaptation notes:
+the port passes the per-session hotword context to transcribe (the archive
+version did not), and the strict-vs-lenient finalize contract is split by
+the toggle (strict streaming-only, lenient under two-pass), which the
+pre-existing revision test pinned and the port preserves. NOT pushed.
