@@ -93,3 +93,36 @@ commits homed across the branches above, 72 superseded-and-documented) and
 can be archived once a live smoke passes on integration-2. The mlx-audio
 extras conflict is an upstream-level question the diarization PR will face
 independently.
+
+## Stage Report: integration restructure (new integration branch built)
+
+- DONE: Audit artifact
+  wlk-integration-audit/audit.md: all 121 commits dispositioned (72 safe to
+  drop, 49 homed), committed and pushed.
+- DONE: Logical branches cut from origin/main
+  wlk/simul-time-frontier (4 commits: aliases, frontier, clamp/guard,
+  auto default; PR body drafted at wlk-simul-time-frontier-pr/pr.md);
+  wlk/diarization-mlx (3 commits, PR opened as #450);
+  wlk/tui-view re-stacked on the renamed display branch and reconciled
+  with the integration tip's client files (live-verified: lc_terminal
+  exit 0, 51 events, coverage 0.75 PASS).
+- DONE: wlk/integration-2 built
+  Merge commits: #425, #426, #448, #449, simul, diarization, tui-view;
+  ja→zh seed cherry-picked (captain decision); mlx-audio extras reconciled
+  into the lockfile; local-custom deltas ported (second-pass toggle inert
+  until the backend implements it, VAD knobs wired into FixedVADIterator,
+  overlay/opencc extras); speech-aware watchdog ported (with a fixture
+  tolerance fix); docs + diag tools ported; superseded files skipped per
+  the disposition table.
+- DONE: Old branch archived
+  feat/apple-silicon-backends → archive/apple-silicon-backends; the main
+  checkout now sits on wlk/integration-2 (submodule initialized, import
+  smoke OK); stale worktrees removed (disk 7.7GB free).
+- FAILED: the dispatched worker run died twice on ENOSPC/connection
+  errors; FO completed the watchdog/config ports and the checkout switch
+  directly.
+
+### Summary
+
+The integration branch is now exactly the re-merge of everything in flight
+plus the explicitly-local work. PR prep resumes on this base.
