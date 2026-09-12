@@ -182,3 +182,23 @@ eager attention segment and the quantized matmul kernels themselves
 (memory-latency-bound at batch 1); further gains need a different lever
 (e.g. spec-decode-style batching or smaller quant group sizes), not more
 compile scope.
+
+## FO verification of ce3982b (mx.compile) — findings 2026-09-12 late
+
+- Tests: 7/7 pass. Eager vs compiled transcripts: byte-identical (verified).
+- Compile delivers NO measurable end-to-end win: interleaved paired
+  diffs 0.6-0.8 ms/token (SEM 0.1-0.3, noise); full-run RTF compiled
+  0.99/0.90 vs eager 0.76/1.01 (mixed, within noise).
+- DECISIVE finding: eager baseline ran RTF 0.76 cold — the best all day.
+  The dominant performance variable across all of today's measurements
+  was THERMAL STATE (RTF swung 0.76-1.86 on identical code). The
+  70-80ms/token micro-bench and the tokenizer-overhead attribution were
+  hot-machine artifacts; cProfile mis-attribution compounded it.
+- EXONERATION: the reverted hotfix commit 77a545a did NOT cause the
+  "collectioncomprising" missing space — the same missing space
+  reproduces on eager code without it. Root cause: cross-run transcript
+  NONDETERMINISM (GPU reduction order flips argmax on near-ties). The
+  byte-identical acceptance bar is unachievable cross-run; redefined
+  bar: same-run interleaved determinism + WER-equivalence cross-run.
+- Disposition: keep ce3982b (transcript-safe, env-gated, ships two
+  bench instruments). 77a545a stays reverted (unmeasured benefit).
