@@ -1,0 +1,38 @@
+{
+ "zh:voxtral": {
+  "n": 10,
+  "wer": null,
+  "cer": 20.31,
+  "first_visible_p50_s": 2.63,
+  "rtf_mean": 0.86,
+  "finalization_mean_s": 1.85,
+  "proc_mean_s": 10.72
+ },
+ "en:voxtral": {
+  "n": 10,
+  "wer": 22.78,
+  "cer": null,
+  "first_visible_p50_s": 2.56,
+  "rtf_mean": 0.89,
+  "finalization_mean_s": 1.76,
+  "proc_mean_s": 10.65
+ },
+ "zh:qwen3": {
+  "n": 10,
+  "wer": null,
+  "cer": 23.84,
+  "first_visible_p50_s": 3.44,
+  "rtf_mean": 0.09,
+  "finalization_mean_s": 0.06,
+  "proc_mean_s": 1.11
+ },
+ "en:qwen3": {
+  "n": 10,
+  "wer": 20.37,
+  "cer": null,
+  "first_visible_p50_s": 3.21,
+  "rtf_mean": 0.1,
+  "finalization_mean_s": 0.06,
+  "proc_mean_s": 1.25
+ }
+}

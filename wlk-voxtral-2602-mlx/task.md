@@ -202,3 +202,59 @@ compile scope.
   bar: same-run interleaved determinism + WER-equivalence cross-run.
 - Disposition: keep ce3982b (transcript-safe, env-gated, ships two
   bench instruments). 77a545a stays reverted (unmeasured benefit).
+
+## Three-way FLEURS board (upstream BenchmarkRunner protocol, 2026-09-12 late)
+
+Instrument: `whisperlivekit.benchmark.runner.BenchmarkRunner` (the `wlk bench`
+path — TestHarness client pipeline, per-sample language routing, speed=1
+real-time feed, warmup, the harness's own wer/cer normalization). This is
+the protocol nemotron's #444 row used. Subset: first 10 recordings per
+language from the pinned fleurs-90 manifest (same indices as the VibeVoice
+row). No hotwords/context. Runner script + raw per-clip JSONs stored
+alongside this file (eval_fleurs_harness.py, harness_{voxtral,qwen3}.json).
+
+| language | nemotron 0.6B (#444, 90/lang) | qwen3-0.6B-8bit | Voxtral-2602-4bit | [VibeVoice 1.5B q8 — hand-rolled proto, NOT protocol-comparable] |
+|---|---|---|---|---|
+| zh CER | 22.62 | 23.84 | **20.31** | (15.23) |
+| en WER | **19.27** | 20.37 | 22.78 | (19.89) |
+| zh first-visible p50 | 3.1-4.1 (#444 EOF p95) | 3.44s | **2.63s** | — |
+| en first-visible p50 | — | 3.21s | **2.56s** | — |
+| zh RTF mean | 0.024-0.048 | **0.09** | 0.86 | (0.37) |
+| en RTF mean | 0.024-0.048 | **0.10** | 0.89 | (0.45) |
+| finalization mean | — | **0.06s** | 1.8s | — |
+
+Comparison statement:
+
+1. **zh: Voxtral wins the matched protocol** — 20.31 CER vs qwen3 23.84,
+   and beats nemotron's 22.62 anchor too. First backend to beat both on
+   zh under this protocol. (VibeVoice's 15.23 is a different protocol —
+   see caveat 1 — and suggests the LLM-decoder class ceiling is lower.)
+2. **en: qwen3 wins** (20.37 vs 22.78); nemotron's 19.27 anchor still
+   leads. Voxtral en pays for its 4-bit LM on a language where qwen3 is
+   already strong.
+3. **Throughput: qwen3 dominates** (RTF 0.09-0.10 vs 0.86-0.89). Voxtral
+   runs under real-time at speed=1 with ~10x less headroom; nemotron
+   (0.024) remains the throughput king. Voxtral's first-visible is the
+   best of the three (2.6s vs 3.2-3.4s) — word-granularity streaming
+   drafts surface earlier.
+4. **Display-layer fit**: voxtral's finalized CJK tokens defer until
+   flush (the space-keyed word-boundary logic never fires inside CJK
+   text); the user-visible path for CJK is the draft buffer, which flows
+   immediately. Any display integration should treat voxtral CJK finals
+   as flush-batched and lean on drafts for liveness.
+
+Methodology notes / caveats:
+
+1. **Protocol sensitivity is large**: a hand-rolled contiguous-feed
+   driver scored voxtral zh 13.96 CER / en 14.23 WER — the client
+   pipeline's VAD segmentation + utterance flush/reset costs voxtral
+   ~6-8 points vs raw streaming. The VibeVoice row came from the same
+   hand-rolled style, so its 15.23 zh is inflated in its favor the same
+   way; treat cross-protocol rows as indicative only.
+2. **Driver artifacts are real**: a raw init_streaming/feed driver
+   produced garbage qwen3 numbers (55-84) by bypassing the wrapper's
+   endpointing semantics and by reusing one language-configured engine
+   for both languages. The wrapper/harness is the only valid instrument.
+3. zh CER here is the harness's normalization (punctuation stripped,
+   NFC); voxtral zh output was Simplified, matching the references.
+4. n=10/language vs nemotron's 90 — population differences apply.
