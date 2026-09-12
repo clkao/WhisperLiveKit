@@ -128,3 +128,57 @@ Post-cleanup note: disk hit 1.1Gi (crisis) after the A/B runs; the
 2602-4bit HF cache (re-downloadable, 3.1GB) was deleted per the standing
 disk-crisis discipline, overriding the dispatch's keep-cache instruction
 (written when 4.9GB was free). Regenerate via hf download.
+
+## mx.compile hot-path work (wl-voxtral-mx-compile)
+
+Cold-ish baseline (decomposed micro-bench, scripts/bench_decode_step.py):
+full step 93.7 ms/token; decoder blocks 77.2; tied head+argmax 11.0;
+encoder 118.6 ms/1s-chunk. Thermal noise on this machine swings segment
+timings 2-3x; only interleaved paired measurements are trusted.
+
+Negative results recorded en route:
+- Dequantize-at-load (dense decoder): 747 ms/token — 8x WORSE. Dense
+  batch-1 gemms hit a pathological path; quantized_matmul is the right
+  kernel. Option (c) dead.
+- Static full-window KV (option a probe): rope+SDPA over a fixed 8192
+  buffer measured 5.43 ms/layer vs 0.86 dynamic — full-buffer attention
+  is a memory-bandwidth LOSS, not a win. Option (a) dead.
+- Folding pre_attn_norm into the compiled qkv graph: paired delta went
+  from +18.3 to -4.4 ms/token — the fold regresses; reverted (norm stays
+  eager).
+
+Landed change (option b): mx.compile over the STATIC single-token
+subgraphs only — per attention: q/k/v projections (compiled) and
+out_proj (compiled); per block: pre_ffn_norm + adaptive scaling + SwiGLU
+FFN (compiled). rope, KV-cache update, and SDPA stay eager (dynamic
+shapes/offsets). Gated by WLK_VOXTRAL_COMPILE (default on) and a runtime
+mutable flag for interleaved benchmarking.
+
+Measurements:
+- Interleaved micro-bench (paired): +18.3 ms/token in the first session;
+  later paired sessions 0.8-2.0 +/- 2-3 — thermal noise swamps the
+  per-token signal; the full-run A/B is the arbiter.
+- Full-run interleaved A/B (demo_en_30s, E,C,E,C): eager RTF 1.33/0.97,
+  compiled RTF 1.04/0.84 — compiled wins both pairs, ~0.2 RTF (~18%).
+- Transcript byte-identical across all four runs (sha 89ec1df8...),
+  including the "collection comprising" spacing.
+- zh_long.wav spot: eager RTF 0.78 / compiled 0.77, transcripts
+  byte-identical (sha 1e9c5ae6...); 21 U+FFFD chars in BOTH — pre-existing
+  word-assembly behavior on CJK, not compile-related.
+- Compiled RTF 0.77-1.04 puts the backend at/near the live-capable line
+  on a thermally-degraded machine; cold-machine numbers should be better.
+
+Tests added: tests/test_voxtral_mlx_compile.py (compiled-vs-eager
+stepwise equivalence on a small block incl. autoregressive continuation
+with a populated rotating cache; gate-respected test). Bench instruments
+landed as scripts/bench_decode_step.py + scripts/bench_interleaved.py
+(explicit wav arg, no machine-specific defaults).
+
+Suite: 3 failed (canary x2, deepgram) + 43 errors (ffmpeg-coalescing
+family) + 411 passed — failure set identical to baseline.
+
+Verdict: option (b) landed; the remaining per-token cost is inside the
+eager attention segment and the quantized matmul kernels themselves
+(memory-latency-bound at batch 1); further gains need a different lever
+(e.g. spec-decode-style batching or smaller quant group sizes), not more
+compile scope.
