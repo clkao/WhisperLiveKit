@@ -123,3 +123,8 @@ byte cannot produce the real character. Present in the ORIGINAL code
 (per-token decode behavior). Proper fix: buffer bytes across tokens and
 decode complete UTF-8 sequences — improves zh text but is NOT
 byte-identical to current output, so it needs its own decision.
+
+Post-cleanup note: disk hit 1.1Gi (crisis) after the A/B runs; the
+2602-4bit HF cache (re-downloadable, 3.1GB) was deleted per the standing
+disk-crisis discipline, overriding the dispatch's keep-cache instruction
+(written when 4.9GB was free). Regenerate via hf download.
