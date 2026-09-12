@@ -258,3 +258,42 @@ Methodology notes / caveats:
 3. zh CER here is the harness's normalization (punctuation stripped,
    NFC); voxtral zh output was Simplified, matching the references.
 4. n=10/language vs nemotron's 90 — population differences apply.
+
+## qwen3-1.7B size-honest row (dispatch wl-qwen3-1b-board, 2026-09-12 late)
+
+Instrument: same upstream BenchmarkRunner path (speed=1, warmup, harness
+normalization, per-sample language routing), same first-10-per-language
+manifest indices, no hotwords. Model `Six666/mlx-qwen3-asr-1.7b-8bit`.
+Raw per-clip JSON: harness_qwen3_17b.json (30/30 status ok). Ops rules
+followed: one model per process, MLX cache capped 4GB, memory_pressure
+83% start / 75% trough / 82% end, disk 24Gi start / 19Gi end.
+
+| language | nemotron 0.6B | qwen3 0.6B | **qwen3 1.7B (NEW)** | Voxtral ~4.4B |
+|---|---|---|---|---|
+| zh CER | 22.62 | 23.84 | **18.20** | 20.31 |
+| en WER | **19.27** | 20.37 | 21.30 | 22.78 |
+| fr WER | **14.97** | — | 21.02 | — |
+| zh first-visible p50 | — | 3.44s | 3.88s | **2.63s** |
+| zh RTF | 0.024-0.048 | **0.09** | 0.286 | 0.86 |
+| en RTF | 0.024-0.048 | **0.10** | 0.435 | 0.89 |
+| fr RTF | 0.024-0.048 | — | 0.478 | — |
+
+Comparison statement:
+
+1. **The size-honest zh comparison flips back to qwen3**: the 1.7B
+   scores 18.20 CER, beating Voxtral-4.4B's 20.31 under the SAME
+   protocol. Voxtral's zh win on the three-way board was a parameter-
+   count artifact, not an architecture win. Updated zh ranking:
+   qwen3-1.7B 18.20 < Voxtral 20.31 < nemotron 22.62 < qwen3-0.6B 23.84.
+2. **Production implication**: the zh-quality upgrade lives WITHIN the
+   qwen3 family — swap the production model id 0.6B->1.7B for ~3-5x RTF
+   (0.29-0.48, still 2-3x more headroom than Voxtral) and ~+1.3GB RAM.
+   No new backend, no new seams.
+3. **en does NOT scale**: the 1.7B (21.30) is WORSE than the 0.6B
+   (20.37) on en, and fr (21.02) does not approach nemotron's 14.97
+   anchor. Language-dependent scaling — zh gains ~5.6 CER from 0.6B->1.7B
+   while en loses ~1 WER. (n=10 caveat applies.)
+4. **Voxtral's residual case** is now narrow: best first-visible (2.63s)
+   and word-granular streaming for the display layer, at 3x the RTF of
+   the 1.7B and a real en/fr quality deficit. It is an en/fr display
+   fit experiment, not a zh production candidate.
