@@ -76,3 +76,50 @@ backend without regressing the 6bit sibling.
   values carry harness overhead; only the relative comparison is claimed.
 - Checkpoint cache (~3.1GB in ~/.cache/huggingface) deleted after
   measurement per disk discipline; re-downloadable.
+
+## Decode hotfix (dispatch 2, commit 77a545a on wlk/voxtral-2602-mlx)
+
+**Diagnosis correction (load-bearing).** The dispatch's premise —
+`tokenizer.decode([id])` costing ~58ms/token (~21s of wall) — was a
+**profiling artifact**. cProfile attributes GPU sync stalls (the per-token
+`.item()`) to the executing frame and inflates C-extension timing;
+isolated timing shows `tok.decode([id])` costs ~0.5ms/token
+(739 calls: 0.00s total). The prior profile's 21s `tottime` in
+`_decode_positions` was mostly sync stalls, not decode calls.
+
+**What landed anyway (verified equivalent, kept):** `_piece_text` —
+per-id memo of the O(1) rule (`'' if is_special` /
+`byte_piece.decode(errors='replace') if is_byte` / `id_to_piece`),
+replacing both per-token decode call sites. Equivalence verified three
+ways: (1) 0 mismatches on all 165 unique ids the en+zh runs emit vs
+`decode([id], IGNORE)`; (2) controlled same-process slow-vs-fast run on
+zh_long: transcripts byte-identical; (3) interleaved A/B en+zh x2 rounds:
+byte-identical 4/4. Unit tests: tests/test_voxtral_piece_text.py (4
+tests — rule equivalence, special caching, lone-byte replacement char,
+boundary-bookkeeping equivalence on a fixture stream). ruff clean.
+
+**Measured truth (interleaved A/B, same process, alternating):**
+en demo_en_30s: slow 35.8s / fast 35.0s (round0); zh_long: slow 57.1s /
+fast 53.0s (round0). Round1 degraded across the board (58.1s en slow)
+— **thermally contaminated machine; absolute RTF numbers unreliable
+under sustained load**. Steady-state RTF is ~1.0-1.2 (en) — NOT the
+<0.9 target. The RTF 1.38-1.44 baselines themselves carry the same
+thermal caveat.
+
+**The real bottleneck (measured, corrected):** per-token eager-mode
+decoding — 361 sequential single-token forwards through 26 quantized
+layers ≈ 500 small kernel launches + one `.item()` GPU sync per token.
+Model math is ~11ms/token; launch/sync overhead is the rest. The fix is
+`mx.compile` of the decode step, **blocked by SlidingKVCache's dynamic
+slicing** (per-step varying slice bounds prevent static-shape
+compilation). Needs a static ring-buffer cache in model.py — a model
+change, outside this dispatch's scope; queued as the follow-up decision.
+
+**New upstream bug discovered (not fixed — changes transcript contract):**
+the zh transcript contains U+FFFD replacement chars (e.g.
+"我们今天来\ufffd\ufffd论") because multi-byte CJK chars arrive as
+consecutive byte pieces and per-token decoding of a lone continuation
+byte cannot produce the real character. Present in the ORIGINAL code
+(per-token decode behavior). Proper fix: buffer bytes across tokens and
+decode complete UTF-8 sequences — improves zh text but is NOT
+byte-identical to current output, so it needs its own decision.
