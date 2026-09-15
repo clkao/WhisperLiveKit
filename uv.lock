@@ -478,10 +478,6 @@ conflicts = [[
     { package = "whisperlivekit", extra = "qwen3-vllm-metal" },
 ]]
 
-[options]
-exclude-newer = "2026-09-08T23:17:57.418619Z"
-exclude-newer-span = "P7D"
-
 [manifest]
 overrides = [{ name = "vllm-metal", extras = ["stt"], marker = "python_full_version == '3.12.*' and platform_machine == 'arm64' and sys_platform == 'darwin'", url = "https://github.com/vllm-project/vllm-metal/releases/download/v0.2.0/vllm_metal-0.2.0-cp312-cp312-macosx_11_0_arm64.whl" }]
 
