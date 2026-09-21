@@ -37,3 +37,12 @@ and disk hit 345MB. Every dispatch involving model loads MUST include:
 - DELETE: exploration-only checkpoints after their measurement is recorded
   in an artifact (e.g. canary-1b-v2, translate-gemma, Hy-MT2 bf16 when
   only the -8bit is production).
+
+## uv lock regeneration (added 2026-09-12)
+
+9. The machine's GLOBAL uv config (~/.config/uv/uv.toml) sets
+   exclude-newer = 7 days. Locks regenerated locally then diverge from
+   CI resolution. ALWAYS regenerate lockfiles with `UV_NO_CONFIG=1 uv lock`
+   (and verify with UV_NO_CONFIG=1 uv lock --check for both py3.12 and
+   py3.13). Symptom: CI says "lockfile needs to be updated" while local
+   --check passes.
