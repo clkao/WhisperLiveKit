@@ -99,7 +99,7 @@ class Stream:
     # control
     def flush(self, through_s: float | None = None) -> None:  # finalize(through:)
     @property
-    def audio_time(self) -> float: ...    # seconds consumed (the session clock)
+    def audio_time(self) -> float: ...    # session clock: the caller's declared timeline
 
     # output
     def events(self) -> Iterator[Event]: ...        # blocking iterator
@@ -171,7 +171,16 @@ Semantics that must hold (and are testable):
 - `Final.reason` tells the caller *why* the commit landed — this is the
   observability that made the live latency debuggable and must survive.
 - Timestamps are monotonic, in seconds, on a session clock that starts at 0
-  and advances with consumed audio (including synthesized pauses).
+  and advances with the audio the **caller declares**: every pushed sample plus
+  the pause durations reported at `pause_end(d)`, which advance the clock by
+  exactly `d`. This is the caller's own VAD timeline, so it is the timeline every
+  reported timestamp is on. (Amendment, v0.1.3: the clock was previously
+  specified as advancing "with consumed audio (including synthesized pauses)".
+  The client synthesizes the pause silence for the shim and may hold a pause
+  open past the `d` it reports while it waits for a final, so the shim's
+  consumed-audio timeline legitimately runs longer than the caller's; the
+  declared timeline is compressed out of it and is the contract. See "Clock
+  ownership" below and `SessionClock`.)
 
 ## 4. Shim CLI contract
 
@@ -251,11 +260,19 @@ Rules:
 - The client must not write commands after `close` (or after EOF).
 
 Clock ownership (must be documented in the README, because it is the subtle part):
-the shim owns the audio timeline (frames written = timeline). The client maps
-shim time → session time with a drift term while it synthesizes pauses; once the
-transport carries the true audio (a future core-flag integration, §10), the drift
-term becomes zero and the mapping is identity. Any future transport (C ABI,
-shared memory) must preserve the §3.3 semantics, not the wire format.
+the shim owns its own audio timeline (frames written = its clock), which is
+longer whenever the caller holds a pause open past the `d` it reports (the
+pre-roll and the silence pump keep writing while the caller waits for the
+transcriber's final). The session clock is the **caller's declared timeline**:
+`pause_end(d)` advances it by exactly `d` and re-anchors unconditionally, so the
+section after the pause runs 1:1 from the caller's cursor and the over-delivered
+silence is compressed out of every later timestamp rather than carried into it.
+The client maps shim time → session time with that boundary-anchored anchor
+(refreshed at every `push()` / `pause_start()` / `pause_end(d)`); a final already
+published mid-pause was mapped on the pre-pause line, so its start is clamped up
+to the previous final's end to keep the published ranges monotone and
+non-overlapping. Any future transport (C ABI, shared memory) must preserve the
+§3.3 semantics, not the wire format.
 
 ## 6. Shim resolution, build, and packaging
 
