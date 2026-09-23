@@ -46,3 +46,15 @@ and disk hit 345MB. Every dispatch involving model loads MUST include:
    (and verify with UV_NO_CONFIG=1 uv lock --check for both py3.12 and
    py3.13). Symptom: CI says "lockfile needs to be updated" while local
    --check passes.
+
+## GitHub release assets — use the authoritative endpoint (added 2026-09-23)
+
+10. `gh release view <tag> --json assets` and `gh api repos/<o>/<r>/releases/tags/<tag>`
+    can report an EMPTY `assets` array while the release genuinely carries the asset.
+    The authoritative read is the release-id endpoint:
+    `gh api repos/<o>/<r>/releases/<id>/assets`. Hit twice in one session (once wrongly
+    "diagnosing" a missing wheel, once wrongly concluding the worker was mistaken).
+11. `gh release upload --clobber` is NOT idempotent on a rerun for an existing tag:
+    it fails `HTTP 422 ReleaseAsset.name already exists`, so re-running a tag-triggered
+    release workflow turns the run red even though the release is fine. Delete the asset
+    first (`gh release delete-asset <tag> <name> --yes || true`) or verify via the id endpoint.
