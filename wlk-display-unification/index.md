@@ -1,9 +1,10 @@
 ---
 title: "A2: unify caption display semantics behind one model (overlay + TUI as views)"
-status: backlog
+status: implementation
 score: 0.85
-id: c9l3n4o5p6q7r8s9t0u1v2w3
+id: 6yfnt6r6tx4mqj9p4dkrgaq8
 worktree: .
+pr: "#449"
 ---
 
 # Task B (A2) — unify WLK display semantics behind one caption display model
@@ -291,3 +292,22 @@ emission points in audio_processor.py + translation_processor.py,
 provides_drafts/progress() backend contract, --event-log server flag
 (parse_args + config). Zero behavior change: all suites return the same
 sets as before the rename. NOT pushed; awaiting FO review.
+
+### Feedback Cycles
+
+- Cycle 1 (2026-10-31 maintainer review on PR #449, our head 513b6fa): REJECTED pending fixes.
+  (a) `--event-log PATH` never writes anything: `EventLog` collects events in memory and
+  nothing calls `save()`, so the flag only grows a list for the whole session.
+  (b) `CaptionLineAccumulator` is created for every session even without translation or an
+  event log; without translation `committed_transcription` only resets on
+  `translation_final`, so it grows until the session ends — the maintainer just bounded
+  per-session state with `--retention-seconds` and will not take a second unbounded copy of
+  the transcript. (c) Nothing in the server reads `caption_lines` yet (test harness only),
+  so ~950 lines plus hot-path work have no consumer. Requested disposition: create the tap
+  only when `--event-log` is set or something consumes it, write the JSONL on cleanup, bound
+  the accumulator, and either bring the UI wiring into the PR or hold `caption_display.py`
+  for the follow-up that uses it. The 2026-11-07 follow-up ping offers the split explicitly:
+  the event tap + `--event-log` (created only when enabled, written on cleanup) first, then
+  `caption_display.py` together with the UI wiring that consumes it.
+  Status: awaiting distinct FO authorization (fix / decline / hold / route for decision)
+  before any candidate edit, commit, or reviewer rerun.
