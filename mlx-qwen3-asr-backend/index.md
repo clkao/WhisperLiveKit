@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-mlx-qwen3-asr-pr
 issue:
-pr:
+pr: "#425"
 gates:
     version: 1
     records:
