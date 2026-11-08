@@ -2,7 +2,7 @@
 title: "Fixture gate semantics: per-final vs pooled draft coverage"
 status: backlog
 score: 0.7
-id: f2o6p7q8r9s0t1u2v3w4x5y6
+id: yaafd2mdnb4c00kvthvcd6e7
 worktree: .
 ---
 
