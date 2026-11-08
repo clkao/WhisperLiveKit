@@ -79,7 +79,7 @@ review-round:
         digest: sha256:364fa199ee97fdc18006658cc059335016dcd3685fa0746b6581d110c4a63e70
         room-ref: ./review/validation/round-2
 mod-block: merge:pr-merge
-pr: "#422"
+pr: pr-merge:422
 ---
 
 Generic decoder-LLM translation backend via mlx-lm, with Hunyuan-MT as the
