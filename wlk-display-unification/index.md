@@ -3,7 +3,7 @@ title: "A2: unify caption display semantics behind one model (overlay + TUI as v
 status: implementation
 score: 0.85
 id: 6yfnt6r6tx4mqj9p4dkrgaq8
-worktree: .
+worktree: .worktrees/wlk-display-unification
 pr: "#449"
 ---
 
