@@ -2,7 +2,7 @@
 title: "Simul PR: time-based frontier stack (frontier, drain clamp, default flip)"
 status: backlog
 score: 0.85
-id: e1n5p6q7r8s9t0u1v2w3x4y5
+id: kmjvq6k0q7c2p265xgbj56cm
 worktree: .
 ---
 
