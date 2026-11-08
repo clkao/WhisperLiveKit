@@ -2,8 +2,9 @@
 title: "Export zh→en and ja→zh translation-head calibrations to upstream; resolve missing-calibration behavior"
 status: backlog
 score: 0.85
-id: b8k2m3n4p5q6r7s8t9u0v1w2
+id: 9wkw9t7twtqmka82vf8cde5w
 worktree: .
+pr: "#448"
 ---
 
 # Task A — zh→en/ja→zh calibration export + deactivate policy question
