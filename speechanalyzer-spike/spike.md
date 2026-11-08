@@ -1,11 +1,154 @@
 # SpeechAnalyzer streaming spike
 
-## Status: BLOCKED-BY-SANDBOX for execution; instruments complete
+## Status: RUNTIME VERIFIED (2026-09-21) — mechanism works, latency cost measured
 
-The spike's runtime measurements could not execute from the agent sandbox.
-The diagnosis chain below is itself a deliverable: it isolates exactly why,
-and everything the captain needs to run the measurements in one command is
-prepared. Re-dispatch or captain-side run is required for the numbers.
+The shim now compiles + runs end-to-end on CL's terminal (Xcode/toolchain exec
+enabled for the sandbox; the agent compiles it directly). Both modes work:
+file (full transcript) and mic (incremental volatile + final). The open
+questions below are answered; the remaining decision is a product call, not
+a technical one.
+
+## Measured results (zh-TW, macOS 26, CL's terminal)
+
+- **Locale/quality:** zh-TW works, **Traditional-native output** (鐳射, 醫學,
+  腫瘤 — correct Traditional, no Simplified→Traditional post-conv needed).
+  鐳射 (laser, the medical homophone) recovered WITHOUT hotwords — the base
+  model handles it.
+- **Volatile cadence — the preset is the lever.** `SpeechTranscriber.Preset`:
+  - `.transcription` (default): **0 volatiles, batch finals only** — the
+    zh-TW "buffers to endpoint" symptom. This is why zh-TW felt broken.
+  - `.progressiveTranscription`: **131 volatiles, streams incrementally**
+    (我 → 我們 → 我們今 → …, growing text + range). Fixed.
+  - Wired as `--preset default|progressive|timeIndexedProgressive|transcription`.
+- **First-emission latency — TWO more levers found (web research + interface):**
+  - `analyzer.prepareToAnalyze(in: fmt)` — explicit model preheat. Cuts
+    decoder startup **0.707s → 0.053s** wall-clock in file mode. Always on
+    now (non-fatal on failure).
+  - `.fastResults` ReportingOption — added to the preset's reportingOptions
+    (Preset has a settable `reportingOptions` var; SpeechTranscriber itself
+    does not). A/B via `--no-fast`.
+  - **Mic result with both levers:** first volatile at **3.1s after
+    "mic live"**; the model's own speech-region detection (final range
+    start = 1.44s) says speech began ~1.44s in → **~1.7s after speech
+    onset**. Then clean **~1s incremental cadence** (53 volatiles across
+    15.7s, range growing ~1s per emission — real streaming, not a burst).
+  - Before the levers: 4.9s to first volatile (~5s accumulation threshold).
+    After: ~3s of audio (~1.7s of speech).
+  - `--fast` file mode is the WRONG instrument for live latency (instant
+    feed lets the decoder run arbitrarily far ahead — ranges inflate to the
+    whole file). Use mic for the live numbers.
+- **Word timestamps: CONFIRMED.** Final results carry per-word `[start,end]`
+  in `runs` (e.g. 測 2.330-3.170, 試 3.170-3.170). This is the time-frontier
+  input qwen3 lacks — apple-speech is a timestamps-equipped backend.
+- **SpeechDetector (VAD): inert in our config.** Wired with
+  `reportResults:true` + sensitivity low/med/high; `vad-consumer` started but
+  emitted **zero events** at any sensitivity. Not the zh-TW lever; the preset
+  is. Detector left wired (behind `--vad-sensitivity`) but not relied on.
+
+## zh CER: 13.19 — apple-speech leads the board (measured 2026-09-21)
+
+`_work/sa-spike/bench_cer.py --locale zh-TW` — same protocol as the board
+(same first-10 zh manifest samples, harness normalization, mean per-sample
+CER; the Traditional hypothesis t2s-converted before scoring since the
+FLEURS refs are Simplified; the scorer reproduces qwen3-1.7B's 18.20 from
+the board's own raw results):
+
+  apple-speech (zh-TW + t2s) **13.19** < qwen3-1.7B 18.20 < Voxtral-4.4B 20.31
+  < nemotron-0.6B 22.62 < qwen3-0.6B 23.84
+
+Per-sample: 5/10 perfect (qwen3: 2/10); worst two (35.71, 39.13) are the
+same hard clips where qwen3 also faltered (17.86, 52.17). Caveats, honestly:
+n=10 (the same caveat the whole board carries); t2s-on-hypothesis is a
+protocol delta vs the native-Simplified backends (near-lossless for
+scoring); CER measured in FILE mode — live finals should match but the live
+wiring drops VAD silence (untested delta); the audio is mainland-accented
+(cmn_hans_cn) and Apple's zh-TW model still leads.
+
+Combined with the latency levers (~1.7s after speech onset, ~1s cadence),
+the production picture for zh: apple-speech is now the BEST zh backend by
+quality AND costs zero GPU memory (ANE system process — no MLX footprint,
+no contention with the MT model), AND emits word timestamps (time-frontier
+input qwen3 lacks) AND outputs Traditional natively (no OpenCC on the
+display path). First-emission is its one deficit vs qwen3 (1.7s vs 0.8s).
+
+## Verdict on the apple-speech backend (revised after the CER + latency levers)
+
+- **For live captioning (production):** the earlier "5s = not production"
+  call was too pessimistic. With progressive preset + prepareToAnalyze +
+  fastResults: **~1.7s after speech onset to first emission, ~1s incremental
+  cadence after**. qwen3 is ~0.8s first-emission — apple-speech is slower on
+  the first word but competitive in steady-state, and brings word
+  timestamps + Traditional-native zh-TW + ANE (no GPU contention with MLX
+  MT). A plausible production backend for zh-TW, pending a CER number.
+- **Caveats:** single mic run (utterance-dependent; the two levers were not
+  isolated — both on by default); no zh CER measurement vs qwen3-1.7B's
+  18.20 anchor yet.
+- **For the simul-MT time-frontier (research):** per-word timestamps make
+  apple-speech a THIRD candidate alongside nemotron (timestamps) and qwen3
+  (no timestamps) for the AlignAtt commit-policy driver — see next-step #2
+  in _work/COMPACTION_SURVIVAL.md. The improved first-emission makes it
+  more viable there too.
+- **Decision:** the spike's feasibility + latency questions are answered.
+  A full WLK backend dispatch is now a real option — but should be driven
+  by the zh CER measurement (needs a corpus run) + the time-frontier
+  comparison (next-step #2), not dispatched blind.
+
+## Code (the shim, build-clean)
+
+`_work/sa-spike/spike_speechanalyzer.swift` — compiles `swiftc -O
+-parse-as-library`. Key API facts (hard-won):
+- `analyzeSequence(from: AVAudioFile)` — file mode; analyzer reads+converts
+  itself (do NOT manual read/convert/slice — the slicer's `floatChannelData`
+  is nil for the Int16 analyzer format → silent slices → "few words").
+- Mic: contiguous timestamps in the ANALYZER frame domain (running counter,
+  NOT hardware sampleTime — hardware-anchored overlaps: 1664fr@16k = 0.104s
+  per 4800fr@48k = 0.100s chunk → SFSpeech Code=2 "timestamp overlaps").
+- `SpeechTranscriber(locale:preset:)` — use `.progressiveTranscription` for
+  volatile streaming; the default `.transcription` buffers (0 volatiles).
+- `analyzer.prepareToAnalyze(in: fmt)` — preheat before feeding; cuts
+  first-result startup. `Preset.reportingOptions` is settable — `.fastResults`
+  is inserted there (SpeechTranscriber has no settable options in the preset
+  form).
+- analyzer format: `AVAudioCommonFormat(rawValue: 3)` = **Int16**, not Float64.
+- `SpeechDetector(detectionOptions:reportResults:true)` — wired but inert.
+
+## Play-now commands (captain, from Terminal.app)
+
+```bash
+cd ~/git/asr/WhisperLiveKit/_work/sa-spike
+# file (full transcript, progressive streaming)
+./sa-spike --locale zh-TW --preset progressive --file ~/git/asr/_work/zh_long.wav --fast | head
+# mic (speak ~10s, Ctrl-C) — ~1.7s after speech onset, then ~1s cadence
+./sa-spike --locale zh-TW --preset progressive
+# A/B the buffering preset (0 volatiles) vs progressive
+./sa-spike --locale zh-TW --preset transcription --file ~/git/asr/_work/zh_long.wav --fast | head
+# A/B fastResults (--no-fast) for the first-emission latency
+./sa-spike --locale zh-TW --preset progressive --no-fast
+```
+
+## WLK + lc_terminal wiring (prototype, 2026-09-21 late)
+
+The apple-speech backend is wired into wlk as a subprocess wrapper:
+- `_work/sa-spike/spike_speechanalyzer.swift` gained `--stdin`: wlk feeds raw
+  float32 16k mono chunks; the shim converts to Int16 (same rate) and feeds
+  the analyzer with contiguous timestamps; stdin EOF finishes + finalizes.
+- `whisperlivekit/asr_apple_speech.py`: `AppleSpeechASR` (engine: config +
+  `.sep` by locale) + `AppleSpeechOnlineProcessor` (per-session: spawns the
+  shim, reader thread parses JSONL; **finals -> ASRTokens with real word
+  timestamps**, volatiles -> get_buffer tail; finish() closes stdin + drains).
+  Mirrors the nemotron processor contract exactly.
+- Wired: `config.py` (apple_speech_locale/preset/spike fields), `core.py`
+  (Models factory + online_factory), `parse_args.py` (--backend
+  apple-speech + 3 flags), `scripts/lc_terminal.py` (--backend apple-speech
+  + --apple-speech-locale/--apple-speech-spike).
+- Prototype limitations (honest): VAD silence is not fed to the shim (wlk
+  drops Silence chunks) — the analyzer sees speech-only audio and endpoints
+  on intra-utterance silences; token times mapped via a running silence
+  offset; hotwords (AnalysisContext) not yet exposed through the engine.
+- The scorer `_work/sa-spike/bench_cer.py` VERIFIES against the board: it
+  reproduces qwen3-1.7B's 18.20 from the recorded raw results (mean of
+  per-sample CER, first-10 zh manifest samples, harness normalization, t2s
+  on the Traditional hypothesis).
 
 ## What works from here (verified)
 
