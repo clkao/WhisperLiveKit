@@ -89,3 +89,16 @@ in this folder for FO review. NOT pushed — awaits FO review.
   in exactly one file, `uv.lock`, which is the same dependency-range decision as (d).
   Status: awaiting distinct FO authorization (fix / decline / hold / route for decision)
   before any candidate edit, commit, or reviewer rerun.
+
+- Cycle 1 evidence for finding (d), the mlx-audio range (measured 2026-11-08, wheels only,
+  no model download): the Sortformer streaming API is stable from the pinned `0.4.4` through
+  `0.6.4` (current release). `mlx_audio.vad.__init__` exports `load`/`load_model` identically;
+  `Sortformer.init_streaming_state()` and `feed(chunk, state, *, sample_rate, threshold,
+  min_duration, merge_gap, spkcache_max, fifo_max)` are byte-identical in signature across
+  0.4.4/0.5.1/0.5.9/0.6.4; the whole `models/sortformer/sortformer.py` delta between 0.4.4 and
+  0.6.4 is one internal refactor of the streaming `chunk_emb_len` computation (32 lines,
+  same semantics). Note also: `mlx_audio` has no `diarization` module in any version —
+  Sortformer lives under `mlx_audio/vad/models/sortformer/`. So widening the extra to share
+  #426's `>=0.5.1` is API-safe; the only remaining risk is numeric (segment parity when the
+  real weights run on 0.5.x/0.6.x), which needs the 31.5s clip against the real model.
+  Disposition for (d): fix once numeric parity is shown; not `route for decision`.
