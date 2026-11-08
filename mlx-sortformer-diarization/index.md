@@ -1,9 +1,10 @@
 ---
 title: "MLX-native Sortformer diarization backend"
-status: backlog
+status: implementation
 source: "Probed and verified on integration branch: mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16 via mlx-audio streaming API"
 score: 0.8
 id: dgx5v2br6xbg8rqx2v15b2ke
+pr: "#450"
 ---
 
 # MLX-native Sortformer diarization backend
@@ -66,3 +67,25 @@ change beyond the source commits: sortformer_max_speakers validation now
 accepts mlx-sortformer (the source predates that validation; the MLX
 backend applies the same cap, so peer parity is the intent). pr.md drafted
 in this folder for FO review. NOT pushed — awaits FO review.
+
+### Feedback Cycles
+
+- Cycle 1 (2026-10-31 maintainer review on PR #450, run against main with #461 merged):
+  REJECTED pending fixes. (a) `diarization_processor` picks the buffered path via
+  `hasattr(self.diarization, "buffer_audio")` but this backend defines `_buffer_audio`, so
+  it takes the Diart cumulative path: `state.new_diarization` is replaced instead of
+  extended, segments not yet consumed are lost whenever `diarize()` returns `[]`, and there
+  is no drain at EOF, so the last few seconds are never diarized. (b) `insert_silence()` is
+  a no-op, so only voiced audio reaches diarization and speaker timestamps drift from the
+  transcript after each pause; the NeMo backend shifts `global_time_offset` for this.
+  (c) `model.feed()` runs on the event loop — #461 moved the NeMo forward pass off the loop,
+  and MLX has to stay on one thread (`There is no Stream(gpu, ...) in current thread`,
+  hit in #426), so it needs a dedicated thread rather than a plain `to_thread`.
+  (d) The extra pins `mlx-audio>=0.4.4,<0.5` while #426 needs `>=0.5.1`; the answer must show
+  whether the Sortformer conversion works on 0.5.x so both backends can share one range and
+  install together. He also asked for a test going through `AudioProcessor` with a fake
+  model, which would have caught (a) and (b). The 2026-11-07 ping restates all four.
+  Also unverified at this stage: `git merge-tree` against upstream main (ada82d4) conflicts
+  in exactly one file, `uv.lock`, which is the same dependency-range decision as (d).
+  Status: awaiting distinct FO authorization (fix / decline / hold / route for decision)
+  before any candidate edit, commit, or reviewer rerun.
