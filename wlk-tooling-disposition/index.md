@@ -2,7 +2,7 @@
 title: "Tooling disposition: simul_fixture / check_simul_heads / explore_heads / lc_terminal"
 status: backlog
 score: 0.7
-id: b4r8s9t0u1v2w3x4y5z6a7b8
+id: jjfex8ra01bb6m07tqck8fa6
 worktree: .
 ---
 
