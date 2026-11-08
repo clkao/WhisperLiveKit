@@ -1,7 +1,7 @@
 ---
 title: "apple-speech ASR backend (Apple SpeechAnalyzer via the apple-asr package)"
 status: implementation
-worktree: .worktrees/wlk-apple-speech-adapter
+worktree: .worktrees/apple-speech-backend
 source: _work/apple-asr-package/ — SPEC.md, MEASUREMENTS.md, ORDER*/CLOCKFIX/WHEEL/TINY/CIFIX/WLKFINISH/SELFCONTAINED reports, ORDER3-DESIGN.md, PR-apple-speech.md
 id: rz6edm6r175hfqy7z9h7r032
 ---
