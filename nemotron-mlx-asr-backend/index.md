@@ -68,6 +68,7 @@ started: 2026-08-27T08:42:04Z
 completed:
 verdict:
 worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
+pr: "#426"
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
