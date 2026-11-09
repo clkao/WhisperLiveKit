@@ -148,3 +148,28 @@ Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx
   reject. Remedy: regenerate minimally against main's lock config and uv version, keeping
   unrelated packages at main's versions; prove with `uv lock --check` plus a small lock diff
   containing no unrelated bumps.
+
+- Cycle 3 (2026-11-08, FO correction of cycle 2 — two of its findings were wrong).
+  RETRACTED (i): "`uv lock --check` fails on the delivered tree" was an artefact of the FO's
+  machine, not the branch. `~/.config/uv/uv.toml` sets `exclude-newer = "7 days"`, so plain
+  `uv lock --check` re-resolves; with `--no-config` it passes on this tree in 24ms, and
+  pristine origin/main's lock fails identically under the contaminated config. All uv
+  verification on this machine must use `--no-config` / `UV_NO_CONFIG=1`.
+  RETRACTED (iii): there is no torch/torchaudio version drift. torch 2.8.0 remains for
+  py<3.13 darwin and 2.11.0 elsewhere; the change is entry-partition disambiguation forced
+  by the new conflicts entries, plus one source line for darwin torch 2.8.0 moving to the
+  pytorch cpu index. No package version is bumped.
+  CONFIRMED (ii) with a different cause than assumed: the 22k-line uv.lock diff is the
+  mechanical price of declaring a conflicts entry — a controlled probe (benign
+  `zz-probe-only` extra, uv 0.10.7 --no-config) gives a 7-line diff with no conflicts and
+  22,230 lines with two conflict pairs, because any conflicts change re-derives every
+  package's resolution-markers (1038 -> 602). The delivered lock is canonical: byte-identical
+  to `uv lock --no-config` from origin/main's lock plus the current pyproject, with uv 0.10.7
+  and 0.10.12 agreeing.
+  The conflicts exist because mlx-audio 0.5.x requires transformers>=5.14.0 while
+  qwen3-asr-causal[streaming]==0.1.0 pins transformers==4.57.6.
+  DISPOSITION (captain-delegated packaging call, FO decision): ship as-is — keep the
+  dedicated `diarization-mlx-sortformer` extra and its conflicts. Folding mlx-audio into the
+  existing `mlx-llm-mt` extra would shrink the lock diff to 64 lines but would make MLX
+  diarization require the MT extra's dependencies, which is the wrong install surface. The
+  churn gets recorded in a pyproject comment instead.
