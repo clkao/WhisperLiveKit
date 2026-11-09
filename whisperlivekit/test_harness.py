@@ -140,6 +140,11 @@ class TestState:
     status: str = ""
     error: str = ""
     translation_error: str = ""
+    # Display state derived from the caption event stream by the CaptionDisplay
+    # the harness was given (``TestHarness(caption_display=...)``). None when no
+    # display consumer asked for the stream — the FrontData-derived fields above
+    # remain the web snapshot path.
+    display: Optional[Any] = None
 
     @classmethod
     def from_front_data(cls, front_data: FrontData, audio_position: float = 0.0) -> "TestState":
@@ -488,13 +493,20 @@ class TestHarness:
         .metrics            → SessionMetrics (latency, RTF, etc.)
 
     Args:
-        All keyword arguments passed to AudioProcessor.
+        caption_display: optional ``CaptionDisplay`` to feed the caption event
+            stream to; its ``state()`` is attached to every ``TestState`` as
+            ``.display``. None allocates no display state.
+        All other keyword arguments passed to AudioProcessor.
         Common: model_size, lan, backend, diarization, vac.
     """
 
-    def __init__(self, **kwargs: Any):
+    def __init__(self, caption_display: Optional[Any] = None, **kwargs: Any):
         kwargs.setdefault("pcm_input", True)
         self._engine_kwargs = kwargs
+        # The display model to feed the caption event stream to, so tests can
+        # read ``state.display``. Supplied by the caller (the model owns the
+        # hold clock and policy); None keeps the processor allocation-free.
+        self._caption_display = caption_display
         self._processor = None
         self._results_gen = None
         self._collect_task = None
@@ -518,7 +530,9 @@ class TestHarness:
 
         engine = _engine_cache[cache_key]
 
-        self._processor = AudioProcessor(transcription_engine=engine)
+        self._processor = AudioProcessor(
+            transcription_engine=engine, caption_display=self._caption_display
+        )
         try:
             self._results_gen = await self._processor.create_tasks()
         except BaseException:
@@ -541,6 +555,10 @@ class TestHarness:
             if front_data.status == "error":
                 raise RuntimeError(front_data.error or "Transcription pipeline failed")
             self._state = TestState.from_front_data(front_data, self._audio_position)
+            # attach the display state (a snapshot copy) so a display consumer
+            # can read the caption stream's rendering state
+            if self._caption_display is not None:
+                self._state.display = self._caption_display.state()
             self._history.append(self._state)
             if self._on_update:
                 self._on_update(self._state)
