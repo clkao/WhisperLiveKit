@@ -89,7 +89,7 @@ Measured A/B (same audio, same ASR text, zh_long + demo_en_30s):
   the semantics are pinned by the unit tests, and the numbers cited are the
   measured integration-branch results. A live confirmation run is listed
   for the FO/captain before merge.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
