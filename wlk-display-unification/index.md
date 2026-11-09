@@ -1,5 +1,5 @@
 ---
-title: "A2: unify caption display semantics behind one model (overlay + TUI as views)"
+title: "caption event stream for PR #449 (PR-A: typed caption events + --event-log)"
 status: implementation
 score: 0.85
 id: 6yfnt6r6tx4mqj9p4dkrgaq8
