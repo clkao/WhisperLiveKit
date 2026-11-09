@@ -132,7 +132,7 @@ Add `mlx-sortformer` as a diarization backend using mlx-audio's MLX conversion o
   identified end to end through the ported contract (matches the original
   integration-branch probe: loads in ~6.6s, single-speaker zh clip).
 - SKIPPED: none
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -267,7 +267,7 @@ Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx
 - DONE: Proof to report: `uv lock --check` passes; `git diff --stat origin/main..HEAD -- uv.lock` is small; the lock diff contains no unrelated package version changes (list every version line that does change); 16 diarization tests still pass; ruff clean.
   `uv lock --check --no-config` exit 0; `git diff --stat origin/main..HEAD -- uv.lock` = 5,807+/13,080- (not small — inherent to the conflicts entries, per the probe above; FO decision was ship-as-is); version lines listed in the item above; `tests/test_diarization_mlx_backend.py` 16 passed (the 2 AudioProcessor tests fail if the `buffer_audio` rename or the EOF `flush()` hook is reverted); `ruff check .` all checks passed.
 - SKIPPED: none
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -303,7 +303,7 @@ Per the FO's ship-as-is decision, no uv.lock change was warranted: the delivered
   The same dispatch's authorize line and the parent assignment both say "no push" (explicit constraint
   this session); the state commit is local-only, so peers will not see it until the FO pushes
   `dev-state`.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -480,7 +480,7 @@ between writes, so each is its own `diarize()` call. All four falsification clau
   worktree was removed afterwards (`git worktree list` no longer shows `/tmp/wk-main-ada`).
 - SKIPPED: re-running the mlx-audio version parity measurement — explicitly out of scope; it is
   Feedback Cycles cycle-2 evidence and not a criterion.
-- FAILED: none.
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
