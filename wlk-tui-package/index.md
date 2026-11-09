@@ -90,7 +90,7 @@ the starting point, not the integration branch's copy.
   (noted in cycle 6 as living here) — the view-level trace was lost in the
   rebase; restore on demand from wlk/display-unification-old history if
   needed for overlay flicker debugging.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -121,7 +121,7 @@ restore includes the pre-rename→post-rename import adaptation.
   failure+error set is exactly the pre-existing baseline (canary x2,
   deepgram, qwen3 shims x5 which also fail on pristine origin/main, ffmpeg
   coalescing). ruff clean. Disk allowed no live lc_terminal smoke (not run).
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
