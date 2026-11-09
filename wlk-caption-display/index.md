@@ -45,10 +45,13 @@ sequence on every replay.**
 Verified by: replaying every checked-in golden (`tests/golden/*.jsonl`) through
 `load_caption_events` into `CaptionDisplay` on a stepped fake clock twice and
 comparing the full line sequences — identical for all five today
-(`zh_long_canonical` 369 events/22 distinct lines, `zh_long_time_frontier`
-352/14, `zh_long_ideal` 360/20, `zh_ja_fallback` 353/19,
-`demo_en_30s_ideal` 360/16) — plus `python scripts/replay_canonical_overlay.py`
-producing a byte-identical trace on two consecutive runs; both go red as soon as
+(`zh_long_canonical` 69 events/15 distinct caption lines, `zh_long_time_frontier`
+52/13, `zh_long_ideal` 60/18, `zh_ja_fallback` 53/17, `demo_en_30s_ideal`
+60/13, where a golden's event count is its JSONL line count and the line count
+is what the checked-in `_replay()` helper in `tests/test_overlay_replay.py`
+returns at hold 1.2, pace 0.3s/event, 30s drain) — plus `PYTHONPATH=. python
+scripts/replay_canonical_overlay.py` producing a byte-identical trace on two
+consecutive runs; both go red as soon as
 a display decision reads the real clock (`CaptionDisplay` takes
 `clock=time.monotonic` by default and tests inject a counter) or unordered state.
 
@@ -59,9 +62,13 @@ Verified by: `test_multi_sentence_final_queues_each_sentence` and
 `test_commit_crossing_terminator_freezes_completed_sentence` (partition — red if
 the terminator split is dropped);
 `test_final_single_sentence_shows_immediately`,
-`test_dermatology_tail_displays_before_next_caption` and
-`test_drained_replay_displays_every_completed_sentence` (held and shown — red if
-a queued sentence is dropped or a draft wipes the backlog);
+`test_dermatology_tail_displays_before_next_caption`,
+`test_drained_replay_displays_every_completed_sentence`,
+`test_committed_sentences_faster_than_the_release_interval_all_display` and
+`test_no_committed_caption_leaves_the_queue_unshown` (held and shown — red if
+a queued sentence is dropped or a draft wipes the backlog; the last two are red
+on any queue bound that evicts an unshown committed caption, including the
+shipped three-item cap, at the shipped hold);
 `test_promote_in_place_flips_bright_without_retype` and
 `test_final_replaces_provisional_in_place` (promotion — red if the promote
 re-types identical text or scrolls a draft into history);
@@ -424,3 +431,38 @@ a no-op (`return text`), i.e. the model would let the Hunyuan
    replay at the default hold as the regression.
 2. F-3: correct AC-1's figures (tick counts, and distinct-line counts that
    reproduce) and the `python scripts/…` invocation (needs `PYTHONPATH=.`).
+
+## Stage Report: implementation (authorize: fix — F-1 queue bound, dispatch wlk-caption-display-implementation)
+
+- DONE: authorize: fix — validation rejected this entity on AC-2. The finding is material: committed captions can be dropped. Fix it; do not weaken the criterion.
+  Code commit `5f3ebb7` on `wlk/caption-display-prb` (parent `c8dce70`). AC-2's four rules are unchanged; its Verified-by clause now names the two new regressions instead of relying on the three-sentence spot-check.
+- DONE: F-1 (blocker) — committed captions must never be dropped by the queue bound.
+  Invariant chosen: the hold queue is the reader's backlog; a completed caption in it is never evicted, and the only content a newer item supersedes is a DRAFT. All three cap sites removed (`_enqueue_sentence`, `translation`'s queue rebuild, `_enqueue_item`), with the invariant stated at the queue's declaration and at each enqueue site. No completed-item bound remains, so there is no eviction rule left to qualify; drafts stay bounded by `_keep_committed` (the newest in-progress fragment wins, which loses no content).
+- DONE: F-1's own reproducers, re-run against the fixed model.
+  `dense_repro2.py` at hold 3.5 / 0.9s arrival: 3/12 committed sentences dropped → 0/12 (0/12 for every hold/arrival pair it tries). `dropcheck.py` at the instrument's default hold: never-shown `zh_long_canonical` 2, `zh_ja_fallback` 4, `zh_long_time_frontier` 1 → 0 / 0 / 1, the remaining one being a different cause (F-2 below).
+- DONE: red-before/green-after proof — a stream of committed sentences faster than the release interval all display, in order.
+  `test_committed_sentences_faster_than_the_release_interval_all_display` (hold 3.5 → 1.75s release, finals every 0.9s, 10fps view): red before the fix (`['Echo is here.', 'Golf is here.', 'India is here.']` never displayed), green after; it fails if any bound discards an unshown committed item or reorders them.
+- DONE: golden-wide regression at the shipped hold, covering both enqueue shapes.
+  `test_no_committed_caption_leaves_the_queue_unshown[5 goldens × hold 3.5/1.2]` (10 cases) — red before the fix for `zh_long_canonical` (2) and `zh_ja_fallback` (4), including the sentence AC-2's spot-check missed; it fails if a committed item leaves the queue without being released. `test_new_multi_sentence_final_never_evicts_the_pending_backlog` — red if the final's queue rebuild keeps only the newest items.
+- DONE: mutation results — each cap restored on its own.
+  Cap back at `_enqueue_item` → 4 red (dense + `zh_ja_fallback` hold 3.5 + hold 1.2 + `zh_long_canonical` hold 3.5). Cap back at `translation()` → 1 red (the backlog test; this is why it was added). Restored each time; `caption_display.py` md5 `b0bf44013bd34eb697fc492ccd4e1301` before and after, `git status` clean.
+- DONE: F-2 — does the fix cover `zh_ja_fallback`'s `出血や汗、痛みを減らす。`?
+  Yes — it was a cap eviction at `_enqueue_item` (it displays under the fix, and mutation M1 above reddens exactly that golden/hold). Not covered: `zh_long_time_frontier`'s `In ophthalmic surgery, lasers are used to correct vision.` at hold 3.5 — different root cause: the draft-routed wording (`In eye surgery, …`) is displayed and `_amend_routed_sentence` leaves history alone, i.e. the validator's deferred "final is not authoritative for an already-routed sentence". No content is lost there.
+- DONE: F-3 (nit) — AC-1's figures corrected in the body.
+  Now `69 / 52 / 60 / 53 / 60` events and `15 / 13 / 18 / 17 / 13` distinct caption lines, with the counting rule named (`_replay()` in `tests/test_overlay_replay.py`, hold 1.2, 0.3s/event, 30s drain); the AC's command now reads `PYTHONPATH=. python scripts/replay_canonical_overlay.py`.
+- DONE: proof run — the four named suites, ruff, the replay instrument.
+  `tests/test_caption_display.py tests/test_overlay_replay.py tests/test_caption_events.py tests/test_translation_emission.py` → 71 passed (59 before + 12 new cases); `ruff check whisperlivekit/ tests/ scripts/` clean; `scripts/replay_canonical_overlay.py` twice → byte-identical (md5 `a7ed5390c6a2c27a03c8331926f823ce`, 44 trace lines vs 43 before: the caption that used to be dropped now shows).
+- SKIPPED: push the state branch.
+  The dispatch that launched this cycle says "Do not push"; the code branch `wlk/caption-display-prb` @ `5f3ebb7` stays local and unpushed.
+- SKIPPED: AC-4's full-suite re-run.
+  This cycle is restricted to the caption display and replay suites; AC-4's recorded branch figure (395 passed) predates these 12 cases.
+
+### Notes for the gate
+
+- Decided by the entity's authorizer, not by me: keeping committed captions means the backlog can grow deeper than the drainer during a fast stretch. Pacing degrades (the reader falls behind) instead of content being lost. A backlog-aware pacing change would be a design decision outside this cycle's authorized scope.
+- `F-2b` (a final arriving before any view tick discards draft-routed sentences) still reproduces unchanged (`minrepro.py`, both holds); untouched, still deferred.
+- The two draft fragments `牙医也使用` / `皮肤科用镭` no longer reach the line in `zh_ja_fallback` — they are the untranslated-source drafts the emission gate exists to remove, and they now lose to committed sentences instead of displacing them. No committed (bright) line is lost anywhere: comparing the pre/post distinct-line sets over all five goldens at hold 3.5 and 1.2, the only lines that disappear are those two dim drafts, and every difference on a committed line is an addition.
+
+### Summary
+
+Removed the three-item cap on the caption hold queue at all three enqueue sites so a committed sentence is never evicted in favour of a newer one; the queue is now the reader's backlog with drafts the only superseded content, documented where the queue is declared. Added twelve regression cases: the dense committed-stream test (red on three dropped sentences before the fix) and golden-wide "no committed item leaves the queue unreleased" cases over all five goldens at two holds, plus a backlog-preserving test for the final's queue rebuild. Both of the validator's reproducers re-run against the fixed model (dense arrivals and all five goldens) with zero committed captions lost, and AC-1's figures corrected to re-derivable numbers.
