@@ -1,6 +1,6 @@
 ---
 title: "MLX-native Sortformer diarization backend"
-status: implementation
+status: validation
 source: "Probed and verified on integration branch: mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16 via mlx-audio streaming API"
 score: 0.8
 id: dgx5v2br6xbg8rqx2v15b2ke
