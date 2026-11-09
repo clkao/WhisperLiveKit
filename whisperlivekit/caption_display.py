@@ -562,6 +562,7 @@ class CaptionDisplay:
             self._en_draft_full = plain
             self._en_frag = ""
             self._queued_draft = None
+            self._end_utterance_routing()
             return
 
         # prev line: this utterance's draft-promoted sentence — the final is
@@ -580,6 +581,11 @@ class CaptionDisplay:
         line_j = -1
         if self._en_plain and not self._en_is_final and 0 <= self._en_line_sent:
             line_j = min(self._en_line_sent, len(sents) - 1)
+        # the sentence on the line was routed from THIS utterance's draft, so
+        # its index is a position in `sents`. _end_utterance_routing() drops
+        # that routing at every final, which is what keeps the PREVIOUS
+        # utterance's index from stepping `start` past this final's leading
+        # sentences (they were never enqueued, so they never displayed).
         cur_i = self._en_current_sent if (self._en_is_final and self._en_line_prov) else -1
         start = 0
         if line_j >= 0:
@@ -615,14 +621,40 @@ class CaptionDisplay:
         self._queue = kept + new_items
         if not self._en_plain and self._queue:
             self._en_shown_at = -self._hold  # first item releases immediately
-        # authoritative baseline for the next draft cycle; the draft routing
-        # is per-utterance (the next utterance's sentences start fresh at 0)
-        self._en_sent_texts = []
-        self._en_prev_sent_idx = -1
-        self._en_line_sent = -1
+        # this final ends the utterance: its sentence indices and the line's
+        # routing die here (see _end_utterance_routing), so the next
+        # utterance's sentences start unindexed at 0
+        self._end_utterance_routing()
         self._en_draft_full = plain
         self._en_frag = fragment
         self._dirty = True
+
+    def _end_utterance_routing(self) -> None:
+        """Invalidate the utterance-local sentence routing.
+
+        The ``_en_*sent*`` fields are sentence POSITIONS inside one utterance's
+        translation, and the event stream carries no utterance identity (PR
+        #449's payload has none), so a position only means anything while that
+        utterance is the one in flight. What delimits an utterance here is its
+        ``translation_final``: the producer finalizes and resets the MT buffer
+        at a segment boundary (``translation_processor.run_translation`` calls
+        ``validate_buffer_and_reset`` on Silence/ChangeSpeaker/sentinel), so
+        every translation event after a final describes new text. The other
+        columns cannot delimit it — a ``translation_provisional``'s
+        ``committed``/``source`` legitimately reset or repeat across a boundary
+        (an empty ``committed`` is also what an ordinary fresh segment looks
+        like, and it is empty on both sides of a real boundary), ``fresh`` only
+        says whether the draft cost a forward pass, and ``transcription_final``
+        commits source several times INSIDE one MT utterance (the ASR emits
+        partial segments). So the final — the one event that ends the
+        utterance — kills the routing, and the next utterance starts
+        unindexed.
+        """
+        self._en_sent_texts = []
+        self._en_prev_sent_idx = -1
+        self._en_line_sent = -1
+        self._en_current_sent = -1
+        self._en_line_prov = False
 
     def _translation_legacy(self, plain: str) -> None:
         """Pre-sentence-queue final path (single-sentence captions)."""
