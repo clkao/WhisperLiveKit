@@ -39,25 +39,50 @@ its prerequisite contract.
 
 ## Acceptance
 
-**AC-1 — Overlay and TUI render identically (modulo styling) from the same event
-stream.**
-Verified by: a test that replays one checked-in golden event stream through both
-view adapters and compares the rendered line sequences; it fails on the pre-port
-TUI logic.
+**AC-1 — The display model turns a recorded caption event stream into a
+deterministic display state: the same stream produces the identical line
+sequence on every replay.**
+Verified by: replaying every checked-in golden (`tests/golden/*.jsonl`) through
+`load_caption_events` into `CaptionDisplay` on a stepped fake clock twice and
+comparing the full line sequences — identical for all five today
+(`zh_long_canonical` 369 events/22 distinct lines, `zh_long_time_frontier`
+352/14, `zh_long_ideal` 360/20, `zh_ja_fallback` 353/19,
+`demo_en_30s_ideal` 360/16) — plus `python scripts/replay_canonical_overlay.py`
+producing a byte-identical trace on two consecutive runs; both go red as soon as
+a display decision reads the real clock (`CaptionDisplay` takes
+`clock=time.monotonic` by default and tests inject a counter) or unordered state.
 
-**AC-2 — The sentence guarantees hold for both views.**
-Verified by: the sentence-partition, no-retype, and queue-survival tests run
-against each view adapter, plus one drained-replay test over a checked-in golden
-stream.
+**AC-2 — The sentence rules hold in that state: captions partition into
+sentences, a finished sentence is held and shown, a provisional promotes to
+final in place, and final text never shrinks or rewords.**
+Verified by: `test_multi_sentence_final_queues_each_sentence` and
+`test_commit_crossing_terminator_freezes_completed_sentence` (partition — red if
+the terminator split is dropped);
+`test_final_single_sentence_shows_immediately`,
+`test_dermatology_tail_displays_before_next_caption` and
+`test_drained_replay_displays_every_completed_sentence` (held and shown — red if
+a queued sentence is dropped or a draft wipes the backlog);
+`test_promote_in_place_flips_bright_without_retype` and
+`test_final_replaces_provisional_in_place` (promotion — red if the promote
+re-types identical text or scrolls a draft into history);
+`test_reworded_final_amends_only_current_sentence` and
+`test_set_partial_holds_on_pure_shrink` (no shrink/reword — red if a revision
+retracts text the reader has already seen).
 
-**AC-3 — No per-session display state is allocated when nothing consumes the
-stream.**
-Verified by: constructing the processor without a display consumer and asserting
-no accumulator object exists.
+**AC-3 — No display object is created when nothing consumes the stream.**
+Verified by: `tests/test_caption_display.py::test_no_display_state_without_a_consumer`
+asserts `AudioProcessor(...).caption_display is None` and
+`processor.event_tap._sink is None` for a processor built with no consumer — red
+if the processor constructs a display model or an event sink unasked.
 
-**AC-4 — Suite parity with upstream.**
-Verified by: suite counts against `origin/main` at the same commit, with zero new
-failures.
+**AC-4 — No new suite failures versus `origin/main` at the same commit.**
+Verified by: exporting the base commit (`git archive origin/main | tar -x -C
+<tmp>`) and running the documented suite command
+(`uv run pytest -q tests/ --ignore=tests/test_pipeline.py
+--ignore=tests/test_asr_coalescing_pipeline.py`) in both trees, then comparing the
+failed-test ID sets — 8 failed/335 passed/13 skipped on `origin/main` (`ada82d4`)
+versus 8 failed/395 passed/13 skipped on this branch (`c8dce70`), the same eight
+IDs on both sides; red on any failing ID that appears only on the branch.
 
 ## Test plan
 
@@ -73,6 +98,9 @@ caption-event goldens, both parked on `wlk/caption-display`.
   `wlk-display-unification` (`6y`).
 - The standalone terminal package: Task C, `wlk-tui-package` (`42`), which
   consumes this task's contract.
+- The overlay and terminal views, and view-parity between them, belong to the
+  consumer task that ships once the captain answers the consumer question —
+  this task delivers the display model and its readable state only.
 
 ## Notes
 
@@ -143,3 +171,27 @@ Mutated the prev-line expiry rule (`now - self._en_prev_at >= self._hold` → `a
 ### Summary
 
 PR-B is re-derived on #449's head as a model-only consumer of the caption event stream: `CaptionDisplay.emit()` is the EventSink, fan-out to `--event-log` is deliberate and minimal, the harness exposes `TestState.display`, and nothing view-shaped landed. Ruff clean, four named suites 59 passed, full-suite parity with `origin/main`/`db143d3` failure-for-failure. Open: the consumer choice (our terminal client vs the maintainer's Swift consumer) is untouched, so no view was written and AC-1's "both view adapters" half belongs to Task C.
+
+## Stage Report: implementation (authorize: AC rescope to delivered scope — dispatch wlk-caption-display-implementation)
+
+- DONE: authorize: rescope acceptance criteria to the delivered scope. State-only body edit; no code.
+  `## Acceptance` now carries exactly AC-1..AC-4 (criterion text verbatim + a `Verified by:` clause naming a reproducible check that can fail); `## Out of scope` gained the consumer-task line. `git diff` touches only those two spans (+47/-19): frontmatter, Work, Context, Test plan, Notes and the prior stage report are byte-identical.
+- DONE: DO NOT PUSH CODE. Do not touch PR #449.
+  No file under `.worktrees/wlk-caption-display` was modified (`git status --short` empty, HEAD still `c8dce70`); nothing pushed, no PR opened.
+
+### The four AC lines now in the body
+
+- AC-1 The display model turns a recorded caption event stream into a deterministic display state: the same stream produces the identical line sequence on every replay.
+- AC-2 The sentence rules hold in that state: captions partition into sentences, a finished sentence is held and shown, a provisional promotes to final in place, and final text never shrinks or rewords.
+- AC-3 No display object is created when nothing consumes the stream.
+- AC-4 No new suite failures versus `origin/main` at the same commit.
+
+### Proof re-run for each clause (not re-read)
+
+- AC-1: all five `tests/golden/*.jsonl` replayed twice through `load_caption_events` + `CaptionDisplay(clock=<counter>)` → identical full line sequences (canonical 369 events/22 lines, time_frontier 352/14, ideal 360/20, zh_ja_fallback 353/19, demo_en_30s 360/16); `scripts/replay_canonical_overlay.py` run twice → `diff` clean. Reddens if a decision reads the real clock or unordered state.
+- AC-2/AC-3: the ten cited tests in `tests/test_caption_display.py` exist and pass together (10 passed, 27 deselected); each clause names the change that reddens its group (dropped terminator split, dropped queue, re-typed promote, retracted text, unasked sink/model).
+- AC-4: documented suite command run in three trees — `origin/main` `ada82d4` 8 failed/335 passed/13 skipped, branch base `db143d3` 8 failed/354 passed/13 skipped, branch `c8dce70` 8 failed/395 passed/13 skipped — the same eight failure IDs on all three (canary backend ×2, deepgram SDK ×1, qwen3 shims ×5; environment-dependent, present upstream). Reddens on any branch-only failure ID.
+
+### Summary
+
+The entity was filed while the overlay and TUI were still expected here; the captain stopped the derivation at the display model plus readable state, so AC-1/AC-2 named view adapters no validator could satisfy. The criteria now state the delivered scope, and every `Verified by:` clause was re-run instead of asserted (determinism replay, ten named model tests, three-tree failure-ID comparison). No code changed, no code pushed. Deliberately left untouched and flagged for an authorized follow-up: `## Test plan` still promises "adapter-level replay tests for both views over the checked-in goldens", which no longer exists.
