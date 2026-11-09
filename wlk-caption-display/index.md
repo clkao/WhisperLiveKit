@@ -824,3 +824,30 @@ Pre/post comparison of the shown-line lists for all five goldens at holds
   a producer that outruns the drainer deepens the backlog (the reader falls
   behind) instead of losing captions. This fix can add one item to that backlog
   in the cell above; it never removes one.
+
+### Summary
+
+`translation()`'s sentence routing (`_en_current_sent`, `_en_line_prov`,
+`_en_line_sent`, `_en_prev_sent_idx`, `_en_sent_texts`) is utterance-local and
+the caption stream carries no utterance identity, so a `translation_final` now
+ends it: the producer finalizes and resets the MT buffer at a segment boundary
+(`translation_processor.run_translation` → `validate_buffer_and_reset` on
+Silence / ChangeSpeaker / sentinel), so every event after a final describes new
+text. One private `_end_utterance_routing()` runs at both exits of
+`translation()`, so the next utterance's sentences start unindexed at 0 and
+`start` can no longer step over sentences this utterance has not displayed. The
+other candidate signals were rejected on the recorded goldens, not by argument:
+`transcription_final` fires six times inside the one MT utterance whose final is
+`zh_long_time_frontier` event 17, `committed`/`source` resets as often inside an
+utterance as across one (`zh_long_canonical` 6/7 empty mid-utterance, `''` on
+both sides of the real boundary 22 → 23), and `fresh` is a cost flag that shows
+up mid-utterance (7, 10, 12) and on the first draft of a new one (35). Red: with
+only the source fix stashed and the new tests in place, exactly three cases fail
+(two-utterance `[3.5]` and `[5.0]`, `zh_long_time_frontier-hold3.5`). Green:
+holds 1.2 / 2.0 / 3.5 / 5.0 all show `Alpha one. → Alpha two. → Beta one. →
+Beta two. → Beta three.` in order, and every sentence of every
+`translation_final` displays verbatim across all five goldens at holds 3.5 and
+5.0, zero missing. The earlier "wording only" characterisation of that cell was
+wrong: it is content loss — at the shipped hold neither the final's wording nor
+the draft's ever reached either line — and the mechanism is the stale
+utterance-local index, not `_amend_routed_sentence`.
