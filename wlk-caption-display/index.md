@@ -86,10 +86,11 @@ IDs on both sides; red on any failing ID that appears only on the branch.
 
 ## Test plan
 
-Unit tests for the model (sentence partition, queue, promotion, monotonicity),
-adapter-level replay tests for both views over the checked-in goldens, and one
-drained-replay regression. Goldens: `zh_long_time_frontier.jsonl` plus the
-caption-event goldens, both parked on `wlk/caption-display`.
+Unit tests for the model (sentence partition, hold, in-place promotion,
+monotonicity), the replay instrument run over the checked-in goldens to prove
+determinism, and suite parity against `origin/main` at the same commit. Goldens:
+`zh_long_time_frontier.jsonl` plus the caption-event goldens, both parked on
+`wlk/caption-display`.
 
 ## Out of scope
 
@@ -195,3 +196,22 @@ PR-B is re-derived on #449's head as a model-only consumer of the caption event 
 ### Summary
 
 The entity was filed while the overlay and TUI were still expected here; the captain stopped the derivation at the display model plus readable state, so AC-1/AC-2 named view adapters no validator could satisfy. The criteria now state the delivered scope, and every `Verified by:` clause was re-run instead of asserted (determinism replay, ten named model tests, three-tree failure-ID comparison). No code changed, no code pushed. Deliberately left untouched and flagged for an authorized follow-up: `## Test plan` still promises "adapter-level replay tests for both views over the checked-in goldens", which no longer exists.
+
+## Stage Report: implementation (authorize: Test plan correction — dispatch wlk-caption-display-implementation)
+
+- DONE: authorize: one-line correction in the entity's "## Test plan" section, which you flagged. State-only body edit; no code.
+  `## Test plan` now reads: "Unit tests for the model (sentence partition, hold, in-place promotion, monotonicity), the replay instrument run over the checked-in goldens to prove determinism, and suite parity against `origin/main` at the same commit. Goldens: `zh_long_time_frontier.jsonl` plus the caption-event goldens, both parked on `wlk/caption-display`." `git diff` is a single hunk (+5/-4) inside that section; frontmatter, Context, Work, Acceptance, Out of scope, Notes and both prior stage reports are byte-identical (no trailer change on the last line).
+- DONE: The Test plan still promises "adapter-level replay tests for both views over the checked-in goldens". Both views are out of scope now, so that sentence describes work this task does not do.
+  The view-adapter clause and the separate "one drained-replay regression" clause are gone; the drained replay is now stated where it actually lives (the replay instrument over the goldens), and the model clause gained the two properties the earlier wording omitted — `hold` and in-place promotion, both carried by real tests (`test_golden_final_survives_its_hold`, `test_promote_in_place_flips_bright_without_retype`).
+- DONE: DO NOT PUSH CODE.
+  No file under `.worktrees/wlk-caption-display` modified (`git status --short` empty, HEAD still `c8dce70`, branch `wlk/caption-display-prb`); nothing pushed, PR #449 untouched.
+
+### Each new clause checked against an artifact that exists
+
+- Model unit tests: `tests/test_caption_display.py` exists with 36 `test_` functions; partition (`test_multi_sentence_final_queues_each_sentence`), hold (`test_golden_final_survives_its_hold`, `test_final_expires_after_hold`), in-place promotion (`test_promote_in_place_flips_bright_without_retype`), monotonicity (`test_set_partial_holds_on_pure_shrink`) are all present by name.
+- Replay instrument over the goldens: `scripts/replay_canonical_overlay.py` + all five `tests/golden/*.jsonl` are checked in; determinism was re-run for AC-1 (two replays, identical traces).
+- Suite parity: AC-4's `Verified by:` already records the three-tree run (`origin/main` `ada82d4`, branch base `db143d3`, branch `c8dce70`) with an identical eight-ID failure set — the parity claim names the same commit-scoped comparison, not a new one.
+
+### Summary
+
+The last stale promise in the body is corrected: the Test plan no longer describes view-adapter replay tests for overlay/TUI views this task deliberately does not ship, and instead names the three things it does prove — display-model unit tests (partition, hold, in-place promotion, monotonicity), the replay instrument over the checked-in goldens for determinism, and suite parity against `origin/main` at the same commit. One section, one hunk, no code changed, no code pushed.
