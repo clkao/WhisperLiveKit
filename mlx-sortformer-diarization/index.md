@@ -103,3 +103,32 @@ in this folder for FO review. NOT pushed — awaits FO review.
   #426's `>=0.5.1` is API-safe; the only remaining risk is numeric (segment parity when the
   real weights run on 0.5.x/0.6.x), which needs the 31.5s clip against the real model.
   Disposition for (d): fix once numeric parity is shown; not `route for decision`.
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: authorize: fix — maintainer findings on PR #450 cycle 1: items (a)(b)(c) and the AudioProcessor test he asked for. Item (d) the mlx-audio range is settled to >=0.5.1,<0.6. No scope change.
+  Disposition ran as authorized: 6ab8584 (backend + one EOF hook in `diarization_processor`), 33bfa80 (tests), 3e6984b (extra + lockfile). No other behavior touched.
+- DONE: DO NOT PUSH. Commit only to the local branch wlk/diarization-mlx. Do not push to the fork, do not update PR #450, do not force anything.
+  Nothing pushed; `origin/wlk/diarization-mlx` and the fork are untouched. Branch is 7 local commits on ada82d4 (4 rebased + 3 new).
+- DONE: rebase wlk/diarization-mlx onto origin/main (ada82d4); uv.lock resolved by the range change, then `uv lock`.
+  Rebase conflicted only in uv.lock, as predicted. Those conflicts were resolved by taking origin/main's lock bytes (no hand-merged lock), which made the two lock-only commits b194326 and 092515e empty — their content was already in main's lockfile, so they dropped. `uv lock` (regenerated from the final pyproject) produced the committed lock; `uv lock --check` passes.
+- DONE: pyproject.toml extra goes from mlx-audio>=0.4.4,<0.5 to mlx-audio>=0.5.1,<0.6, sharing one range, excluding 0.6.x.
+  Lock resolves mlx-audio 0.5.9 + mlx 0.31.2. 0.5.x needs mlx>=0.31.1, which fits mlx-lm>=0.31.3,<0.32, so no new conflicts entry. 0.6.0/0.6.4 wheel metadata pins mlx==0.32.4 exactly; 0.5.1/0.5.9 do not.
+- DONE: rename _buffer_audio to buffer_audio; segments extend rather than replace and a [] return drops nothing.
+  `test_audio_processor_extends_segments_and_keeps_them_on_empty_result` runs the real online backend on a scripted model one chunk per diarize() call: renaming the attribute back to `_buffer_audio` makes it fail ("timed out waiting for the second chunk", the cumulative path having replaced state with []) and an empty chunk's [] leaves the two segments intact.
+- DONE: drain at EOF: feed the remaining partial chunk so the last seconds are diarized.
+  `flush()` feeds the sub-chunk tail and `diarization_processor` awaits it before its final drain (a `getattr` hook, so NeMo/Diart are unaffected). `test_audio_processor_flushes_the_partial_tail_at_eof` writes 7s and asserts the model saw [5.0s, 2.0s]; deleting the hook makes it fail with `[80000]` only.
+- DONE: insert_silence() advances global_time_offset as the NeMo backend does (:237-246, base_time at :348).
+  Same `+=` under the segment lock, and `_to_segments` reports `seg.start/end + offset`. `test_insert_silence_shifts_segment_times` fails (5.0-10.0 instead of 7.5-12.5) if the offset is dropped.
+- DONE: move model.feed() off the event loop onto a dedicated thread, not a plain to_thread.
+  One `ThreadPoolExecutor(max_workers=1)` per session; `init_streaming_state()` and every `feed()` run on it via `run_in_executor`. `test_feed_runs_on_one_dedicated_thread_and_leaves_the_loop_free` asserts one non-loop thread across init+feed and that a 0.2s feed does not starve a heartbeat; calling `self._feed` inline makes it fail with two thread ids.
+- DONE: add the AudioProcessor-level test with a fake model.
+  Two of them (accumulate/[] and the EOF tail), both driving `AudioProcessor.create_tasks()`/`process_audio()`/EOF; they are the tests that fail for (a) and the missing tail drain.
+- DONE: keep the 8 existing hermetic tests green; ruff clean; suite compared run-to-run against origin/main.
+  tests/test_diarization_mlx_backend.py 16 passed (8 old + 8 new). `ruff check .` clean. `pytest -q tests/ --ignore=tests/test_pipeline.py`: 355 passed / 17 skipped / 4 errors vs origin/main at ada82d4 in a scratch worktree 339 passed / 17 skipped / 4 errors — same 4 errors (test_asr_coalescing_pipeline network/fixture, excluded by CONTRIBUTING), delta is exactly this branch's 16 tests.
+- DONE: name numeric parity honestly.
+  Reported below without overclaiming; the 31.5s zh clip run is still outstanding. New measured evidence, wider than the dispatch assumed: this sandbox *can* run MLX (mlx 0.31.2), so I ran the real `diar_streaming_sortformer_4spk-v2.1-fp16` on the repo's LibriSpeech 2-speaker fixture through the new backend on 0.5.9 — 3 segments, speakers {0,2}, tail end 6.08s of a 6.1s clip — and the identical chunk+flush loop on mlx-audio 0.4.4 gave byte-identical segments: (0.32,3.60,0) (4.32,5.04,2) (5.04,6.08,2). Caveat: mlx 0.32.4 (what a bare `pip install mlx-audio` picks today) cannot compile its Metal library here ("Operation not permitted" writing com.apple.metalfe), so the comparison had to pin mlx==0.31.2 on both sides; that is a sandbox limit, not a range fact. One 6.1s clip is not behavioural proof of the range — the 31.5s zh clip remains outstanding.
+
+### Summary
+
+Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx`, locally only. The backend now takes the buffered path (`buffer_audio`), feeds every full chunk per poll, drains the sub-chunk tail through a new `flush()` hook in `diarization_processor`, shifts the segment clock for inserted silence, and keeps every MLX call on one dedicated thread; eight new tests cover each fix and were each verified to fail against the unfixed code. Numeric parity across 0.4.4 → 0.5.9 is measured on one 2-speaker fixture; the 31.5s zh clip run is still outstanding. NOT pushed and PR #450 untouched, per the captain's constraint — publishing is the FO's.
