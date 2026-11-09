@@ -71,7 +71,7 @@ extras are mutually exclusive per environment.
   segment end 30.0. Transcript accurate.
 - SKIPPED: AST path
   Separate exploration task (ast-exploration.md in this folder).
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
