@@ -4,7 +4,7 @@ status: backlog
 score: 0.85
 id: 9wkw9t7twtqmka82vf8cde5w
 worktree: .
-pr: "#448"
+pr: pr-merge:448
 ---
 
 # Task A — zh→en/ja→zh calibration export + deactivate policy question
