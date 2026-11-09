@@ -1,6 +1,6 @@
 ---
 title: "B: caption display model + overlay/TUI as thin views (PR-B for #449)"
-status: implementation
+status: validation
 score: 0.85
 source: "split out of wlk-display-unification (A2) on 2026-11-08 when the entity was rescoped to PR #449 only. Material is parked on branch wlk/caption-display @ 513b6fa (the pre-trim state of the #449 branch)."
 id: 5m8t81vcnbbvafnjz2mehdjc
