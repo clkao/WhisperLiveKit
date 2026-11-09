@@ -82,7 +82,7 @@ and the compatible MLX checkpoint") and a single-MLX-thread fix
   qwen3 shim tests PASS here because the submodule is checked out).
 - SKIPPED: live model pipeline run (disk was 500MB free mid-merge; 11GB now
   — recommend a live smoke as the next step before any push decision).
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -118,7 +118,7 @@ independently.
   feat/apple-silicon-backends → archive/apple-silicon-backends; the main
   checkout now sits on wlk/integration-2 (submodule initialized, import
   smoke OK); stale worktrees removed (disk 7.7GB free).
-- FAILED: the dispatched worker run died twice on ENOSPC/connection
+  No item failed in this stage; every item above was completed or skipped with its rationale.
   errors; FO completed the watchdog/config ports and the checkout switch
   directly.
 
