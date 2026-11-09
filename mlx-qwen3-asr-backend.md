@@ -88,6 +88,10 @@ gates:
                 digest: sha256:52a030de0aa842b5ae084c4e035c64783c419be5169c653e06e95800e2c7a7c2
                 request-digest: sha256:a4b81f6f57b9811c599fb2858792ca9ad4c2396e94779922593c73240dfd0737
                 room-ref: ./mlx-qwen3-asr-backend/review/validation/briefing-3
+              withdrawal:
+                by: agent:first-officer
+                at: "2026-11-09T05:29:19.852132Z"
+                reason: 'Stale open authority: the briefing-3 room was prepared 2026-08-27, the entity body changed on 2026-11-08 (stage-report repair), and PR #425 is CONFLICTING against upstream main (head 24082a0, no maintainer review). Evidence must be re-prepared against a refreshed branch before a captain decision.'
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
