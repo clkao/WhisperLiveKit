@@ -6,6 +6,17 @@ score: 0.8
 id: dgx5v2br6xbg8rqx2v15b2ke
 pr: "#450"
 worktree: .worktrees/wlk-diarization-mlx
+gates:
+    version: 1
+    records:
+        - id: gate:dgx5v2br6xbg8rqx2v15b2ke:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:dgx5v2br6xbg8rqx2v15b2ke-validation-1
+              briefing:
+                id: briefing:dgx5v2br6xbg8rqx2v15b2ke:validation:attempt-1:revision-1
+                digest: sha256:a1f0a259479ded9eb66a0990b633af778af02b135ce004534dc804352508fb2d
+                room-ref: '@review/validation/briefing-1'
 ---
 
 # MLX-native Sortformer diarization backend

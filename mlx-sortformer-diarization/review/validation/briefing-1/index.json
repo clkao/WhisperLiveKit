@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:dgx5v2br6xbg8rqx2v15b2ke:validation:attempt-1:revision-1",
+  "question": "Does the MLX Sortformer backend satisfy its six acceptance criteria well enough to land upstream as PR #450?",
+  "artifacts": [
+    {
+      "id": "artifact:dgx5v2br6xbg8rqx2v15b2ke:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/98d28f0262d1b0e81f8be835759526ae62e90e1a/mlx-sortformer-diarization/index.md",
+      "rev": "sha256:059e87cd471dd9d0cba827e84acf172f3633e7ca2f687bad48987e59f7854aa3",
+      "mediaType": "text/markdown",
+      "summary": "Fresh validator reproduced AC-1..AC-6 from the tree and mutated four mechanisms to prove the tests can fail. AC-6 closed with two full-suite runs: branch 356 passed / 3 failed, all three failing on main too; collected 359 vs 343 = the branch's 16 new tests."
+    }
+  ]
+}
