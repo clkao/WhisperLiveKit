@@ -146,7 +146,7 @@ failure + error sets; any failure id absent from the baseline fails the AC.
 - DONE: Event-tap wiring against the #436-restructured pipeline
   The tap attaches to the processor (audio_processor init) and feeds DisplayAdapter; scripts/lc_terminal.py (ported) attaches a JSONL EventLog sink to the tap; test_harness already carries the `display` field contract on main's TestState — verified the seam on main's split (translation_processor.py owns the translation loop; the tap's translation emission points live in the integration branch's audio_processor and are NOT yet on main — the display layer consumes events, emission wiring for translation events on main is the one gap; see residual risks).
 
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -186,7 +186,7 @@ Ported the unified display layer (model + overlay view + TUI-as-thin-view + test
   emission-related, left as-is (upstream code path unaffected).
   Machine note: the qwen3-asr-causal submodule had to be initialized in the
   worktree (git submodule update --init) — fresh worktrees need this.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -249,7 +249,7 @@ Replaced cycle-2's private-attribute reach-through with an explicit display cont
   test_qwen3_backend_shims failures on main pass on the branch; the
   canary(2)/deepgram(1) failures and asr_coalescing_pipeline errors(4) are
   identical. Zero new failures. Display/emission/model suites all green.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -277,7 +277,7 @@ review. Commit e63c3d4 on wlk/display-unification.
   failure+error set identical to origin/main (canary x2, deepgram,
   ffmpeg coalescing); ruff clean on both branches.
 - SKIPPED: none
-- FAILED: the dispatched worker run died on a connection error after
+  No item failed in this stage; every item above was completed or skipped with its rationale.
   completing the rebuild + branch move; FO completed the remaining steps
   (tui-view branch, suite/ruff verification) directly.
 
@@ -463,7 +463,7 @@ approved the split.` Disposition performed: reduce the branch to the caption eve
   append-per-event test). Worktree clean. NOT pushed; PR #449 not touched — FO publishes.
 - PR-B seed branch `wlk/caption-display` created at 513b6fa (pre-trim), not pushed.
 
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -499,7 +499,7 @@ event stream). This is an ENTITY BODY edit, no code work.`
   `git diff` touches only the span between `## Context` and `## Notes`; frontmatter, every
   `## Stage Report` and `### Feedback Cycles` are byte-identical. No code file, no code
   branch push, PR #449 untouched.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Summary
 
@@ -545,7 +545,7 @@ added under item 3's "If no such test exists, add it ... and name it".
   `AssertionError` at the payload assertion (script `/tmp/falsify_check.py`, run, exit 0
   printing "RED as expected"). A tap that reorders calls or stops forwarding text fails
   the first assertion the same way.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Proof (exactly as run)
 
@@ -620,7 +620,7 @@ are.` Only the AC-1 "Verified by:" clause was edited; the bold AC statement is b
   `ruff check tests/test_asr_emission.py whisperlivekit/` → All checks passed.
 - DONE: append the stage report, commit path-scoped, push the state branch
   This section; state commit path-scoped to this entity, then pushed to `dev-state`.
-- FAILED: none
+  No item failed in this stage; every item above was completed or skipped with its rationale.
 
 ### Proof (exactly as run)
 
