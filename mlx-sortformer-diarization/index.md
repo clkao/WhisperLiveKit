@@ -29,11 +29,85 @@ Add `mlx-sortformer` as a diarization backend using mlx-audio's MLX conversion o
 - Tests: unit test with stub model (no MLX needed for collection); integration test insert_audio_chunk/diarize() contract.
 
 ## Acceptance criteria
-- `--diarize --diarization-backend mlx-sortformer` works end-to-end via lc_terminal.
-- No AttributeError from audio_processor diarization loop.
-- Speaker markers appear in TUI/overlay when multiple speakers detected.
-- uv lock --check passes. ruff check clean. Tests pass without MLX installed.
-- No NeMo dependency required.
+
+- **AC-1 (buffered Sortformer contract)**: `SortformerMLXDiarizationOnline` exposes
+  `buffer_audio` — the exact attribute `AudioProcessor.diarization_processor` tests
+  (`whisperlivekit/audio_processor.py:823`) to pick the extend path over Diart's cumulative
+  replace path — so segments accumulate across `diarize()` calls, one `diarize()` call feeds
+  every buffered full chunk rather than only one, and a `diarize()` that returns `[]` leaves
+  the pending segments in `get_segments()` instead of discarding them.
+  **Verified by:** `tests/test_diarization_mlx_backend.py::test_buffer_audio_is_public_for_the_buffered_processor_path`,
+  `::test_diarize_feeds_every_buffered_chunk_and_extends` (two 5s chunks in one poll → both
+  segments, `[(0.0,1),(5.0,2)]`), `::test_diarize_keeps_segments_when_a_chunk_yields_none`,
+  and `::test_audio_processor_extends_segments_and_keeps_them_on_empty_result` (drives the real
+  `AudioProcessor.create_tasks()`/`process_audio()` loop, one chunk per `diarize()` call).
+  Falsified if: renaming `buffer_audio` back to `_buffer_audio` does not make the processor-level
+  test fail with `timed out waiting for the second chunk`, or an empty-chunk `diarize()` returns
+  non-empty, or `get_segments()` shrinks after a `[]` return.
+
+- **AC-2 (insert_silence advances the diarization clock)**: `insert_silence(d)` adds `d` to
+  `global_time_offset` under the segment lock and `_to_segments()` adds that offset to every
+  segment start/end, keeping speaker segment times aligned with the transcript across pauses;
+  silence itself is never fed to the model.
+  **Verified by:** `tests/test_diarization_mlx_backend.py::test_insert_silence_shifts_segment_times`
+  — a 5s chunk yields a segment at 0.0, then `insert_silence(2.5)` makes the next chunk's
+  segment report 7.5–12.5. Falsified if: dropping the offset from `_to_segments()` (or making
+  `insert_silence()` a no-op) does not make that test report 5.0–10.0.
+  Evidence gap: no test drives a `Silence` item through `AudioProcessor.diarization_processor`,
+  so the asserted boundary is the backend method, not the processor's silence path.
+
+- **AC-3 (no model call on the event loop; one thread per session)**: every model call for a
+  session — `init_streaming_state()` and each `feed()` — runs through
+  `loop.run_in_executor()` on that session's single `ThreadPoolExecutor(max_workers=1)`, never
+  inline on the loop and never via `asyncio.to_thread()`, because MLX resolves its GPU stream
+  per thread (#426: `There is no Stream(gpu, ...) in current thread`).
+  **Verified by:** `tests/test_diarization_mlx_backend.py::test_feed_runs_on_one_dedicated_thread_and_leaves_the_loop_free`
+  — the union of threads that ran init + feed has exactly one member, that member is not the
+  event-loop thread, and a 5ms heartbeat ticks more than 5 times while a 200ms feed is in
+  flight. Falsified if: calling `self._feed` inline (or through `asyncio.to_thread`) does not
+  make it fail on two thread ids / a starved heartbeat.
+
+- **AC-4 (sub-chunk tail diarized at end of stream)**: `SortformerMLXDiarizationOnline.flush()`
+  feeds the remaining buffer when it is shorter than `CHUNK_DURATION_SECONDS`, and
+  `AudioProcessor.diarization_processor` awaits it via a `getattr` hook before its final drain,
+  so the last seconds of a stream are diarized instead of dropped (NeMo/Diart unaffected).
+  **Verified by:** `tests/test_diarization_mlx_backend.py::test_flush_feeds_the_partial_tail`
+  (a 3s tail reaches the model only through `flush()`, buffer left empty) and
+  `::test_audio_processor_flushes_the_partial_tail_at_eof` (7s written through `process_audio()`
+  plus EOF → model saw chunk sizes `[16000*5, 16000*2]`). Falsified if: deleting the `flush`
+  hook from `whisperlivekit/audio_processor.py` does not leave the processor-level test seeing
+  `[80000]` only.
+
+- **AC-5 (one mlx-audio range with #426; lockfile canonical for it)**: the
+  `diarization-mlx-sortformer` extra pins
+  `mlx-audio>=0.5.1,<0.6; sys_platform == "darwin" and platform_machine == "arm64"`
+  (`pyproject.toml:106`), the same range as #426's `nemotron-mlx-asr` extra, so both extras
+  install into one environment; `uv.lock` resolves `mlx-audio 0.5.9` and declares the
+  `conflicts` entries the extra needs.
+  **Verified by:** `git show fork/spacedock-ensign/nemotron-mlx-asr-backend-rebased:pyproject.toml`
+  showing the identical specifier for `nemotron-mlx-asr`; `uv lock --check --no-config` exiting 0
+  on the branch (`--no-config` is required: this machine's `~/.config/uv/uv.toml` sets
+  `exclude-newer = "7 days"`, which makes plain `uv lock --check` re-resolve and also fails on
+  pristine `origin/main`); and `grep -A1 'name = "mlx-audio"' uv.lock` reading
+  `version = "0.5.9"`. Falsified if: `--check --no-config` exits non-zero, or the two extras'
+  specifiers stop matching, or the lock resolves a version outside `>=0.5.1,<0.6`.
+  Scope note: the ~22k-line `uv.lock` diff is the measured mechanical cost of the two `conflicts`
+  entries, not resolution drift (Feedback Cycles cycle 3 probe: 7 lines with no conflicts, 22,230
+  with two pairs). Behavioural range parity was measured separately — mlx-audio 0.4.4 vs 0.5.9,
+  mlx 0.31.2, 31.5s zh clip, identical 12 segments — and is recorded in Feedback Cycles; it is
+  not a criterion these tests re-run.
+
+- **AC-6 (no new suite failures versus origin/main at the same commit)**: the branch introduces
+  no test failure beyond the set `origin/main` already has at the merge base `ada82d4`.
+  **Verified by:** `/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python -m pytest -q tests/ --ignore=tests/test_pipeline.py`
+  run on the branch and on a scratch worktree of `origin/main` at `ada82d4`, comparing
+  failing/erroring node ids (cycle-2 evidence: 355 passed/17 skipped/4 errors vs 339/17/4 — the
+  delta is exactly this branch's 16 tests, and the 4 errors are `test_asr_coalescing_pipeline`'s
+  network/fixture cases that CONTRIBUTING excludes), plus
+  `pytest -q tests/test_diarization_mlx_backend.py` reporting 16 passed. Falsified if: any failing
+  node id on the branch is absent from main's set, or the diarization file reports fewer than 16
+  passed. Note: the baseline comparison is a run-to-run procedure, not a committed script — an
+  independent check needs the disk for a scratch worktree of `ada82d4`.
 
 ## Stage Report: branch cut (implementation — port to origin/main)
 
@@ -198,3 +272,46 @@ Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx
 ### Summary
 
 Per the FO's ship-as-is decision, no uv.lock change was warranted: the delivered lock is already uv's canonical minimal output for this pyproject (`--check --no-config` clean, byte-identical to a fresh incremental lock taken from origin/main's lock), and the large diff is the mechanical cost of the two `conflicts` entries the extra genuinely needs (mlx-audio 0.5.x transformers>=5.14 vs qwen3-asr-causal[streaming]'s transformers==4.57.6). The only edit is a four-line pyproject comment recording those two facts for the next reviewer (27ef1fd), committed locally on wlk/diarization-mlx. Nothing pushed, PR #450 untouched.
+
+## Stage Report: implementation (cycle 4)
+
+- DONE: authorize: acceptance-criteria drafting for entity dg. State-only body edit; no code, no push.
+  Only `mlx-sortformer-diarization/index.md` touched (79+/5-); no code worktree edit, no install,
+  no model download, no branch change (`wlk/diarization-mlx` still at 27ef1fd).
+- DONE: DISK: this machine has ~2 GiB free. Do not install anything, no venv, no model downloads; tests only via the shared venv on tests/test_diarization_mlx_backend.py.
+  Ran nothing but `pytest -q tests/test_diarization_mlx_backend.py` (16 passed in 2.92s) and
+  `ruff check .` (clean) with `/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`; no sync/install.
+- DONE: Replace the free-form bullets with numbered **AC-N** + `Verified by:` criteria covering AC-1..AC-6.
+  Five prose bullets replaced by six criteria at index.md:31: buffered contract (AC-1), silence clock
+  (AC-2), off-loop single thread (AC-3), EOF tail (AC-4), shared mlx-audio range + canonical lock
+  (AC-5), no new suite failures (AC-6); each carries `Verified by:` plus `Falsified if:`.
+- DONE: Name the real test ids on the branch for each clause; say so where evidence is missing; do not claim unrun parity work.
+  Every cited id exists and passes at 27ef1fd: `test_buffer_audio_is_public_for_the_buffered_processor_path`,
+  `test_diarize_feeds_every_buffered_chunk_and_extends`, `test_diarize_keeps_segments_when_a_chunk_yields_none`,
+  `test_audio_processor_extends_segments_and_keeps_them_on_empty_result` (AC-1);
+  `test_insert_silence_shifts_segment_times` (AC-2);
+  `test_feed_runs_on_one_dedicated_thread_and_leaves_the_loop_free` (AC-3);
+  `test_flush_feeds_the_partial_tail`, `test_audio_processor_flushes_the_partial_tail_at_eof` (AC-4).
+  AC-5 and AC-6 name commands, not tests (no test asserts a lockfile or a suite diff). Parity is cited
+  as Feedback Cycles evidence (mlx 0.31.2, 31.5s zh clip, 0.4.4 vs 0.5.9 → identical 12 segments),
+  not as a re-run criterion.
+- DONE: Leave Work, Context, End value, all Stage Reports and Feedback Cycles untouched.
+  `git diff` is confined to the Acceptance criteria section: 5 bullet lines removed, criteria added.
+- DONE: Append your stage report line, commit path-scoped, report the criteria written plus any clause lacking current evidence.
+  This section; committed path-scoped to the state checkout.
+- SKIPPED: push the state branch.
+  The same dispatch's authorize line and the parent assignment both say "no push" (explicit constraint
+  this session); the state commit is local-only, so peers will not see it until the FO pushes
+  `dev-state`.
+- FAILED: none
+
+### Summary
+
+Rewrote the PR #450 acceptance criteria as six numbered, falsifiable criteria in this workflow's
+shape, each grounded in a test id or command that exists on `wlk/diarization-mlx` at 27ef1fd. Two
+clauses name commands rather than tests (AC-5 lockfile/range, AC-6 suite diff — the branch has no
+test for either), and AC-2 records that its evidence stops at the backend boundary: no test drives
+`Silence` through `AudioProcessor.diarization_processor`. The five replaced bullets also claimed
+lc_terminal end-to-end, TUI/overlay speaker markers, and "no NeMo required"; those are not in the
+FO's six-clause set, so they are now unstated rather than asserted — flagging it in case the FO
+wants them as AC-7..AC-9. State commit is local-only per the no-push constraint.
