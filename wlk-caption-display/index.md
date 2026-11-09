@@ -215,3 +215,212 @@ The entity was filed while the overlay and TUI were still expected here; the cap
 ### Summary
 
 The last stale promise in the body is corrected: the Test plan no longer describes view-adapter replay tests for overlay/TUI views this task deliberately does not ship, and instead names the three things it does prove — display-model unit tests (partition, hold, in-place promotion, monotonicity), the replay instrument over the checked-in goldens for determinism, and suite parity against `origin/main` at the same commit. One section, one hunk, no code changed, no code pushed.
+
+## Stage Report: validation
+
+Fresh validator. Reproduced every `Verified by:` clause from the branch
+`wlk/caption-display-prb` @ `c8dce70` (parent `db143d3`, merge-base `ada82d4`),
+using the shared interpreter `/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`
+with `PYTHONPATH=.` in the worktree (the worktree's own `.venv` is not needed).
+No product code was edited outside one restored mutation; nothing pushed.
+
+**Verdict: REJECTED (AC-2).** AC-1, AC-3, AC-4 pass with evidence. AC-2's four
+rules reproduce and all ten named tests pass, but the rule it states — "a
+finished sentence is held and shown" — does NOT hold at the shipped defaults:
+committed `translation_final` sentences are silently dropped when they arrive
+faster than the hold-drain releases them. Finding F-1 below is the blocker;
+F-2/F-3 are recorded but not blocking on their own.
+
+### AC-1 — PASS (deterministic replay), with a numbering nit (F-3)
+
+- Replayed all five `tests/golden/*.jsonl` twice through
+  `load_caption_events` → `CaptionDisplay(hold_sec=1.2, clock=<stepped counter>)`
+  with a 30s drain (`/tmp/validate-5m/replay2.py`): `identical=True` for all
+  five, both on the reader-visible line sequence and (second script,
+  `fulltrace.py`) on the full per-tick `(spans, styles, prev, partial)` trace:
+  `360 / 353 / 369 / 360 / 352` ticks, all `identical=True`.
+- `PYTHONPATH=. python scripts/replay_canonical_overlay.py` run twice → both
+  runs `rc=0`, `diff` clean, `md5 78b73062eace639801a54761b705f2dd` on both
+  (43 trace lines).
+- Falsifiability reproduced: making `tick()` read the real clock
+  (`now = self._clock()` → `now = time.monotonic()`) reddens
+  `tests/test_overlay_replay.py` 3 failed / 1 passed
+  (`test_reword_retraction_held`, `test_canonical_stream_every_final_sentence_reaches_the_line`,
+  `test_canonical_stream_never_scrolls_a_draft_into_history`). File restored
+  (md5 back to `e0bfb210f0ca41d1f7c442f292f0d097`).
+- F-3 (nit, non-blocking): the parenthetical figures in AC-1 are mislabeled. The
+  `369 / 352 / 360 / 353 / 360` numbers are *tick* counts (events + 300 drain
+  ticks), not event counts; the goldens hold `69 / 52 / 60 / 53 / 60` events.
+  The "distinct lines" figures do not reproduce under any single counting rule I
+  tried: distinct line *texts* are `15 / 13 / 18 / 17 / 13`
+  (canonical / time_frontier / ideal / zh_ja / demo), distinct
+  `(styles, text)` pairs `15 / 14 / 18 / 17 / 16`, and the test helper's own
+  `_replay()` returns `shown 15/13/18/17/13` — so 14 and 16 reproduce, 22/20/19
+  do not. Determinism, the property AC-1 states, is unaffected.
+- Nit: the AC's command `python scripts/replay_canonical_overlay.py` fails from
+  the repo root with `ModuleNotFoundError: No module named 'whisperlivekit'`
+  (the package is not installed in the venv and `sys.path[0]` is `scripts/`).
+  `PYTHONPATH=. python scripts/replay_canonical_overlay.py` works.
+
+### AC-2 — FAIL (F-1): a committed sentence can be silently dropped
+
+What passes (reproduced, not read):
+
+- All ten named tests exist and pass together:
+  `pytest -q tests/test_caption_display.py::test_multi_sentence_final_queues_each_sentence …::test_set_partial_holds_on_pure_shrink`
+  → `10 passed in 4.00s`.
+- Direct probes of the four rules (`/tmp/validate-5m/ac2.py`, `ac2b.py`,
+  `ac2c.py`):
+  partition — `translation("First sentence. Second sentence. Third sentence.")`
+  drains as exactly those three lines; hold — shown at `t=0.05 / 1.05 / 2.05`
+  with `hold=1.0`, i.e. one full hold each, FIFO; promotion in place — dim
+  `'Hello there.'` → final `'Hello there.'` flips to `['same']` in one tick with
+  no empty/retype frame; promotion at a terminator — `prev='Dentists also use
+  laser technology for oral surgery.'`, `current='This reduces'`, sentence never
+  enqueued, line never cleared; no shrink — a shorter ASR partial leaves
+  `tick() -> None` and the long partial intact; reworded final — amends to
+  `['same','add','same','add']` without blanking, `prev` untouched.
+- Golden drained replay (`/tmp/validate-5m/ac2_golden.py`, hold=1.2): every
+  complete sentence of every `translation_final` reaches the line for
+  `zh_long_canonical` (12/12), `zh_long_ideal` (6/6), `zh_long_time_frontier`
+  (8/8), `demo_en_30s_ideal` (6/6); `zh_ja_fallback` misses one
+  (`出血や汗、痛みを減らす。`) — see F-2.
+
+**F-1 (material, blocker) — committed captions are dropped at the shipped
+hold.** `hold_sec=3.5` is the default of `scripts/replay_canonical_overlay.py`
+and of its `--hold` flag, and `tick()` releases a queued item only every
+`min(self._hold, max(1.0, self._hold / 2))` = 1.75s, while the queue is capped at
+three items (`caption_display.py:452` `del self._queue[:-3]`,
+`:606` `self._queue = (kept + new_items)[-3:]`, `:687` `del self._queue[:-3]`).
+When committed sentences arrive faster than 1.75s the cap evicts the *oldest
+committed, never-displayed* item:
+
+```
+# /tmp/validate-5m/dense_repro2.py — distinct single-sentence finals, 10fps view
+hold=3.5 arrival=0.9s -> 3/12 committed sentences never displayed:
+   ['Delta is here.', 'Foxtrot is here.', 'Hotel is here.']
+hold=3.5 arrival=1.2s -> 1/12 committed sentences never displayed: ['Golf is here.']
+hold=3.5 arrival=1.6s -> 0/12;  hold=2.0 arrival=0.9s -> 0/12;  hold=1.2 -> 0/12
+```
+
+Mechanism confirmed (`/tmp/validate-5m/capfix_dense.py`): with the three cap
+sites raised in memory the same stream loses nothing —
+`shipped cap=3 → ['Delta is here.', 'Foxtrot is here.', 'Hotel is here.']` vs
+`cap=64 → []`. It also shows up in the shipped instrument at its own defaults
+(`--hold 3.5 --pace 0.3`, `/tmp/validate-5m/dropcheck.py`): never-displayed
+sentences `zh_long_canonical` 2, `zh_ja_fallback` 4, `zh_long_time_frontier` 1
+(vs 0/0/0 for `zh_long_ideal` and `demo_en_30s_ideal`).
+
+This contradicts AC-2's stated rule, and it contradicts the model's own
+invariant in the same file ("FINALS ACCUMULATE — a queued final is committed
+content and must display", `:682`). The AC-2 test that is supposed to be red
+here, `test_drained_replay_displays_every_completed_sentence`, spot-checks only
+three sentences of one golden at hold 1.2, so it stays green while committed
+sentences are dropped.
+
+Concrete fixes (either satisfies the AC; the first is smallest):
+1. Stop evicting unshown committed items: bound the queue by *displayed/expired*
+   entries (or drop only `provisional` drafts), so a backlog drains instead of
+   being discarded — the three cap sites above are the whole change.
+2. Or raise/removal of the cap together with a drain that keeps up
+   (e.g. release immediately when the queue length exceeds N while pinning the
+   newest), and document the resulting pacing.
+   Either way add a regression that replays **all five goldens at the
+   instrument's default hold** and asserts every complete sentence of every
+   `translation_final` is displayed at least once (the current test's
+   3-sentence spot-check is not enough).
+
+**F-2 (polish/deferred) — the final is not authoritative for an
+already-routed sentence.** With the recorded wall clock as the pacing clock and
+a 30fps view (`/tmp/validate-5m/wall_t_replay.py`), `zh_long_time_frontier` at
+hold ≤ 2.0 never displays the final's wording `'It reduces bleeding, sweating,
+and pain.'` (the reader saw the draft wording `'This reduces …'` first), and
+`zh_long_ideal` / `demo_en_30s_ideal` never display three / two final wordings
+because the draft-routed text is displayed and the final's rewrite for an
+already-routed sentence is not re-rendered. No content is lost in these cases —
+this is the "authoritative final" rule bending, not retraction. Promote to
+material only if a consumer needs the final's exact wording on screen.
+
+**F-2b (deferred risk, not observed in the goldens)** — a `translation_final`
+that arrives before any view tick has displayed the draft-routed sentences
+discards them outright (`/tmp/validate-5m/minrepro.py`: `preview("Alpha one. Beta
+two. Gamma thre")` then `translation(...)` with no tick in between → `'Alpha
+one.'` and `'Beta two.'` never shown, at any hold; one `tick()` in between fixes
+it). No adjacent provisional→final pair exists in any golden (measured: `n=0`
+for all five), so this needs a producer that emits a draft and its final inside
+one view frame. Promote to material if a consumer ticks slower than the
+producer's draft→final gap.
+
+### AC-3 — PASS
+
+`test_no_display_state_without_a_consumer` passes, and I rebuilt the wiring
+independently (`/tmp/validate-5m/ac3.py`, real `AudioProcessor` over a stub
+`TranscriptionEngine`):
+
+```
+no-consumer:  caption_display is None | event_tap._sink = None | has _FanOutSink: False
+no-consumer:  tap accepted events with no sink (no exception)
+eventlog-only: caption_display is None | sink type = EventLog
+consumer:     caption_display is the one I passed: True | sink is model: True
+```
+
+So neither a display model nor a fan-out exists when nothing consumes the
+stream, and `--event-log` alone still holds a single `EventLog` sink.
+
+### AC-4 — PASS (recorded comparison + independent targeted re-check)
+
+The AC's own comparison is recorded in the two implementation reports
+(`origin/main ada82d4` 8 failed/335 passed/13 skipped, branch `c8dce70` 8
+failed/395 passed/13 skipped, same eight IDs). I did not re-run the whole suite
+(disk-constrained, and instructed not to); instead I re-ran the only files where
+failures occur, in both trees:
+
+- Branch: `pytest -q tests/test_canary_backend.py tests/test_deepgram_compat.py
+  tests/test_qwen3_backend_shims.py` → `8 failed, 95 passed` with exactly the
+  eight recorded IDs (canary ×2, deepgram ×1, qwen3 shims ×5).
+- `origin/main` export (`git archive origin/main whisperlivekit tests
+  pyproject.toml | tar -x -C /tmp/validate-5m/origin-main`) → the **same eight
+  IDs**, `8 failed, 95 passed`. Environment-dependent, pre-existing, not
+  branch-only.
+- Nine shared suites touched or adjacent (`test_backends`,
+  `test_asr_coalescing_boundaries`, `test_pause_segmentation`,
+  `test_translation_alignatt`, `test_translation_mlx`, `test_speaker_boundaries`,
+  `test_session_context`, `test_retention`, `test_server`): branch
+  `136 passed, 2 skipped`; `origin/main` `136 passed, 2 skipped`.
+- The four suites this task adds
+  (`tests/test_caption_display.py tests/test_overlay_replay.py
+  tests/test_caption_events.py tests/test_translation_emission.py`):
+  `59 passed in 3.82s`.
+
+### Scope check — PASS
+
+`git diff --name-only db143d3 HEAD` = `scripts/replay_canonical_overlay.py`, the
+five `tests/golden/*.jsonl`, `tests/test_caption_display.py`,
+`tests/test_overlay_replay.py`, `whisperlivekit/{caption_display.py,
+audio_processor.py, test_harness.py}`. A grep of the whole diff for
+`appkit|nsview|nswindow|urwid|textual|curses|tui|pywebview|tkinter` hits one
+line — a test docstring saying "No view, AppKit, or real time is involved".
+No view, overlay or TUI code, and no consumer-task file, is on this branch.
+
+### Mutation (required check) — one test red, restored byte-for-byte
+
+Mutated the placeholders rule of my own choosing: `_strip_hy_placeholder()` made
+a no-op (`return text`), i.e. the model would let the Hunyuan
+`<|…|>` template marker reach a view.
+
+- Red, **exactly one** test:
+  `pytest -q` over the four suites → `1 failed, 58 passed`,
+  `FAILED tests/test_caption_display.py::test_placeholder_artifact_never_reaches_the_display`
+  (`AssertionError: + <|im_start|>Hello there`).
+- Restored with `git checkout -- whisperlivekit/caption_display.py`; md5
+  `e0bfb210f0ca41d1f7c442f292f0d097` matches the pre-mutation value; the same
+  selection went back to `59 passed in 2.94s`. `git status --short` empty,
+  HEAD still `c8dce70`, nothing staged, no remote branch contains `c8dce70`.
+
+### What must change before this gate can pass
+
+1. F-1: keep committed, unshown sentences (or document the drop and let the
+   captain rescope AC-2 — that is not my call), plus a golden-wide drained
+   replay at the default hold as the regression.
+2. F-3: correct AC-1's figures (tick counts, and distinct-line counts that
+   reproduce) and the `python scripts/…` invocation (needs `PYTHONPATH=.`).
