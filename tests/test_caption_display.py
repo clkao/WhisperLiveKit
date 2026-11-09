@@ -15,6 +15,7 @@ from whisperlivekit.caption_display import (
     PROVISIONAL,
     CaptionDisplay,
     DisplayState,
+    _split_sentences,
     load_caption_events,
 )
 from whisperlivekit.caption_events import CaptionEvent
@@ -627,6 +628,96 @@ def test_new_multi_sentence_final_never_evicts_the_pending_backlog():
     assert [s for s in shown if s in committed] == committed, (
         f"never displayed: {[s for s in committed if s not in shown]}"
     )
+
+
+def _instrument_replay(path, hold=3.5, pace=0.3, drain_seconds=40.0):
+    """Replay with the replay instrument's own cadence
+    (``scripts/replay_canonical_overlay.py``: advance, emit, one tick per
+    event, then a drained tail) and return every distinct line that reached the
+    current line — what the reader sees, in order."""
+    m, clk = make(hold=hold)
+    seen = []
+
+    def snap() -> None:
+        cur = plain(m.state())
+        if cur and cur != (seen[-1] if seen else None):
+            seen.append(cur)
+
+    for e in load_caption_events(path):
+        clk.advance(pace)
+        m.emit(e)
+        m.tick()
+        snap()
+    for _ in range(int(drain_seconds / 0.1)):  # the reader's clock keeps running
+        clk.advance(0.1)
+        m.tick()
+        snap()
+    return seen
+
+
+@pytest.mark.parametrize("hold", [1.2, 3.5, 5.0])
+def test_final_after_a_held_caption_displays_every_sentence(hold):
+    """A final arrives while the PREVIOUS utterance's caption still holds the
+    line: every sentence of the new final must display, in order.
+
+    Sentence indices are utterance-local and the stream carries no utterance
+    identity, so a ``translation_final`` ends the routing that produced its own
+    indices (``_end_utterance_routing``). Fails if the previous utterance's
+    line position survives into the next final and steps the enqueue start
+    past sentences the reader never saw — at the shipped hold ``'Beta one.'``
+    was never enqueued, so neither it nor its draft wording ever displayed."""
+    m, clk = make(hold=hold)
+    shown = []
+
+    def snap() -> None:
+        cur = plain(m.state())
+        if cur and cur != (shown[-1] if shown else None):
+            shown.append(cur)
+
+    def pump(seconds: float) -> None:
+        for _ in range(int(seconds / 0.1)):
+            clk.advance(0.1)
+            m.tick()
+            snap()
+
+    # utterance 1: the draft routes both sentences and the line ends on the
+    # second one (sentence index 1 of this utterance)
+    m.preview("Alpha one. Alpha two.")
+    pump(4.0)
+    assert shown[:2] == ["Alpha one.", "Alpha two."], shown
+    m.translation("Alpha one. Alpha two.")
+    pump(1.0)
+
+    # utterance 2: a longer final arrives while that caption is held
+    m.translation("Beta one. Beta two. Beta three.")
+    pump(30.0)
+
+    beta = [s for s in shown if s.startswith("Beta")]
+    assert beta == ["Beta one.", "Beta two.", "Beta three."], (
+        f"a committed sentence never displayed; saw {beta!r} of {shown!r}"
+    )
+
+
+@pytest.mark.parametrize("hold", [3.5, 5.0], ids=lambda h: f"hold{h}")
+@pytest.mark.parametrize("golden", sorted(GOLDEN_DIR.glob("*.jsonl")), ids=lambda p: p.stem)
+def test_golden_every_final_sentence_displays_verbatim(golden, hold):
+    """Every sentence of every ``translation_final`` in every checked-in stream
+    reaches the line in the final's own wording, at the shipped hold.
+
+    The queue tests only see items that were ENQUEUED; a sentence an out-of-date
+    utterance-local index skips is never enqueued at all, so it needs this
+    end-to-end check. Fails on any committed final sentence that never reaches
+    the line (``zh_long_time_frontier`` lost
+    'In ophthalmic surgery, lasers are used to correct vision.' at hold 3.5)."""
+    seen = _instrument_replay(golden, hold=hold)
+    displayed = "\n".join(seen)
+    for final in (e.text for e in load_caption_events(golden)
+                  if e.type == "translation_final"):
+        sentences, fragment = _split_sentences(final)
+        for sentence in sentences or ([fragment] if fragment else []):
+            assert sentence in displayed, (
+                f"never displayed: {sentence!r}\n saw: {displayed!r}"
+            )
 
 
 # ---- promote-in-place (round 3: no identical-content retype) ----
