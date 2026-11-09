@@ -5,6 +5,7 @@ source: "Probed and verified on integration branch: mlx-community/diar_streaming
 score: 0.8
 id: dgx5v2br6xbg8rqx2v15b2ke
 pr: "#450"
+worktree: .worktrees/wlk-diarization-mlx
 ---
 
 # MLX-native Sortformer diarization backend
