@@ -58,7 +58,7 @@ gates:
                 target-stage: done
                 state: pending
 mod-block: merge:pr-merge
-pr: "#423"
+pr: pr-merge:423
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
