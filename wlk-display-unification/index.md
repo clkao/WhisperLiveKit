@@ -655,3 +655,13 @@ sites, including the periodic refresh that only fires on the loop's queue timeou
 is demonstrated by two run mutations (a removal and a reorder) that both turn the test red, with
 the source restored byte-for-byte and re-verified by hash. Residual: the test covers the
 transcription call sites only; the translation side keeps its own loop tests.
+
+- Cycle 9 (2026-11-08): PR-A published. Branch `wlk/display-unification` force-pushed to the
+  fork branch `spacedock-ensign/caption-display` (513b6fa -> db143d3, 10 commits, rebased on
+  ada82d4), PR #449 body replaced with the event-stream scope, and the split reply posted
+  (issuecomment-6731795843). Push needed SSH plus an explicit lease: the https credential
+  lacks `workflow` scope because the rebase carries main's .github/workflows/ci.yml change,
+  and the first force-with-lease was refused on a stale remote-tracking ref. Live run evidence
+  in the PR: the log grew during the session (285 -> 3069 bytes before finish, 4097 after, 34
+  lines, transcription_final only because the backend commits without drafts and translation
+  was off).
