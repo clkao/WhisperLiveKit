@@ -76,14 +76,20 @@ the observed sequence in full — the four types in emission order, each event's
 reorders a call, stops forwarding text or audio position, or mis-threads the
 `committed`/`source`/`fresh` columns (confirmed red by stripping `source` from
 `translation_provisional`, which trips the payload assertion);
+`tests/test_asr_emission.py::test_one_utterance_emits_the_transcription_sequence`
+drives one utterance through the real `AudioProcessor.transcription_processor`
+loop with a tap on a recording sink and asserts the exact
+`(type, text, audio_t)` sequence the four ASR-side call sites in
+`audio_processor.py` produce — the committed segment, the rolling tail, the
+periodic buffer refresh on the loop's queue timeout, and the terminal flush at
+end of stream — so it fails if any of those call sites stops emitting or
+reorders them (confirmed red twice: deleting the terminal-flush emit, and
+swapping the chunk-path final/provisional pair, each trips the sequence
+assertion);
 `tests/test_translation_emission.py::test_translation_final_emitted_for_single_and_list`
 and `::test_provisional_carries_committed_source_fresh` drive the real
 `run_translation` loop against a mock backend and fail if finals stop emitting
 for single-or-list results or a provisional loses its `committed`/`source`.
-Scope note: the four ASR-side call sites in `audio_processor.py` are exercised
-behaviourally by the pipeline suites (`tests/test_pause_segmentation.py`,
-`tests/test_asr_coalescing_boundaries.py` attach a tap), which prove emission
-does not disturb the loop but do not assert the emitted sequence.
 
 **AC-2 — `--event-log` appends one JSONL line per event as it is emitted, with
 no in-memory accumulation and no write-on-cleanup.**
@@ -570,3 +576,82 @@ falsifiability was demonstrated by breaking the tap's payload and watching it go
 Residual: no behavioural test asserts that the four ASR-side call sites in
 `audio_processor.py` emit at their documented points — the AC records that gap rather
 than hiding it behind a grep.
+
+## Stage Report: implementation (cycle 3 — AC-1 ASR-side emission proof)
+
+Authorization: `close the AC-1 evidence gap — the pipeline emission points are not
+covered by any test. Do not change AC-1's wording; the acceptance criteria stay as they
+are.` Only the AC-1 "Verified by:" clause was edited; the bold AC statement is byte-identical.
+
+- DONE: close the AC-1 evidence gap — the pipeline emission points are not covered by any test
+  `tests/test_asr_emission.py` (new) pins all four ASR-side call sites; the AC-1 clause
+  that recorded the gap ("do not assert the emitted sequence") was replaced by that test id,
+  so the entity no longer claims an open gap.
+- DONE: add the test that drives the real ASR-side pipeline path with a tap on a recording sink
+  `tests/test_asr_emission.py::test_one_utterance_emits_the_transcription_sequence` runs
+  `AudioProcessor.transcription_processor` end to end (scripted streaming backend shaped like
+  LocalAgreement's tail buffer, `processor.event_tap = EventTap(sink=_Recorder())`; no model, no
+  network) and asserts the exact `(type, text, audio_t)` list:
+  `final "今天我們"@0.25`, `provisional "討論"@0.25`, `provisional "討論皮膚科"@0.4`,
+  `final "皮膚科。"@0.75` — i.e. chunk-path committed segment + rolling tail
+  (`audio_processor.py`:797/804), the periodic buffer refresh on the loop's 0.5 s queue timeout
+  (:662, driven by `decode_between_chunks()`), and the terminal flush (:615, driven by SENTINEL).
+  Harness shape follows `tests/test_pause_segmentation.py::_boundary_processor` /
+  `tests/test_asr_coalescing_boundaries.py::_processor_for` (local `_processor_for`, tap injected).
+- DONE: prove the test can fail — two mutations run, both red, file restored byte-for-byte
+  A (removal): replaced the terminal-flush `self.event_tap.transcription_final(...)` block at
+  `audio_processor.py`:614-618 with `pass` → FAILED, "Right contains one more item:
+  ('transcription_final', '皮膚科。', 0.75)".
+  B (reorder): swapped the chunk-path final/provisional blocks at :795-807 → FAILED, "At index 0
+  diff: ('transcription_provisional', '討論', 0.25) != ('transcription_final', '今天我們', 0.25)".
+  After each: `git checkout -- whisperlivekit/audio_processor.py`,
+  `shasum -a 256 -c` → `whisperlivekit/audio_processor.py: OK`, `git status --porcelain` shows only
+  the new test file; re-run green (1 passed). Tree left unmodified.
+- DONE: update AC-1's "Verified by:" clause to name the new test id (AC wording unchanged)
+  Added the clause naming `tests/test_asr_emission.py::test_one_utterance_emits_the_transcription_sequence`
+  with the change that makes it fail (a call site stops emitting or reorders) and the two
+  observed red mutations; the scope note that said no test asserts the sequence is gone.
+  `git diff` touches only that span (hunk `@@ -76,14 +76,20 @@`); AC-1's bold statement,
+  AC-2..AC-5, frontmatter and every prior Stage Report are byte-identical.
+- DONE: keep the existing tests green, ruff clean
+  87 passed, 1 skipped on `tests/test_asr_emission.py tests/test_caption_events.py
+  tests/test_translation_emission.py tests/test_pause_segmentation.py
+  tests/test_asr_coalescing_boundaries.py tests/test_asr_coalescing.py tests/test_backends.py`;
+  `ruff check tests/test_asr_emission.py whisperlivekit/` → All checks passed.
+- DONE: append the stage report, commit path-scoped, push the state branch
+  This section; state commit path-scoped to this entity, then pushed to `dev-state`.
+- FAILED: none
+
+### Proof (exactly as run)
+
+Invocation note (no hidden dependency): the worktree `.venv` has no pytest, so runs use
+`/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/pytest` from the worktree root; verified it
+imports the worktree package (`"wlk-display-unification" in whisperlivekit.__file__`), and
+`uv run` was reverted because it rewrote `uv.lock` (left clean).
+
+- New test green: `pytest -q tests/test_asr_emission.py -p no:randomly` → **1 passed** (3.27s);
+  5 consecutive runs without `-p no:randomly` → 1 passed each (1.68-2.19s), so the 0.5 s
+  timeout refresh is not flaky.
+- Mutation A / B red, restore, green: results quoted per item above; baseline
+  `shasum -a 256 whisperlivekit/audio_processor.py` recorded before mutating and re-verified
+  with `-c` after each restore.
+- Targeted selection: **87 passed, 1 skipped in 3.69s** (was 86 passed, 1 skipped before this
+  cycle's test).
+- Full suite: not re-run — the 4 `test_asr_coalescing_pipeline` setup errors are this sandbox's
+  inability to download test samples (pre-existing, environmental, cycle 8's reason). Treat the
+  targeted selection as binding.
+
+### Branch state
+
+- Code: commit **633e35c** on `wlk/display-unification` (one new test file). Not pushed;
+  PR #449 untouched.
+- State: this file only — AC-1's "Verified by:" clause plus this report.
+
+### Summary
+
+The AC-1 gap is closed behaviourally: one test drives the real ASR-side processor loop with a
+recording sink and asserts the exact transcription event sequence from all four documented call
+sites, including the periodic refresh that only fires on the loop's queue timeout. Falsifiability
+is demonstrated by two run mutations (a removal and a reorder) that both turn the test red, with
+the source restored byte-for-byte and re-verified by hash. Residual: the test covers the
+transcription call sites only; the translation side keeps its own loop tests.
