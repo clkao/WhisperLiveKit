@@ -208,7 +208,13 @@ class CaptionDisplay:
         self._en_prev_plain: str = ""
         self._en_prev_spans: List[Span] = []
         self._en_prev_at: float = 0.0
-        # pending (the most recent enqueue, waiting for the drainer to show it)
+        # pending (the reader's backlog: content not on the line yet). NOT
+        # capped — every completed caption in it must display, so evicting the
+        # oldest drops a caption the reader never saw. The drainer releases one
+        # item per min(hold, max(1.0, hold / 2)) seconds; a producer that
+        # outruns the drainer deepens the backlog instead of losing captions.
+        # The only superseded content is a DRAFT (the newest in-progress
+        # fragment wins: see _keep_committed).
         self._queue: List = []
         # sentence-partitioned state: the translated stream is routed per
         # sentence — a completed sentence (draft crossed a terminator, or a
@@ -438,7 +444,9 @@ class CaptionDisplay:
         last so the reader sees sentences in order. ``sent_idx`` is the
         utterance-local sentence position; ``provisional`` marks items routed
         from the draft stream (the final's reconcile replaces them with the
-        authoritative wording).
+        authoritative wording). The insert is uncapped: the sentence waits in
+        the backlog until the drainer shows it, so no enqueue may evict an
+        older unshown caption.
         """
         item = _Item([Span(text, FINAL_SAME)], text,
                      is_final=True, sent_idx=sent_idx,
@@ -449,7 +457,6 @@ class CaptionDisplay:
         while cut > 0 and self._queue[cut - 1] is self._queued_draft:
             cut -= 1
         self._queue.insert(cut, item)
-        del self._queue[:-3]  # bounded: bright sentences accumulate (max 3)
 
     def _amend_routed_sentence(self, idx: int, text: str) -> None:
         """A re-route (reword) of an already-routed sentence.
@@ -603,7 +610,9 @@ class CaptionDisplay:
             _Item([Span(s, FINAL_SAME)], s, is_final=True, sent_idx=i)
             for i, s in enumerate(sents) if i >= start
         ]
-        self._queue = (kept + new_items)[-3:]
+        # the reader's backlog keeps every completed sentence: a later final
+        # must never evict one that has not displayed yet (F-1)
+        self._queue = kept + new_items
         if not self._en_plain and self._queue:
             self._en_shown_at = -self._hold  # first item releases immediately
         # authoritative baseline for the next draft cycle; the draft routing
@@ -683,8 +692,7 @@ class CaptionDisplay:
             # display; clearing the queue (the draft rule) dropped finals that
             # landed back-to-back (CL: 'not queueing translated strings if
             # they happen immediately after the last'). Drafts supersede.
-            self._queue.append(item)
-            del self._queue[:-3]
+            self._queue.append(item)  # uncapped — see __init__: never evicted
         else:
             # a draft supersedes queued DRAFTS — never committed sentences:
             # a queued final is content the reader has not seen yet; dropping

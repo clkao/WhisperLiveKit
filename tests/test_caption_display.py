@@ -558,6 +558,77 @@ def test_new_final_enqueues_behind_pending_sentences_fifo():
     assert "Third sentence" in shown, f"the new final never displayed: {shown!r}"
 
 
+def test_committed_sentences_faster_than_the_release_interval_all_display():
+    """Committed captions are never evicted in favour of a newer one.
+
+    At the shipped hold the drainer releases one queued caption every
+    ``max(1.0, hold / 2)`` = 1.75s, so finals that land faster than that build
+    a backlog. The queue must DRAIN that backlog, not trim it: trimming drops
+    a sentence the reader was never shown, which is a lost caption, not
+    back-pressure. Fails if any queue bound discards an unshown committed
+    item."""
+    m, clk = make(hold=3.5)  # the shipped hold, hence the 1.75s release
+    committed = [f"{w} is here." for w in (
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot",
+        "Golf", "Hotel", "India", "Juliet", "Kilo", "Lima")]
+    shown = []
+
+    def snap() -> None:
+        cur = plain(m.state())
+        if cur and cur != (shown[-1] if shown else None):
+            shown.append(cur)
+
+    for sentence in committed:
+        m.translation(sentence)
+        snap()
+        m.tick()
+        snap()
+        for _ in range(9):  # the next final lands 0.9s later (a 10fps view)
+            clk.advance(0.1)
+            m.tick()
+            snap()
+    for _ in range(600):  # the reader's clock keeps running: the backlog drains
+        clk.advance(0.1)
+        m.tick()
+        snap()
+
+    displayed = [s for s in shown if s in committed]
+    assert displayed == committed, (
+        f"committed sentences never displayed: {[s for s in committed if s not in displayed]}"
+    )
+
+
+def test_new_multi_sentence_final_never_evicts_the_pending_backlog():
+    """A final rebuilds the hold queue (pending committed sentences + its own
+    new sentences); that rebuild must not trim the backlog. Older sentences
+    still waiting are committed content the reader has not seen — the rebuild
+    keeps them and the new ones queue behind, in order. Fails if the rebuild
+    keeps only the newest few items (which evicts an unshown caption)."""
+    m, clk = make(hold=3.5)
+    m.translation("Alpha is here. Bravo is here. Charlie is here.")
+    m.tick()  # Alpha on the line; Bravo and Charlie wait in the backlog
+    assert plain(m.state()) == "Alpha is here."
+    m.translation("Delta is here. Echo is here.")
+    m.tick()
+    committed = ["Alpha is here.", "Bravo is here.", "Charlie is here.",
+                 "Delta is here.", "Echo is here."]
+    shown = []
+
+    def snap() -> None:
+        cur = plain(m.state())
+        if cur and cur != (shown[-1] if shown else None):
+            shown.append(cur)
+
+    snap()
+    for _ in range(600):  # the reader's clock keeps running
+        clk.advance(0.1)
+        m.tick()
+        snap()
+    assert [s for s in shown if s in committed] == committed, (
+        f"never displayed: {[s for s in committed if s not in shown]}"
+    )
+
+
 # ---- promote-in-place (round 3: no identical-content retype) ----
 
 def test_promote_in_place_flips_bright_without_retype():

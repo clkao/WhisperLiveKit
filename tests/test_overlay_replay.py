@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from whisperlivekit.caption_display import (
     PROVISIONAL,
     CaptionDisplay,
@@ -16,8 +18,9 @@ from whisperlivekit.caption_display import (
     load_caption_events,
 )
 
-CANONICAL = Path(__file__).parent / "golden" / "zh_long_canonical.jsonl"
-FALLBACK = Path(__file__).parent / "golden" / "zh_ja_fallback.jsonl"
+GOLDEN_DIR = Path(__file__).parent / "golden"
+CANONICAL = GOLDEN_DIR / "zh_long_canonical.jsonl"
+FALLBACK = GOLDEN_DIR / "zh_ja_fallback.jsonl"
 
 
 class _Clock:
@@ -131,3 +134,52 @@ def test_zh_ja_fallback_no_raw_source_provisional():
 def _is_target_script(text: str) -> bool:
     """True when the text is predominantly Japanese (kana present)."""
     return any("\u3040" <= ch <= "\u30ff" for ch in text)
+
+
+def _unshown_committed(golden, hold=3.5, pace=0.3, drain_seconds=30.0):
+    """Replay `golden` and return the committed captions that left the hold
+    queue without being released to the line.
+
+    A committed item is one routed from a ``translation_final`` (final styling,
+    not a draft-routed placeholder the next final legitimately replaces). Every
+    such item must reach the line; if it disappears from the queue while some
+    other item is released, the queue bound dropped a caption the reader never
+    saw.
+    """
+    clock = _Clock()
+    model = CaptionDisplay(hold_sec=hold, clock=clock)
+    unshown = []
+    queued = {}  # id(item) -> item, the committed items last seen waiting
+
+    def observe(state) -> None:
+        live = {id(it): it for it in model._queue
+                if it.is_final and not it.provisional}
+        cur = "".join(s.text for s in state.current) if state is not None else ""
+        for key, item in queued.items():
+            if key not in live and item.plain not in cur:
+                unshown.append(item.plain)
+        queued.clear()
+        queued.update(live)
+
+    for event in load_caption_events(golden):
+        clock.advance(pace)
+        model.emit(event)
+        observe(model.tick())
+    for _ in range(int(drain_seconds / 0.1)):
+        clock.advance(0.1)
+        observe(model.tick())
+    return unshown
+
+
+@pytest.mark.parametrize("hold", [3.5, 1.2], ids=["hold3.5", "hold1.2"])
+@pytest.mark.parametrize("golden", sorted(GOLDEN_DIR.glob("*.jsonl")),
+                         ids=lambda p: p.stem)
+def test_no_committed_caption_leaves_the_queue_unshown(golden, hold):
+    """No captured final's sentence is dropped: every committed item that enters
+    the hold queue is released to the line, for all five goldens, at the shipped
+    hold and at a short one (the drainer releases one item per
+    ``max(1.0, hold / 2)``, so a shorter hold changes which enqueues coincide).
+    Fails if a queue bound — at a sentence enqueue, or at the final's queue
+    rebuild — evicts an unshown committed caption the reader was owed."""
+    unshown = _unshown_committed(golden, hold=hold)
+    assert unshown == [], f"committed captions dropped without displaying: {unshown}"
