@@ -7,22 +7,27 @@ worktree: .worktrees/wlk-display-unification
 pr: "#449"
 ---
 
-# Task B (A2) — unify WLK display semantics behind one caption display model
+# Caption event stream for PR #449 (PR-A) — typed caption events and --event-log
 
 ## Context
 
-The display work (sentence-partitioned captions, queue survival, in-place
-promotion, dim/bright grammar, monotonic holds) landed on the integration
-branch in `whisperlivekit/overlay_model.py` — but the terminal renderer
-(`whisperlivekit/tui.py`, 395 lines, local-only) implements its OWN display
-logic against the same renderer contract. Only the overlay got the
-sentence-queue guarantees; the TUI almost certainly still exhibits the fixed
-bug class (sentences lost at segment boundaries, queued finals superseded,
-dim→bright identical-content retype). Two renderers, duplicated semantics,
-one fixed.
+PR #449 goes upstream as the caption event stream: the typed `CaptionEvent`
+payload (`t`, `audio_t`, `type`, `text`, plus `committed`/`source`/`fresh` on
+translation provisionals), the stateless `EventTap` the generation loop emits
+into (`audio_processor.py` for the ASR side — committed segment, rolling tail,
+terminal flush — and `translation_processor.py` for the MT side), an `EventLog`
+JSONL sink that exists only when `--event-log PATH` is set, and the backend
+draft contract (`TranslationProgress`, `provides_drafts`, `progress()`, read
+through a `_ProgressReader` so backends predating it stay on the no-draft
+path). The stream is the seam a display, a test or an evaluation harness
+consumes independently of how anything renders; the web UI's `FrontData` wire
+protocol is untouched. Upstream main carries none of it — this whole file set
+is new surface.
 
-Upstream main has NEITHER file (display surface is `web/live_transcription.js`
-+ failure-reporting commits #440-445 that touch display concerns).
+This entity was split during the PR #449 review of 2026-11-08: the display half
+(caption display model, overlay/TUI views, the goldens and the replay
+instrument) left for PR-B, now entity `wlk-caption-display` (`5m`), parked on
+branch `wlk/caption-display` @ `513b6fa`.
 
 ## End value
 
@@ -62,14 +67,23 @@ PR-B, entity `wlk-caption-display`.
 **AC-1 — Typed caption events are emitted at the documented points
 (transcription provisionals/finals, translation provisionals/finals), each
 carrying its text and the source it was produced against.**
-Verified by: `git grep -n 'event_tap.transcription_' whisperlivekit/audio_processor.py`
-shows the provisional/final call sites,
-`tests/test_caption_events.py::TestEventTap::test_forwards_to_sink` pins the
-emitted payload, and
+Verified by:
+`tests/test_caption_events.py::TestEventTap::test_one_utterance_emits_the_typed_sequence_in_order`
+drives one utterance's events through the tap into a recording sink and asserts
+the observed sequence in full — the four types in emission order, each event's
+`text`, `audio_t` and its emit-time `t`, and both translation provisionals'
+`committed`/`source`/`fresh` — so it fails if a tap emit method drops or
+reorders a call, stops forwarding text or audio position, or mis-threads the
+`committed`/`source`/`fresh` columns (confirmed red by stripping `source` from
+`translation_provisional`, which trips the payload assertion);
 `tests/test_translation_emission.py::test_translation_final_emitted_for_single_and_list`
-plus `::test_provisional_carries_committed_source_fresh` pin the translation
-side and its `committed`/`source`; it fails if an emission call site is dropped
-or the source fields stop being populated.
+and `::test_provisional_carries_committed_source_fresh` drive the real
+`run_translation` loop against a mock backend and fail if finals stop emitting
+for single-or-list results or a provisional loses its `committed`/`source`.
+Scope note: the four ASR-side call sites in `audio_processor.py` are exercised
+behaviourally by the pipeline suites (`tests/test_pause_segmentation.py`,
+`tests/test_asr_coalescing_boundaries.py` attach a tap), which prove emission
+does not disturb the loop but do not assert the emitted sequence.
 
 **AC-2 — `--event-log` appends one JSONL line per event as it is emitted, with
 no in-memory accumulation and no write-on-cleanup.**
@@ -99,10 +113,17 @@ failure + error sets; any failure id absent from the baseline fails the AC.
 
 ## Notes
 
-- Review sequence: B first, then D+G (D's PR description cites B's
-  guarantees). Goldens (`zh_long_time_frontier.jsonl`, caption-event goldens)
-  pin to this task.
-- C (wlk-tui package) consumes this task's contract.
+- Parked material for PR-B: branch `wlk/caption-display` @ `513b6fa`, the
+  pre-trim state of this branch. It carries `whisperlivekit/caption_display.py`,
+  `tests/test_caption_display.py`, `tests/test_overlay_replay.py`,
+  `scripts/replay_canonical_overlay.py` and the five `tests/golden/*.jsonl`
+  goldens (including `zh_long_time_frontier.jsonl`), all cut from this PR in
+  commit `7394a9b`. The display model's owner is entity `wlk-caption-display`
+  (`5m`).
+- `wlk-tui-package` (`42`) consumes this stream contract and targets the
+  integration branch until PR #449 clears upstream.
+- Historical: this entity was rescoped from the unified display task on
+  2026-11-08 and now describes the event-stream half only.
 
 ## Stage Report: display-unification (cycle 1)
 
@@ -482,3 +503,70 @@ display half is no longer described here (entity `wlk-caption-display` / 5m owns
 Residual: the H1 ("Task B (A2) — unify WLK display semantics...") and the `## Context` and
 `## Notes` sections still narrate the pre-split display scope; they were outside the
 authorized edit list, so they were left byte-identical rather than silently rewritten.
+
+## Stage Report: implementation (cycle 2 — H1/Context/Notes rescope + AC-1 behavioural proof)
+
+Authorization: `complete the rescope of entity 6y to PR #449 only (captain approved).
+State-only edit, three enumerated items; nothing outside them.` One code test was
+added under item 3's "If no such test exists, add it ... and name it".
+
+- DONE: H1 rewritten to the event-stream scope
+  Now `# Caption event stream for PR #449 (PR-A) — typed caption events and --event-log`
+  (was `# Task B (A2) — unify WLK display semantics behind one caption display model`).
+  The pre-split display task is no longer named as this entity's subject.
+- DONE: "## Context" and "## Notes" rewritten to the event-stream work only
+  Context now describes what #449 ships (typed payload, `EventTap` emission points in
+  `audio_processor.py` / `translation_processor.py`, `--event-log` JSONL sink,
+  `TranslationProgress` + `provides_drafts`/`progress()` via `_ProgressReader`, `FrontData`
+  untouched) and carries the split history in one sentence. Notes now names the parked
+  PR-B material — branch `wlk/caption-display` @ `513b6fa`, the files cut in `7394a9b` —
+  and its owner entity `wlk-caption-display` (`5m`); the pre-split "B first, then D+G"
+  review sequence and the overlay/TUI-as-views narration are gone.
+- DONE: AC-1's presence grep replaced with a behavioural clause
+  Was `git grep -n 'event_tap.transcription_' whisperlivekit/audio_processor.py`. Now names
+  `tests/test_caption_events.py::TestEventTap::test_one_utterance_emits_the_typed_sequence_in_order`
+  (one utterance through the tap; asserts the four types in emission order, each event's
+  text/`audio_t`/emit-time `t`, and both provisionals' `committed`/`source`/`fresh`) plus
+  the two `tests/test_translation_emission.py` loop tests, with one clause per test naming
+  the change that makes it fail. A scope note records what is NOT behaviourally pinned:
+  the four ASR-side call sites are exercised by the pipeline suites (a tap is attached,
+  emission must not disturb the loop) but no test asserts the sequence they emit.
+- DONE: the test added and run
+  `tests/test_caption_events.py::TestEventTap::test_one_utterance_emits_the_typed_sequence_in_order`
+  — 6 events, assertion is the exact `(type, text, audio_t)` list plus the provisional
+  `(committed, source, fresh)` list plus `t`. Falsified by construction: re-running the
+  test body against an `EventTap.translation_provisional` that drops `source` raises
+  `AssertionError` at the payload assertion (script `/tmp/falsify_check.py`, run, exit 0
+  printing "RED as expected"). A tap that reorders calls or stops forwarding text fails
+  the first assertion the same way.
+- FAILED: none
+
+### Proof (exactly as run)
+
+- `pytest -q tests/test_caption_events.py -p no:randomly` → **9 passed** (8 before; +1 new).
+- `pytest -q tests/test_caption_events.py tests/test_translation_emission.py tests/test_backends.py
+  -p no:randomly` → **52 passed in 34.44s** (51 before; +1 new).
+- `ruff check tests/test_caption_events.py whisperlivekit/` → **All checks passed!**
+- Full suite: not run this cycle — unchanged from cycle 8's reason (the 4
+  `test_asr_coalescing_pipeline` setup errors are this sandbox's inability to download test
+  samples, pre-existing and environmental). Treat the targeted selection as binding.
+
+### Branch state
+
+- Code: commit **32c38ac** on `wlk/display-unification` (one test file, `tests/test_caption_events.py`).
+  Not pushed; PR #449 untouched, as instructed.
+- State: this file only. Nothing outside H1 / Context / AC-1 / Notes changed — `git diff`
+  hunk headers are `@@ -9`, `@@ -13`, `@@ -64`, `@@ -101`; frontmatter, Work, AC-2..AC-5,
+  End value and every prior Stage Report are byte-identical.
+
+### Summary
+
+Entity 6y now reads as the PR #449 event-stream entity throughout: the title, the context
+and the notes no longer describe the display unification that moved to `wlk-caption-display`
+(`5m`, parked at `wlk/caption-display` @ `513b6fa`), and AC-1's unfalsifiable presence grep
+is replaced by a test that drives one utterance through the tap and asserts the emitted
+sequence. The only code change is that one test; it passes, ruff is clean, and its
+falsifiability was demonstrated by breaking the tap's payload and watching it go red.
+Residual: no behavioural test asserts that the four ASR-side call sites in
+`audio_processor.py` emit at their documented points — the AC records that gap rather
+than hiding it behind a grep.
