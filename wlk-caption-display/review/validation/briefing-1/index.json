@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:5m8t81vcnbbvafnjz2mehdjc:validation:attempt-1:revision-1",
+  "question": "Does the caption display model (PR-B for #449) satisfy AC-1..AC-4 well enough to publish as a stacked PR on top of #449 and merge after it?",
+  "artifacts": [
+    {
+      "id": "artifact:5m8t81vcnbbvafnjz2mehdjc:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/00f36ff84427855a98ec1637e8c40965af174cf7/wlk-caption-display/index.md",
+      "rev": "sha256:7840984d87e1a574aca74b0bf672b4e465a7f2e7b4f08d9820bc7f52291baf84",
+      "mediaType": "text/markdown",
+      "summary": "Third fresh validation PASSED. 90 cells (5 goldens x holds 1.2/3.5/5.0 x 6 cadences) with zero missing final sentences and zero non-exact lines; F-1, F-2 and R-1 each re-verified fixed from scratch; 420 passed on the branch vs 335 on origin/main with the same eight failure IDs. Two non-blocking findings recorded: F-2b (content loss in mechanism, unreachable from any shipped path) and F-4 (_queued_draft stale lifetime, no loss)."
+    }
+  ]
+}

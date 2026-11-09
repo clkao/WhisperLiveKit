@@ -5,6 +5,17 @@ score: 0.85
 source: "split out of wlk-display-unification (A2) on 2026-11-08 when the entity was rescoped to PR #449 only. Material is parked on branch wlk/caption-display @ 513b6fa (the pre-trim state of the #449 branch)."
 id: 5m8t81vcnbbvafnjz2mehdjc
 worktree: .worktrees/wlk-caption-display
+gates:
+    version: 1
+    records:
+        - id: gate:5m8t81vcnbbvafnjz2mehdjc:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:5m8t81vcnbbvafnjz2mehdjc-validation-1
+              briefing:
+                id: briefing:5m8t81vcnbbvafnjz2mehdjc:validation:attempt-1:revision-1
+                digest: sha256:d17beac9a0a213cef8ca7aba24780f8e0a3980771f46f0a84c4e52eeee34a313
+                room-ref: '@review/validation/briefing-1'
 ---
 
 # Task B — caption display model, with the overlay and TUI as thin views
