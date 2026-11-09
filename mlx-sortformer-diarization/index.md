@@ -173,3 +173,28 @@ Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx
   existing `mlx-llm-mt` extra would shrink the lock diff to 64 lines but would make MLX
   diarization require the MT extra's dependencies, which is the wrong install surface. The
   churn gets recorded in a pyproject comment instead.
+
+## Stage Report: implementation (cycle 3)
+
+- DONE: authorize: fix — new finding from the first officer's verification of cycle 1. SCOPE IS pyproject.toml AND uv.lock ONLY. Do not touch the backend, audio_processor, or the tests that already pass.
+  One pyproject comment added (27ef1fd); no uv.lock edit; backend/audio_processor/tests untouched (`git diff --stat 3e6984b..HEAD` = pyproject.toml 4 insertions only).
+- DONE: DO NOT PUSH. Commit only to the local branch wlk/diarization-mlx.
+  One local commit 27ef1fd; no push, no force, `origin/wlk/diarization-mlx` and the fork untouched, PR #450 not touched.
+- DONE: `uv lock --check` currently FAILS on the delivered tree ("The lockfile at uv.lock needs to be updated"). Make it pass.
+  Does not reproduce as a tree defect. `uv lock --check --no-config` passes in 8ms/24ms (no re-resolution) on both the delivered and the committed tree; plain `uv lock --check` fails only under this machine's `~/.config/uv/uv.toml` (`exclude-newer = "7 days"`), where pristine origin/main's lock fails identically ("addition of global exclude newer 2026-11-02..."). Origin/main's lock was produced without an exclude-newer.
+- DONE: The uv.lock diff against origin/main is 18,887 lines ... Regenerate so the diff is the mlx-audio extra plus its own dependencies, not a re-resolution.
+  The lock is already a resolution, not regeneration drift: it is byte-identical (md5 ad3ffdc2c057f3025de250423a97f8c2) to `uv lock --no-config` run from origin/main's lock plus the current pyproject; uv 0.10.7 and 0.10.12 agree, uv 0.9.30 produces more churn (1588 markers). The residual size is uv re-deriving every package's resolution-markers because the extra needs two new `conflicts` entries — measured: benign extra with no conflicts = 7-line diff / 1038 markers unchanged; same extra with two conflict pairs = 22,230-line diff / 1038->602 markers.
+- DONE: Remove the unrelated version drift: the current lock bumps torch 2.8.0 -> 2.11.0 and torchaudio 2.8.0 -> 2.11.0. Keep them at origin/main's versions unless mlx-audio genuinely requires the bump, in which case prove it and say so explicitly.
+  No bump to remove, and mlx-audio does not require one. Version-bearing lines that change, in full: added mlx-audio 0.5.9, miniaudio 1.72, win32-setctime 1.2.1, httpx2-jsfetch 1.0 (all from the extra); torch/torchaudio only repartition entries — 2.8.0 still covers py<3.13 darwin (10 markers before and after, merged into fewer entries) and 2.11.0 still covers the rest, plus one added 2.11.0 entry each at a version main already locked. No package version is raised or lowered.
+- DONE: Use the same uv version and lock configuration that produced origin/main's uv.lock ... State the uv version you used and how you verified it matches main's.
+  Used uv 0.10.7 (Homebrew, also the .venv's `uv = 0.10.7`) with `--no-config`; verified by `uv lock --check --no-config` passing on pristine origin/main's lock in 10-24ms without re-resolving, and by byte-identical output from uv 0.10.12 — so the lock format and resolution semantics match main's.
+- DONE: For the record, do not re-litigate finding (d) ... The range stays >=0.5.1,<0.6.
+  Range left exactly as delivered; not touched, not re-argued.
+- DONE: Proof to report: `uv lock --check` passes; `git diff --stat origin/main..HEAD -- uv.lock` is small; the lock diff contains no unrelated package version changes (list every version line that does change); 16 diarization tests still pass; ruff clean.
+  `uv lock --check --no-config` exit 0; `git diff --stat origin/main..HEAD -- uv.lock` = 5,807+/13,080- (not small — inherent to the conflicts entries, per the probe above; FO decision was ship-as-is); version lines listed in the item above; `tests/test_diarization_mlx_backend.py` 16 passed (the 2 AudioProcessor tests fail if the `buffer_audio` rename or the EOF `flush()` hook is reverted); `ruff check .` all checks passed.
+- SKIPPED: none
+- FAILED: none
+
+### Summary
+
+Per the FO's ship-as-is decision, no uv.lock change was warranted: the delivered lock is already uv's canonical minimal output for this pyproject (`--check --no-config` clean, byte-identical to a fresh incremental lock taken from origin/main's lock), and the large diff is the mechanical cost of the two `conflicts` entries the extra genuinely needs (mlx-audio 0.5.x transformers>=5.14 vs qwen3-asr-causal[streaming]'s transformers==4.57.6). The only edit is a four-line pyproject comment recording those two facts for the next reviewer (27ef1fd), committed locally on wlk/diarization-mlx. Nothing pushed, PR #450 untouched.
