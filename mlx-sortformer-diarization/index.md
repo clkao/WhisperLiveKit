@@ -315,3 +315,158 @@ test for either), and AC-2 records that its evidence stops at the backend bounda
 lc_terminal end-to-end, TUI/overlay speaker markers, and "no NeMo required"; those are not in the
 FO's six-clause set, so they are now unstated rather than asserted — flagging it in case the FO
 wants them as AC-7..AC-9. State commit is local-only per the no-push constraint.
+
+## Stage Report: validation (fresh validator, PR #450)
+
+Branch `wlk/diarization-mlx` at **27ef1fd**, 8 commits on `origin/main` (`ada82d4`), tree clean,
+no staged files, nothing pushed (`origin/wlk-diarization-mlx` and the fork untouched). All runs used
+`/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`; nothing installed, no venv, no model
+download; `--no-config` on every uv call (cycle-3 machine artefact).
+
+**Verdict: AC-1 through AC-5 PASS, reproduced independently. AC-6 PARTIAL — its 16-passed clause
+reproduces; its suite-diff clause was NOT re-run because this dispatch caps test runs to
+`tests/test_diarization_mlx_backend.py` plus a cited test and the box has 2.6 GiB free (AC-6 itself
+says an independent check needs a scratch worktree of `ada82d4`). No FAILED condition was found in
+the branch: every named test exists, every named test passes, every falsification clause I
+attempted fires, and the diff is confined to the backend + wiring + the four maintainer fixes +
+`pyproject.toml`/`uv.lock`.**
+
+- DONE: AC-1 buffered Sortformer contract — PASS.
+  `pytest -q tests/test_diarization_mlx_backend.py` → `16 passed in 1.55s`; `--collect-only` lists
+exactly the 16 ids, including all four AC-1 ids. Grounding checked in source:
+`audio_processor.py:823` is literally `has_buffer = hasattr(self.diarization, 'buffer_audio')`, and
+the backend exposes `self.buffer_audio` (`sortformer_mlx_backend.py:71`), so the extend path is
+taken by construction. `test_diarize_feeds_every_buffered_chunk_and_extends` really puts 10s in the
+buffer and asserts `[(0.0, 1), (5.0, 2)]` from one `diarize()` (both chunks fed);
+`test_diarize_keeps_segments_when_a_chunk_yields_none` returns `[]` for the second chunk and still
+reports `[(0.0, 5.0, 1)]`; the processor-level test writes one 5s chunk at a time with a wait
+between writes, so each is its own `diarize()` call. All four falsification clauses were exercised
+(the `buffer_audio` rename is mutation 3 below).
+
+- DONE: AC-2 insert_silence advances the diarization clock — PASS (backend boundary, as the AC
+  declares). `test_insert_silence_shifts_segment_times` passes: after `insert_silence(2.5)` the next
+  chunk reports `(7.5, 12.5)`. Falsification reproduced exactly: dropping the offset from
+  `_to_segments()` yields `assert [(5.0, 10.0)] == [(7.5, 12.5)]` (mutation 1 below). Verified the
+  silence path in source too: `audio_processor.py:829-831` consumes a `Silence` item, calls
+  `insert_silence(item.duration)` and `continue`s, so silence is never fed to the model. The AC's
+  declared evidence gap is accurate: `grep -rn Silence tests/` shows no test drives `Silence`
+  through `diarization_processor`, so the assertion stops at the backend method. Noted, not a fail —
+  the AC states it.
+
+- DONE: AC-3 off-loop, one thread per session — PASS.
+  `test_feed_runs_on_one_dedicated_thread_and_leaves_the_loop_free` passes: one non-loop thread
+  across init+feed, heartbeat > 5 ticks against a 200ms feed. Source: one
+  `ThreadPoolExecutor(max_workers=1)` per session (`:77`), `feed()` via
+  `await loop.run_in_executor(self._mlx_executor, self._feed, chunk)` (`:165`), and
+  `grep -n to_thread` hits only the explanatory comment at `:75` (no `asyncio.to_thread` anywhere).
+  One wording imprecision, not a defect: `init_streaming_state()` goes through
+  `self._mlx_executor.submit(...).result()` (`:81-83`) rather than `loop.run_in_executor`, because
+  it runs in the synchronous constructor where no loop exists. Same executor, same single thread,
+  which is what the test asserts and what #426 needs; the AC's "via run_in_executor" is true of
+  every `feed()` and of init only in substance. Suggest re-wording at acceptance, no code change.
+
+- DONE: AC-4 sub-chunk tail diarized at EOF — PASS.
+  `test_flush_feeds_the_partial_tail` passes (3s tail reaches the model only through `flush()`,
+  `buffer_audio.size == 0` after, second `flush()` returns `[]`) and
+  `test_audio_processor_flushes_the_partial_tail_at_eof` passes with
+  `[c.size for c in model.received_chunks] == [16000*5, 16000*2]`. Falsification reproduced exactly:
+  deleting the `getattr(self.diarization, "flush", None)` hook yields `assert [80000] == [80000,
+  32000]` (mutation 2 below). Confirmed the hook cannot touch the other backends: it sits inside
+  `if has_buffer:`, and `getattr(..., "flush", None)` is `None` for NeMo's `sortformer_backend.py`
+  (which has `buffer_audio` but no `flush`) and for Diart (no `buffer_audio` at all).
+
+- DONE: AC-5 one mlx-audio range with #426, canonical lock — PASS, all three clauses.
+  (i) `git show fork/spacedock-ensign/nemotron-mlx-asr-backend-rebased:pyproject.toml | grep -n
+  'mlx-audio>='` → line 75 `'mlx-audio>=0.5.1,<0.6; sys_platform == "darwin" and
+  platform_machine == "arm64"',`; branch `pyproject.toml:106` is the byte-identical line. (ii)
+  `uv lock --check --no-config` → `Resolved 407 packages in 9ms`, `EXIT=0` (uv 0.10.7). (iii)
+  `grep -A1 'name = "mlx-audio"' uv.lock` → `version = "0.5.9"`, inside `>=0.5.1,<0.6`; the lock's
+  requirement entry is `{ name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform
+  == 'darwin' and extra == 'diarization-mlx-sortformer'", specifier = ">=0.5.1,<0.6" }`, and the two
+  new conflicts pairs (`qwen3-streaming` / `qwen3-vllm` × `diarization-mlx-sortformer`,
+  `pyproject.toml:168-175`) show up in the lock as
+  `extra != 'extra-14-whisperlivekit-diarization-mlx-sortformer'` markers. Version-line audit of
+  `git diff origin/main..HEAD -- uv.lock | grep '^[+-]version = '`: added `0.5.9` (mlx-audio), `1.72`
+  (miniaudio), `1.2.1` (win32-setctime), `1.0` (httpx2-jsfetch), plus one `+2.11.0` entry; removed
+  one `2.8.0` line — the darwin-torch entry repartition cycle 3 described, no package bumped or
+  lowered. Parity re-running was out of scope per the dispatch and not attempted.
+
+- PARTIAL: AC-6 no new suite failures versus origin/main — its 16-passed clause PASSES, its
+  suite-diff clause is NOT INDEPENDENTLY REPRODUCED. `pytest -q
+  tests/test_diarization_mlx_backend.py` → `16 passed` (AC-6 requires ≥16). The full-suite
+  node-id comparison needs `pytest -q tests/ --ignore=tests/test_pipeline.py` on this branch plus a
+  scratch worktree of `ada82d4`, which exceeds both this dispatch's test-run cap and the 2.6 GiB
+  free. In its place I bounded the risk structurally and with the only pre-existing tests that
+  cover the two shared paths this branch edits:
+  `pytest -q tests/test_sortformer_event_loop.py tests/test_sortformer_max_speakers.py` → `19
+  passed in 1.98s`. The bound: outside the new module and new tests, the branch's non-lock diff is
+  (i) additive arms in `core.py` (`_do_init`, `online_diarization_factory`) reachable only for the
+  new backend name, (ii) `parse_args.py` one extra choice, (iii) `config.py` a widened validation
+  guard plus one new default, (iv) the `hasattr`-gated EOF hook. The concrete follow-up if the FO
+  wants AC-6 fully closed is the two-run node-id diff AC-6 already names; it is a run-to-run
+  procedure, not a defect in the tree.
+
+- DONE: mutation exercise — three mutations, each restored byte-for-byte, green again after each.
+  Baseline hashes: `sortformer_mlx_backend.py`
+  `286960894aba3dfb5d934a9a0abf9a053b13771c63822a6bb47cfc12c757da42`, `audio_processor.py`
+  `317a8520658009d90835ed3178f59ac188977bf3bd44010dcf03efcb0bfac619`; restored tree `git status
+  --porcelain` empty and hashes re-matching, `16 passed` again.
+  1. **AC-2** (required exactly-one-red): removed the `+ offset` from both lines of `_to_segments()`
+     → `1 failed, 15 passed`; the only red is `test_insert_silence_shifts_segment_times`, failing
+     `assert [(5.0, 10.0)] == [(7.5, 12.5)]` — the exact value AC-2's falsification clause predicts.
+  2. **AC-4** (required exactly-one-red): deleted the three `flush` hook lines from
+     `diarization_processor` → `1 failed, 15 passed`; the only red is
+     `test_audio_processor_flushes_the_partial_tail_at_eof`, failing `assert [80000] == [80000,
+     32000]` — the exact `[80000]`-only signature AC-4 predicts.
+  3. **AC-1** (extra, check of the AC's named message): renamed `buffer_audio` → `_buffer_audio`
+     (12 occurrences) → `4 failed, 12 passed`. As expected more than one red, because the rename
+     also flips the `hasattr` guard and the EOF test; run alone, the processor-level test
+     `test_audio_processor_extends_segments_and_keeps_them_on_empty_result` fails with exactly
+     `AssertionError: timed out waiting for the second chunk` (`:338`), the message AC-1 names. So
+     the processor-level test does discriminate the extend path from the cumulative one.
+
+- DONE: scope check on the branch — nothing outside the backend + wiring + the four maintainer
+  fixes + the dependency range. `git diff --stat origin/main..HEAD` = 8 files: `pyproject.toml`
+  (+17), `uv.lock` (the conflicts-driven churn), `whisperlivekit/diarization/sortformer_mlx_backend.py`
+  (+198), `core.py` (+12), `config.py` (6), `parse_args.py` (2), `audio_processor.py` (13),
+  `tests/test_diarization_mlx_backend.py` (+404). Per commit: d6f715c backend+wiring, f66a449 extra,
+  70ee9e7 first tests, 9aed68d conflicts, 6ab8584 fixes (a)(b)(c)+(a)'s EOF drain, 33bfa80 the eight
+  new tests, 3e6984b range+lock, 27ef1fd pyproject comment. The only line not literally one of the
+  four fixes is `config.py:235` widening the `sortformer_max_speakers` guard to accept
+  `mlx-sortformer`; it ships in the feature commit (d6f715c), was declared in the branch-cut report
+  as a deliberate 1-line peer-parity change, and is covered by
+  `test_config_accepts_mlx_sortformer_with_max_speakers` /
+  `test_config_still_rejects_max_speakers_for_other_backends`.
+  Two Scope-section items are obsolete rather than missing: `scripts/lc_terminal.py` does not exist
+  on `origin/main` (post-rebase the CLI surface is `parse_args.py`, verified end to end below), and
+  the backend lives at `whisperlivekit/diarization/sortformer_mlx_backend.py` in main's package
+  layout. `ruff check .` → `All checks passed!`.
+
+- DONE: CLI→config wiring spot check (no model load, no network):
+  `parse_args(['--diarization-backend','mlx-sortformer','--sortformer-max-speakers','2'])` →
+  `backend: mlx-sortformer | model: mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16 |
+  max_speakers: 2`, confirming `from_namespace` carries the flag into `WhisperLiveKitConfig` so both
+  `_do_init` and `online_diarization_factory` see it.
+
+- SKIPPED: AC-6's full-suite vs `ada82d4` comparison — dispatch test-run cap (only
+  `tests/test_diarization_mlx_backend.py` plus a cited test) and 2.6 GiB free. Not a branch defect;
+  the commands for the FO are AC-6's own.
+- SKIPPED: re-running the mlx-audio version parity measurement — explicitly out of scope; it is
+  Feedback Cycles cycle-2 evidence and not a criterion.
+- FAILED: none.
+
+### Summary
+
+Fresh validation of PR #450 at 27ef1fd with the implementation report's claims ignored: AC-1 through
+AC-5 reproduce from the tree alone (all 16 named tests exist and pass, `uv lock --check --no-config`
+exits 0, mlx-audio 0.5.9 inside `>=0.5.1,<0.6`, specifier byte-identical to #426's), and three
+mutations prove the tests can fail — dropping the silence offset reds exactly
+`test_insert_silence_shifts_segment_times` with `(5.0, 10.0)` instead of `(7.5, 12.5)`, deleting
+the EOF `flush` hook reds exactly `test_audio_processor_flushes_the_partial_tail_at_eof` with
+`[80000]`, and renaming `buffer_audio` reds the processor-level test with the named `timed out
+waiting for the second chunk`; each mutation was restored byte-for-byte (hashes re-verified) and the
+file returned to 16 passed. AC-6 is PARTIAL only in its suite-diff half: the 16-passed clause holds
+and the shared-path risk is bounded by 19 passing pre-existing NeMo-path tests plus a file-level
+scope audit, but the full-suite node-id comparison is not runnable inside this dispatch's test-run
+cap and disk. One wording fix suggested (AC-3's "via run_in_executor" covers `feed()` literally and
+`init_streaming_state()` only in substance). No product code edited, no push, no staged files.
