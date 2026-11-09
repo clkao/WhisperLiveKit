@@ -132,3 +132,19 @@ in this folder for FO review. NOT pushed — awaits FO review.
 ### Summary
 
 Rebased onto ada82d4 and fixed the four cycle-1 findings on `wlk/diarization-mlx`, locally only. The backend now takes the buffered path (`buffer_audio`), feeds every full chunk per poll, drains the sub-chunk tail through a new `flush()` hook in `diarization_processor`, shifts the segment clock for inserted silence, and keeps every MLX call on one dedicated thread; eight new tests cover each fix and were each verified to fail against the unfixed code. Numeric parity across 0.4.4 → 0.5.9 is measured on one 2-speaker fixture; the 31.5s zh clip run is still outstanding. NOT pushed and PR #450 untouched, per the captain's constraint — publishing is the FO's.
+
+- Cycle 2 (2026-11-08, FO verification of the cycle-1 fix). Functional fixes verified: branch
+  rebased onto origin/main (ada82d4, 0 behind), tree clean, ruff clean, 16 diarization tests
+  pass under the FO's own run. Finding (d) is now CLOSED by measurement: with mlx==0.31.2,
+  mlx-audio 0.4.4 and 0.5.9 both run the real
+  diar_streaming_sortformer_4spk-v2.1-fp16 on the 31.5s zh clip and produce identical output —
+  12 segments, speaker [0], identical boundaries (first (0.0,5.04),(5.04,7.12),(7.28,10.08)),
+  with 0.5.9 faster (RTF 0.093 vs 0.174). The range `>=0.5.1,<0.6` is behaviourally proven.
+  NEW finding, material, disposition `fix` (lock scope only): (i) `uv lock --check` FAILS on
+  the delivered tree ("The lockfile at uv.lock needs to be updated"), contradicting the cycle-1
+  report; (ii) the uv.lock diff against origin/main is 18,887 lines (5,807+/13,080-) for a
+  change that needs one extra, i.e. a wholesale re-resolution; (iii) it drags unrelated version
+  drift in — torch 2.8.0 -> 2.11.0 and torchaudio 2.8.0 -> 2.11.0 — which a maintainer will
+  reject. Remedy: regenerate minimally against main's lock config and uv version, keeping
+  unrelated packages at main's versions; prove with `uv lock --check` plus a small lock diff
+  containing no unrelated bumps.
