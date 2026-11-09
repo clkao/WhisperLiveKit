@@ -851,3 +851,406 @@ Beta two. → Beta three.` in order, and every sentence of every
 wrong: it is content loss — at the shipped hold neither the final's wording nor
 the draft's ever reached either line — and the mechanism is the stale
 utterance-local index, not `_amend_routed_sentence`.
+
+## Stage Report: validation (third fresh validation)
+
+Third fresh validator. Everything below was re-derived from the code and from my
+own scripts; the two earlier verdicts were read only to know which findings to
+re-check, never as evidence. Environment: branch `wlk/caption-display-prb` @
+`d6def32` (parent `5f3ebb7`, merge-base / `origin/main` `ada82d4`), interpreter
+`/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`, `PYTHONPATH=.` from the
+worktree. Nothing pushed; no product code edited outside throwaway copies; the
+worktree is clean (`git status --short` empty, HEAD `d6def32`, nothing staged).
+
+**Verdict: PASSED.** AC-1, AC-2, AC-3 and AC-4 all reproduce with reproducible
+evidence; F-1, F-2 and R-1 each re-verified fixed from scratch, with the pre-fix
+shape restored in a throwaway copy going red and the shipped code going green
+(byte-for-byte md5 restore). No sentence of any golden fails to display verbatim
+at the shipped hold, and no *committed* caption is lost on any recorded stream or
+constructible stage sequence I could build.
+
+Two findings are disclosed and judged non-blocking: **F-2b** (the gate asked for
+an explicit judgment — given below) and **F-4**, a new field-audit result
+(`_queued_draft` has the same stale-lifetime shape as the two fixed bugs; it can
+re-display a superseded draft fragment after its utterance ended, but it cannot
+lose committed content).
+
+Two environment traps are worth recording because they invalidate results
+silently (both bit me before I caught them):
+
+1. `PYTHONPATH=.` is load-bearing. Without it, `python scripts/…` and
+   `python -m pytest` resolve `whisperlivekit` to the **main-repo editable
+   install** (`/Users/clkao/git/asr/WhisperLiveKit/whisperlivekit`), i.e. a
+   different checkout. Verified: bare
+   `python scripts/replay_canonical_overlay.py` →
+   `ImportError: cannot import name 'load_caption_events' from
+   'whisperlivekit.caption_display' (…/WhisperLiveKit/whisperlivekit/…)`.
+2. pytest inserts the **rootdir of the target path** ahead of `PYTHONPATH`, so a
+   mutated package placed only on `PYTHONPATH` is *not* the one under test. My
+   first mutation pass looked green for that reason. Every mutation below ran in
+   a throwaway *tree* (`/tmp/val3-5m/tree` = copies of `whisperlivekit/`,
+   `tests/`, `pyproject.toml`), with the imported module path printed on each
+   run (`/tmp/val3-5m/tree/whisperlivekit/caption_display.py` + a "cap present"
+   probe of `_enqueue_item`'s source).
+
+### AC-1 — PASS (deterministic replay), figures re-derive
+
+`/tmp/val3-5m/ac1_replay.py` replays each golden twice through
+`load_caption_events` → `CaptionDisplay(hold_sec=1.2, clock=<stepped counter>)`
+with the repo convention (advance 0.3 → emit → one tick, then a 30s drain) and
+compares both the reader-visible line sequence and the full per-tick
+`(current spans+styles, prev spans+styles)` trace:
+
+```
+zh_long_canonical      events= 69 ticks=369 distinct_lines=15 identical_lines=True identical_full_trace=True
+zh_long_time_frontier  events= 52 ticks=352 distinct_lines=13 identical_lines=True identical_full_trace=True
+zh_long_ideal          events= 60 ticks=360 distinct_lines=18 identical_lines=True identical_full_trace=True
+zh_ja_fallback         events= 53 ticks=353 distinct_lines=17 identical_lines=True identical_full_trace=True
+demo_en_30s_ideal      events= 60 ticks=360 distinct_lines=13 identical_lines=True identical_full_trace=True
+```
+
+The corrected figures reproduce exactly: events `69 / 52 / 60 / 53 / 60`,
+distinct caption lines `15 / 13 / 18 / 17 / 13` (tick counts
+`369 / 352 / 360 / 353 / 360` match the older report too, now labelled
+correctly). `PYTHONPATH=. python scripts/replay_canonical_overlay.py` twice →
+both `rc=0`, `diff` clean, `md5 a7ed5390c6a2c27a03c8331926f823ce`, 44 trace
+lines.
+
+Falsifiability (re-run): `now = self._clock()` → `now = time.monotonic()` in
+`tick()` reddens 3 replay tests (`test_reword_retraction_held`,
+`test_canonical_stream_every_final_sentence_reaches_the_line`,
+`test_canonical_stream_never_scrolls_a_draft_into_history`). The earlier
+validator's F-3 nit is fixed and I confirm the fixed numbers.
+
+### AC-2 — PASS
+
+Named tests: the 12 tests AC-2 cites (23 cases with their parametrisation) exist
+and pass together — `23 passed, 43 deselected`. The four rules, probed directly
+through the public API (`/tmp/val3-5m/ac2_ac3.py`, not by reading the tests):
+
+- partition: `translation("First sentence. Second sentence. Third sentence.")` →
+  `['First sentence.', 'Second sentence.', 'Third sentence.']`;
+- held and shown: at `hold=1.0` the three lines appear at `0.05 / 1.05 / 2.05`,
+  gaps exactly `1.0 / 1.0`;
+- promote in place: `[('Hello there.','provisional')]` →
+  `[('Hello there.','same')]` in one tick, no empty frame, `prev` untouched;
+- no shrink/reword: a shorter ASR partial leaves `tick() is None` with the long
+  partial intact; a reworded final amends the line (`[('Dentists use lasers to
+  remove tumor tissue','same')]`) without blanking or retraction.
+
+Golden-wide "every sentence of every `translation_final` displays verbatim",
+extended past what the shipped test covers — **5 goldens × holds 1.2/3.5/5.0 × 6
+view cadences = 90 cells** (`/tmp/val3-5m/ac2_golden.py`; cadences: the repo
+convention, emit-then-advance, 30 fps, 10 fps, 0.1 s/event, 0.6 s/event):
+
+```
+cells checked: 90
+cells with a missing final sentence: 0
+sentences never shown as an EXACT line: 0
+```
+
+Per golden at the shipped hold and a short one (instrument cadence):
+
+```
+hold=3.5  zh_long_canonical 12/12 · time_frontier 8/8 · ideal 6/6 · zh_ja_fallback 12/12 · demo_en_30s 6/6
+hold=1.2  zh_long_canonical 12/12 · time_frontier 8/8 · ideal 6/6 · zh_ja_fallback 12/12 · demo_en_30s 6/6
+```
+
+The queue half of AC-2 (no unshown committed caption leaves the queue) is green
+for all 5 goldens × holds 3.5/1.2 and reddens under the restored bounds (M1–M4
+below), so the criterion's "held and shown" clause is falsifiable in both
+directions at the shipped hold.
+
+### AC-3 — PASS
+
+`test_no_display_state_without_a_consumer` passes, and I rebuilt the wiring over
+a real `AudioProcessor` (bare `TranscriptionEngine`, pcm/vac off):
+
+```
+no consumer:    caption_display is None: True | event_tap._sink is None: True
+no consumer:    tap accepted an event with no sink (no exception)
+event-log only: caption_display is None: True | sink type: EventLog
+display only:   same object: True | sink is the model: True | model received the event: 'Hello there.'
+both:           sink type: _FanOutSink | fan-out sinks: ['CaptionDisplay', 'EventLog']
+```
+
+(Note for future readers: `--event-log` reaches the processor through
+`engine.args.event_log`, not a constructor kwarg; passing `event_log=` as a
+kwarg is silently ignored and made the sink look absent in my first probe.)
+
+### AC-4 — PASS
+
+The documented command
+(`pytest -q tests/ --ignore=tests/test_pipeline.py --ignore=tests/test_asr_coalescing_pipeline.py`)
+run in two trees, with the imported package verified on each side:
+
+```
+origin/main ada82d4   → 8 failed, 335 passed, 13 skipped in 49.22s
+branch   d6def32      → 8 failed, 420 passed, 13 skipped in 50.71s
+```
+
+Same eight failure IDs on both sides (canary backend ×2, deepgram SDK ×1, qwen3
+shims ×5 — environment-dependent, present upstream); no branch-only failure.
+The branch figure now matches the AC text (`d6def32` / `420`), so the stale
+`c8dce70` / `395` note from the previous round is resolved. The origin/main
+export contains no `caption_display` reference at all (checked:
+`grep -rln "caption_display\|caption_events" tests/ whisperlivekit/` in the
+export → empty), so the comparison is not contaminated by the branch's files.
+
+### F-1 re-verified — FIXED (queue bound)
+
+1. **No completed-item bound remains.** `grep -n "_queue\[-\|_queue\[:\|len(self._queue)"`
+   returns only `cut = len(self._queue)` at `:456` (the insert point). The
+   invariant is stated where the queue is declared (`:211-217` "NOT capped —
+   every completed caption in it must display … The only superseded content is
+   a DRAFT"), at `_enqueue_sentence` (`:445-449`), at the `translation()`
+   rebuild and at `_enqueue_item` (`:727` "uncapped — see __init__: never
+   evicted").
+2. **Behavioural proof at the shipped hold** (`/tmp/val3-5m/dense_probe.py`,
+   public API only, 12 committed captions, arrival 0.3 / 0.9 / 1.2 / 1.6 s and
+   holds 3.5 / 1.2 → 8 scenarios): `missing=[]` in every cell, peak queue depth
+   up to 10 — i.e. captions arriving up to 5.8× faster than the 1.75 s release
+   interval all display, in order.
+3. **Red before / green after, each site separately** (see the mutation table):
+   restoring the bound at `_enqueue_item` loses up to 7 of 12 committed captions
+   in my dense probe (`['Bravo is here.', 'Charlie is here.', 'Echo is here.', …]`)
+   and reddens 4 repo tests; restoring it at the `translation()` rebuild loses
+   4/12 and 3/30 and reddens the backlog test; restoring it at
+   `_enqueue_sentence` reddens `test_no_committed_caption_leaves_the_queue_unshown[zh_long_time_frontier-hold3.5]`;
+   all three at once (the pre-fix `c8dce70` shape) reddens 6 repo tests. Each
+   restore returns `caption_display.py` to md5
+   `0d4c76b293adca5fe31edf596adc80d1` and green.
+
+### F-2 re-verified — RESOLVED
+
+`zh_ja_fallback` displays every final sentence at both holds (12/12 at 3.5 and
+at 1.2, the table above), including the sentence the second validator cited,
+`出血や汗、痛みを減らす。` (`True` at both holds, exact-line match). Its mechanism
+was a cap eviction at `_enqueue_item`: restoring that one bound reddens
+`[zh_ja_fallback-hold3.5]` and `[…-hold1.2]`, which is the pre-fix damage
+reproduced.
+
+### R-1 re-verified — FIXED (stale utterance-local index)
+
+1. **Reproducer from scratch** (`/tmp/val3-5m/r1_repro.py`, model level, public
+   API): the previous utterance's line ends on sentence index 1, then a longer
+   final arrives:
+
+   ```
+   hold=1.2: beta shown=['Beta one.', 'Beta two.', 'Beta three.'] OK
+   hold=2.0: beta shown=['Beta one.', 'Beta two.', 'Beta three.'] OK
+   hold=3.5: beta shown=['Beta one.', 'Beta two.', 'Beta three.'] OK
+   hold=5.0: beta shown=['Beta one.', 'Beta two.', 'Beta three.'] OK
+   deep(prev idx 2) hold=1.2 / 3.5 / 5.0: ['Beta one.'…'Beta four.'] OK
+   golden time_frontier hold=1.2 / 3.5 / 5.0: 'In ophthalmic surgery, lasers are used to correct vision.' displayed=True
+   R-1 ALL PASS
+   ```
+
+   and every final sentence of all five goldens is an exact displayed line at
+   holds 1.2 / 3.5 / 5.0 (no misses reported).
+2. **Red before the fix**: dropping `_en_current_sent = -1` **and**
+   `_en_line_prov = False` from `_end_utterance_routing()` (in a throwaway tree)
+   → `3 failed`: `test_final_after_a_held_caption_displays_every_sentence[3.5]`,
+   `[5.0]` and `test_golden_every_final_sentence_displays_verbatim[zh_long_time_frontier-hold3.5]`,
+   with `never displayed: 'In ophthalmic surgery, lasers are used to correct
+   vision.'`. Dropping the whole five-field reset gives the same 3 failures.
+   Restored → md5 back, `13 passed` on the same selection (baseline).
+3. **Is the rule justified from signals the stream actually has?** Yes, and I
+   re-derived the rejection of the alternatives from the goldens
+   (`/tmp/val3-5m/r1_signals.py`) rather than from the report:
+   `transcription_final` fires 1–6 times *inside* one MT span
+   (canonical `[2,2,2,1,1,1,2,1,2,1,2,1]`, time_frontier `[6,3,6,2]`);
+   `translation_provisional.committed` is empty mid-span (canonical 14 of 23)
+   and also empty on the first draft of later spans; `fresh` is False mid-span
+   (canonical 17, demo 14) and False on the first draft of later spans. No final
+   duplicates its predecessor (0 of 34 finals start with the previous final's
+   text), so text after a final is always new text — which is what makes
+   "a final ends the routing" safe.
+4. **Is the code stating it at the read site?** Yes: the docstring of
+   `_end_utterance_routing()` (`:632-651`) states the rule and the rejected
+   signals, and the comment immediately above the read
+   (`cur_i = …`, `:585-589`) says the previous utterance's index is what would
+   step `start` past this final's leading sentences. Both reset call sites exist
+   (`:565` legacy exit, `:627` routing exit).
+5. **One accuracy nit (documentation, non-blocking, F-5).** The stated *reason*
+   — "the producer finalizes and resets the MT buffer at a segment boundary
+   (`validate_buffer_and_reset` on Silence/ChangeSpeaker/sentinel)" — is exactly
+   true for the simul backend, which is the only backend that produces drafts
+   (`translation_mlx_llm_mt_simul.process` returns `(None, buffer)`; finals come
+   only from `validate_buffer_and_reset`). It is *not* the whole story for the
+   base segment backend: `translation_mlx_llm_mt.insert_tokens` queues a segment
+   final at every **punctuation** (`_pending_finals`, `_buffer_tokens` cleared)
+   and `process()` drains them, so a `translation_final` can fire mid-utterance
+   without a buffer reset. The rule still holds there — the buffer is cleared at
+   that punctuation, finals are non-cumulative (0/34), and that backend sets no
+   `provides_drafts`, so the routing state it would reset is never populated —
+   but the docstring should say "every event after a final describes new text"
+   rather than assert a boundary flush, so a future backend that both drafts and
+   emits mid-utterance finals is not silently assumed safe.
+
+### Per-utterance-field audit (the class of bug this history is about)
+
+State initialised once in `__init__` and mutated during routing, with where it
+is reset:
+
+| field | declared | reset site | does a `translation_final` reset it? |
+|---|---|---|---|
+| `_en_sent_texts` | `:224` | `_end_utterance_routing` `:653` | yes |
+| `_en_current_sent` | `:225` | `:656` | yes (this is R-1's field) |
+| `_en_line_prov` | `:226` | `:657` | yes (R-1's second field) |
+| `_en_prev_sent_idx` | `:233` | `:654` | yes |
+| `_en_line_sent` | `:234` | `:655` | yes |
+| `_en_draft_full` | `:223` | **no reset**; overwritten with the *finished* final's text at `:562` (legacy) / `:628` | no — but it is a "last text seen" cache: `preview`'s early return and the append-effect delta are correct for any value that is a prefix of the new text, and no failure is constructible (see F-4 note) |
+| `_en_frag` | `:227` | **no reset**; set to the final's trailing fragment at `:563` (legacy: `""`) / `:629` | no — residual fragment is only consumed by `_update_fragment`'s append/rewrite branches, which additionally require the new draft to start with the stale full text; no loss constructible |
+| `_queued_draft` | `:228` | cleared only on the legacy exit (`:564`) and when `tick()` releases it (`:799`) — **not** on the sentence-routing path | **no — F-4 below** |
+| `_queue` | `:218` | untouched by a final by design (the reader's backlog) | intentionally not reset; pinned by `test_new_multi_sentence_final_never_evicts_the_pending_backlog` |
+| `_en_plain`, `_en_spans`, `_en_is_final`, `_en_shown_at`, `_en_prev_plain/_spans/_at`, `_partial`, `_partial_shown_at`, `_last_partial`, `_last_state`, `_dirty` | `:203-209`, `:237-241` | n/a | display-lifetime state: persists across utterances by design (the line, its history and the source row are not utterance-scoped) |
+
+**F-4 (new, non-blocking — same stale-lifetime shape, no loss):**
+`_queued_draft` (`:228`) holds the in-progress fragment parked behind a bright
+sentence and is **not** invalidated when its utterance ends, unlike the five
+fields R-1 fixed. Reproducer (public API, hold 1.2):
+
+```
+preview("S1 sentence. S2 sentence."); tick          → line 'S1 sentence.' (_en_current_sent 0)
+preview("S1 sentence. S2 sentence. fragment of S3") → _queued_draft = 'fragment of S3'
+translation("S1 sentence. S2 sentence. Fragment of S3.")  → _queued_draft STILL 'fragment of S3'
+displayed: ['S1 sentence.', 'S2 sentence.', 'Fragment of S3.', 'fragment of S3', 'Zeta one.', 'Zeta two.']
+```
+
+The superseded draft fragment pops back onto the line *after* the utterance's
+committed sentences and after the final replaced it. Nothing is lost (every
+committed sentence of both utterances displays); what the reader gets is stale
+dim text from a finished utterance. It is not reachable from the recorded
+streams: across all 5 goldens × holds 3.5/1.2 × {instrument, 10 fps} (20 cells) a
+`translation_final` never leaves a `_queued_draft` behind and no pre-final
+queued draft is ever released later (0 / 0 in every cell). Missing reset: add
+`self._queued_draft = None` to `_end_utterance_routing()`, but only after
+confirming with the author that the fragment is genuinely superseded by every
+final (the final's own trailing fragment is re-created from `sents` the same
+tick, so it is). Not a gate blocker by the stated bar (no reproducible loss).
+
+### F-2b — judged explicitly (as the gate requires)
+
+*What it is.* `preview("Alpha one. Beta two. Gamma thre")` then
+`translation("Alpha one. Beta two. Gamma three.")` **with no view tick in
+between** takes the `line_j` branch: it puts `sents[line_j]` on the line and
+enqueues only `i > line_j`, so the leading draft-routed queue items are dropped
+and never re-supplied. Reproduced exactly as disclosed
+(`/tmp/val3-5m/f2b.py`): displayed lines = `['Gamma thre', 'Gamma three.']` at
+holds **1.2, 3.5 and 5.0** — `'Alpha one.'` and `'Beta two.'`, both sentences of
+the committed final, never display. One `tick()` between the two calls fixes it
+(`['Alpha one.', 'Beta two.', 'Gamma three.']`).
+
+*Is it content loss under AC-2?* **Yes, in mechanism.** Those two strings are
+sentences of a `translation_final`, and AC-2 says a finished sentence is held
+and shown; a sentence never enqueued is lost content of exactly the R-1 kind
+(same branch, same "start index steps over sentences this utterance has not
+displayed" logic — R-1's fix reset the index across utterances and did not
+cover this same-utterance-before-any-tick case). It is not a wording/retraction
+case: neither the final's nor a draft's wording reaches the line.
+
+*Is it reachable from any shipped path?* **No.**
+- No view ships in this task (overlay/TUI are explicitly out of scope; the diff
+  contains no view code), and the only shipped consumers are `--event-log`
+  (records, does not render) and the replay instrument, which ticks once per
+  event — there is always a tick between two events, so the branch cannot be
+  taken there. Empirically: 90/90 audit cells and all five goldens are clean.
+- For a future view, the condition is "a frame boundary does not fall between
+  the draft that routes the sentence and the following final". Measured on the
+  recorded streams, the tightest draft→final gap where the draft had already
+  routed a sentence is **0.653 s** (time_frontier, wall clock) and **0.677 s**
+  (canonical, wall clock); the two synthetic goldens carry no wall clock at all
+  (`t == 0.0` on every event) and show a 0.25 s `audio_t` gap. So any consumer
+  ticking faster than ~1.5 fps (real captures) / ~4 fps (synthetic) cannot hit
+  it; a consumer that batches several events per frame, or ticks at ≤1 fps,
+  can.
+
+*Does it block?* **No.** Both blocking bars the gate sets are mechanical — a
+sentence of a golden failing to display at the shipped hold (none: 90/90 cells,
+10/10 golden×hold cells), and another stale-lifetime field with a reproducible
+loss (`_queued_draft` produces stale text but no loss). F-2b is a latent
+content-loss defect that this task's shipped artifacts do not expose, so it does
+not fail this gate; it must be fixed before (or with) the view that Task C ships,
+and the minimal reproducer belongs in `tests/test_caption_display.py` now rather
+than later. Concrete fix: in `translation()`, before taking the `line_j` branch,
+enqueue the sentences before it that were routed from this utterance's draft and
+have not displayed (`sents[0:min(line_j, cur_i)]`, or start the enqueue at the
+first undisplayed index); the R-1 test and this reproducer then both go green.
+
+### Mutations run (each in the throwaway tree, restored byte-for-byte)
+
+| # | mutation (exact-string, single occurrence) | result before restore | restore |
+|---|---|---|---|
+| M0 | none (baseline tree) | `66 passed` (display + replay suites) | — |
+| M1 | completed-item bound back at `_enqueue_sentence` (`del self._queue[:-3]`) | **red**: `1 failed, 12 passed` — `…leaves_the_queue_unshown[zh_long_time_frontier-hold3.5]` | md5 `0d4c76b2…` ✔ |
+| M2 | bound back at the `translation()` rebuild (`(kept + new_items)[-3:]`) | **red**: `1 failed` — `test_new_multi_sentence_final_never_evicts_the_pending_backlog`; dense probe loses 4/12 and 3/30 | md5 ✔ |
+| M3 | bound back at `_enqueue_item` | **red**: `4 failed` — dense stream, `zh_ja_fallback` (3.5 and 1.2), `zh_long_canonical` (3.5); my dense probe loses 7/12 at 0.3 s arrival, 3/12 at 0.9 s | md5 ✔ |
+| M4 | all three bounds (the pre-fix `c8dce70` shape) | **red**: `6 failed, 7 passed` | md5 ✔ |
+| M5 | drop `_en_current_sent = -1` + `_en_line_prov = False` from `_end_utterance_routing()` | **red**: `3 failed` — two-utterance `[3.5]`, `[5.0]`, `time_frontier-hold3.5` verbatim (`never displayed: 'In ophthalmic surgery, …'`) | md5 ✔ |
+| M6 | drop the whole five-field reset (`pass`) | **red**: the same `3 failed` (no additional test distinguishes the other three fields — they are defence-in-depth, not independently pinned) | md5 ✔ |
+
+Every mutate/restore pair was verified with md5 and, per run, with a check that
+the imported module is the tree's (`/tmp/val3-5m/mutate.py` prints
+`…/tree/whisperlivekit/caption_display.py` and probes `_enqueue_item`'s source
+for the injected bound). After all mutations the tree is byte-identical to the
+worktree file.
+
+### Scope / hygiene
+
+`git diff --name-only db143d3 HEAD` = `scripts/replay_canonical_overlay.py`, the
+five `tests/golden/*.jsonl`, `tests/test_caption_display.py`,
+`tests/test_overlay_replay.py`, `whisperlivekit/{caption_display.py,
+audio_processor.py, test_harness.py}` — no view/overlay/TUI code, no
+consumer-task file. `ruff check whisperlivekit/ tests/ scripts/` → `All checks
+passed!`. Worktree clean, nothing staged, nothing pushed (`d6def32` is local
+only; `git branch -r --contains d6def32` is empty).
+
+### Residual risks / recommendations for the next cycle
+
+1. **F-2b** — fix in `translation()`'s `line_j` branch and pin with the minimal
+   reproducer before Task C ships a view (the one non-blocking correctness gap
+   left in this class).
+2. **F-4 `_queued_draft`** — add the reset in `_end_utterance_routing()`; it only
+   mis-displays stale text today.
+3. **F-5 docstring accuracy** — state the rule as "text after a final is new
+   text" instead of naming the segment-boundary flush as its mechanism, so the
+   punctuation-final path in `translation_mlx_llm_mt` is covered by the
+   justification rather than by luck.
+4. **Test-strength note (F-6, informational):** the three routing fields other
+   than `_en_current_sent`/`_en_line_prov` are not independently falsifiable
+   (M5 and M6 give the identical failure set); if the author wants them pinned,
+   a test needs to construct a case where only `_en_sent_texts`,
+   `_en_prev_sent_idx` or `_en_line_sent` is stale. Similarly
+   `test_drained_replay_displays_every_completed_sentence` never goes red under
+   any restored bound (it spot-checks three sentences), which is why the
+   golden-wide verbatim test is the load-bearing one.
+5. **Validation-environment trap** (both bullets at the top) — `PYTHONPATH=.`
+   and "verify which package pytest imported" should be in the next dispatch;
+   without them a mutation can appear green (I hit exactly that).
+
+### Summary
+
+Third fresh validation passes the entity: AC-1's determinism and its corrected
+figures re-derive (5 goldens × 2 replays identical, `69/52/60/53/60` events,
+`15/13/18/17/13` lines, instrument byte-identical `a7ed5390…`), AC-2's four
+rules hold directly and across 90 golden × hold × cadence cells with zero
+missing final sentences, AC-3 shows no display object or sink without a
+consumer, and AC-4 gives the same eight failure IDs on `origin/main ada82d4`
+(8/335/13) and the branch `d6def32` (8/420/13). The three prior corrections are
+fixed, each proven by restoring the pre-fix shape in a throwaway tree: the
+completed-caption bound goes red at all three enqueue sites (4–7 of 12 committed
+captions lost in my dense probe, 1–6 repo tests red) and green on restore at md5
+`0d4c76b2…`; `zh_ja_fallback` displays 12/12 sentences at holds 3.5 and 1.2
+including the cited Japanese sentence; and the stale utterance-local index is
+gone at holds 1.2/2.0/3.5/5.0 and for all five goldens, going red exactly on
+`[3.5]`, `[5.0]` and `time_frontier-hold3.5` when the reset is removed.
+The field audit found two further fields with the same stale-lifetime shape that
+no final resets — `_en_draft_full`/`_en_frag` (harmless caches) and
+`_queued_draft`, which can re-display a superseded draft fragment after its
+utterance ended (reproducer given, no loss, absent from all 20 recorded-stream
+cells). The disclosed F-2b is judged content loss in mechanism but unreachable
+from every shipped path (the instrument ticks per event; the tightest recorded
+draft→final gap is 0.65 s wall / 0.25 s audio, so only a ≤1–2 fps consumer can
+hit it), so it does not block this gate — it must be fixed with Task C's view,
+with the minimal reproducer added as a test now.
