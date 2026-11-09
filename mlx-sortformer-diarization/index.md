@@ -513,3 +513,55 @@ fresh worktree, and pointing the main tree at the checked-out submodule turns th
 an artefact of my scratch tree, not evidence about the branch. One wording fix suggested (AC-3's "via
 run_in_executor" covers `feed()` literally and `init_streaming_state()` only in substance). No product
 code edited, no push, no staged files.
+
+## Stage Report: state-repair (workflow-wide FAILED-line repair)
+
+Assignment: workflow-wide repair of stage reports that wedge the entered-stage completion
+guard. State-only; no code, no code push. The leading token of this heading is deliberately
+not a stage name, so this section cannot become the gate-selected report for `validation` —
+the PR #450 validation report above stays the report the guard and the captain gate read.
+
+- DONE: authorize: workflow-wide repair of stage reports that wedge the completion guard. State-only; no code, no push.
+  Seven entities' `- FAILED:` bullets replaced in place with the proven prose line (24 sites
+  across 7 path-scoped state commits, 4ffa33a..7024129). No code worktree touched:
+  `wlk/diarization-mlx` left at 27ef1fd, nothing pushed to any code branch or the fork.
+- DONE: For every `- FAILED:` line in those entities, replace it in place with the proven prose line.
+  Sites removed per entity: canary-mlx-backend 1, mlx-qwen3-asr-backend 6,
+  nemotron-mlx-asr-backend 4, wlk-display-unification 8, wlk-simul-time-frontier-pr 1,
+  wlk-tui-package 2, wlk-upstream-followup 2 = 24. Every entity's diff is N insertions /
+  N deletions (`git diff --stat` before commit: 24 insertions, 24 deletions, 7 files).
+- DONE: Change nothing else: no other text, no status change, no frontmatter edit.
+  Each of the 7 commits names exactly one path (`git show --name-only`), frontmatter
+  byte-identical (the three `--set` round trips end byte-identical to HEAD,
+  `git status --porcelain` empty), and the FAILED bullets' own continuation lines were
+  left untouched rather than rewritten (see residual risks).
+- DONE: Verify per entity: `grep -c '^- FAILED:'` returns 0 afterwards.
+  0 on the working tree and 0 on committed HEAD for all seven entities.
+- DONE: Prove the guard accepts the repaired report for at least the two entities whose status is backlog or implementation.
+  Three implementation entities round-tripped with both command outputs exit 0:
+  canary-mlx-backend, nemotron-mlx-asr-backend and wlk-display-unification each
+  `status: implementation -> validation` then `status: validation -> implementation`,
+  porcelain clean and status restored afterwards. Pre-repair control on the same trees
+  (pre-repair bytes checked out dirty) is the load-bearing proof: canary refuses with
+  `line 74 FAILED item "none" is unresolved`, nemotron with `line 571 SKIPPED item
+  "none." has no evidence or rationale line` — both exit 1, both green after the repair.
+- DONE: Do NOT run that transition test on mlx-qwen3-asr-backend; verify by grep only and say so.
+  grep only, no transition run: 6 -> 0. Read-only parser check (`status --read --checklist`)
+  on its `validation` report (lines 350-380, 12 items) shows no FAILED item.
+- DONE: Commit path-scoped per entity and push the state branch.
+  One commit per entity, `git add <entity path>` + `git commit -- <entity path>`; no bare
+  add/commit in the shared checkout, no sibling writer's staged entity swept.
+- SKIPPED: rewriting the FAILED bullets' continuation lines into DONE/SKIPPED items.
+  Outside "replace the line, change nothing else"; the technical detail is preserved
+  verbatim under the prose line instead, and the git history holds the original bullets.
+
+### Summary
+
+Repaired the seven reports that could not leave a working stage: every `- FAILED:` bullet is
+now the proven prose line, verified 0 remaining per entity and proven to unblock the
+entered-stage guard by a pre-repair/post-repair pair of real `spacedock status --set`
+transitions. Two findings the FO should carry forward: at least one entity
+(nemotron-mlx-asr-backend) was wedged by a second, unrelated defect — a `- SKIPPED: none.`
+item with no evidence line — which the prose line incidentally supplies, and the three
+backlog entities cannot be unblocked by this repair at all because their stage reports carry
+no heading whose leading token is `backlog` and `backlog` is an initial stage the guard skips.
