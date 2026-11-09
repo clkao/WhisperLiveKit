@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, List, Optional, Union
 import numpy as np
 
 from whisperlivekit.audio_input import AudioInput
-from whisperlivekit.caption_events import EventLog, EventTap
+from whisperlivekit.caption_events import EventLog, EventSink, EventTap
 from whisperlivekit.config import validate_pause_segmentation_seconds
 from whisperlivekit.core import (
     TranscriptionEngine,
@@ -69,6 +69,25 @@ def should_defer_inference(deferred_s: float, chunk_s: float, min_s: float) -> b
         return False
     return deferred_s + chunk_s < min_s
 
+
+class _FanOutSink:
+    """Deliver each caption event to both stream consumers.
+
+    ``EventTap`` carries one sink. Two independent consumers can want the same
+    stream — the display model a caller handed in (renders captions) and the
+    optional ``--event-log`` JSONL recording (a replay artifact) — so this
+    forwards every event to each of them. With one consumer, or none, the tap
+    holds the sink (or nothing) directly and this is never constructed.
+    """
+
+    def __init__(self, sinks: List[EventSink]) -> None:
+        self._sinks = list(sinks)
+
+    def emit(self, event: Any) -> None:
+        for sink in self._sinks:
+            sink.emit(event)
+
+
 class AudioProcessor:
     """
     Processes audio streams for transcription and diarization.
@@ -90,6 +109,11 @@ class AudioProcessor:
         # "diff" clients keep their own copy and allow bounded server memory.
         session_mode = kwargs.pop('mode', 'full')
         session_target_language = kwargs.pop('target_language', None)
+        # The display model is a consumer of the caption event stream: a caller
+        # that wants to render captions passes its own CaptionDisplay here and
+        # the event tap feeds it (see the tap construction below). No consumer,
+        # no display state.
+        session_caption_display = kwargs.pop('caption_display', None)
 
         if 'transcription_engine' in kwargs and isinstance(kwargs['transcription_engine'], TranscriptionEngine):
             models = kwargs['transcription_engine']
@@ -222,12 +246,24 @@ class AudioProcessor:
 
         # Caption event tap: emits the standardized caption event stream
         # (transcription/translation provisional+final) alongside the FrontData
-        # snapshot path. The web UI is untouched. The tap has a sink only when
-        # something consumes the stream — currently the optional --event-log
-        # JSONL recording; otherwise it is a no-op so the pipeline is unchanged.
+        # snapshot path. The web UI is untouched. A sink exists only when
+        # something consumes the stream: the display model the caller handed in
+        # (``caption_display=``) renders captions from it, and --event-log
+        # records it to JSONL for replay. With neither, the tap is a no-op and
+        # no display state is allocated.
+        self.caption_display: Optional[Any] = session_caption_display
         _event_log_path = getattr(self.args, "event_log", None)
         self._event_log: Optional[EventLog] = EventLog(_event_log_path) if _event_log_path else None
-        self.event_tap = EventTap(sink=self._event_log)
+        _event_sinks: List[EventSink] = [
+            sink for sink in (self.caption_display, self._event_log) if sink is not None
+        ]
+        if not _event_sinks:
+            _sink: Optional[EventSink] = None
+        elif len(_event_sinks) == 1:
+            _sink = _event_sinks[0]
+        else:
+            _sink = _FanOutSink(_event_sinks)
+        self.event_tap = EventTap(sink=_sink)
         # dedupe state: emit ASR provisional only when the tail text changes
         # (MT-provisional dedupe lives in the translation loop — it keys off
         # the backend's progress contract there)
