@@ -323,13 +323,17 @@ no staged files, nothing pushed (`origin/wlk-diarization-mlx` and the fork untou
 `/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`; nothing installed, no venv, no model
 download; `--no-config` on every uv call (cycle-3 machine artefact).
 
-**Verdict: AC-1 through AC-5 PASS, reproduced independently. AC-6 PARTIAL — its 16-passed clause
-reproduces; its suite-diff clause was NOT re-run because this dispatch caps test runs to
-`tests/test_diarization_mlx_backend.py` plus a cited test and the box has 2.6 GiB free (AC-6 itself
-says an independent check needs a scratch worktree of `ada82d4`). No FAILED condition was found in
-the branch: every named test exists, every named test passes, every falsification clause I
-attempted fires, and the diff is confined to the backend + wiring + the four maintainer fixes +
-`pyproject.toml`/`uv.lock`.**
+**VERDICT: PASS — AC-1 through AC-6 all satisfied on evidence reproduced from the tree, not from the
+implementation report. AC-1..AC-5 reproduce independently (16/16 named tests green, `uv lock --check
+--no-config` exit 0, mlx-audio 0.5.9 inside the shared range, specifier byte-identical to #426's) and
+AC-6's full-suite comparison was run on both sides: the branch's failing set is a strict subset of
+`origin/main`'s at `ada82d4` (3 failed / 356 passed / 13 skipped / 4 errors vs 8 failed / 335 passed /
+13 skipped / 4 errors, with 359 vs 343 collected = exactly the branch's 16 new tests). No FAILED
+condition was found in the branch: every named test exists, every named test passes, every
+falsification clause attempted fires, and the diff is confined to the backend + wiring + the four
+maintainer fixes + `pyproject.toml`/`uv.lock`. The sets are not byte-identical, but the only
+asymmetry is five failures that exist on main and not on the branch, caused by an uninitialized git
+submodule in my own scratch worktree — diagnosed and proven below, not a branch property.**
 
 - DONE: AC-1 buffered Sortformer contract — PASS.
   `pytest -q tests/test_diarization_mlx_backend.py` → `16 passed in 1.55s`; `--collect-only` lists
@@ -391,20 +395,43 @@ between writes, so each is its own `diarize()` call. All four falsification clau
   one `2.8.0` line — the darwin-torch entry repartition cycle 3 described, no package bumped or
   lowered. Parity re-running was out of scope per the dispatch and not attempted.
 
-- PARTIAL: AC-6 no new suite failures versus origin/main — its 16-passed clause PASSES, its
-  suite-diff clause is NOT INDEPENDENTLY REPRODUCED. `pytest -q
-  tests/test_diarization_mlx_backend.py` → `16 passed` (AC-6 requires ≥16). The full-suite
-  node-id comparison needs `pytest -q tests/ --ignore=tests/test_pipeline.py` on this branch plus a
-  scratch worktree of `ada82d4`, which exceeds both this dispatch's test-run cap and the 2.6 GiB
-  free. In its place I bounded the risk structurally and with the only pre-existing tests that
-  cover the two shared paths this branch edits:
-  `pytest -q tests/test_sortformer_event_loop.py tests/test_sortformer_max_speakers.py` → `19
-  passed in 1.98s`. The bound: outside the new module and new tests, the branch's non-lock diff is
-  (i) additive arms in `core.py` (`_do_init`, `online_diarization_factory`) reachable only for the
-  new backend name, (ii) `parse_args.py` one extra choice, (iii) `config.py` a widened validation
-  guard plus one new default, (iv) the `hasattr`-gated EOF hook. The concrete follow-up if the FO
-  wants AC-6 fully closed is the two-run node-id diff AC-6 already names; it is a run-to-run
-  procedure, not a defect in the tree.
+- DONE: AC-6 no new suite failures versus origin/main — PASS, both clauses, now measured with the
+  full suite on both trees. All runs used the same interpreter
+  (`/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python`), no venv, no install, no download.
+  (a) **Branch**, cwd = this worktree at `27ef1fd`:
+  `pytest -q tests/ --ignore=tests/test_pipeline.py` → **3 failed, 356 passed, 13 skipped, 4 errors
+  in 129.54s**. Failed ids: `tests/test_canary_backend.py::test_canary_asr_transcribes_with_word_timestamps`,
+  `tests/test_canary_backend.py::test_canary_end_to_end_via_testharness`,
+  `tests/test_deepgram_compat.py::test_current_deepgram_sdk_receives_typed_exactly_once_close_stream`.
+  Error ids (the four expected environmental ones):
+  `tests/test_asr_coalescing_pipeline.py::test_sample_decodes_without_ffmpeg`,
+  `::test_end_of_stream_transcribes_deferred_audio`, `::test_deferred_audio_survives_a_long_silence`,
+  `::test_deferred_audio_survives_a_speaker_change`.
+  (b) **Main**, in a scratch worktree of `ada82d4` created with
+  `git -C /Users/clkao/git/asr/WhisperLiveKit worktree add /tmp/wk-main-ada ada82d4` (removed again
+  with `worktree remove`): same command → **8 failed, 335 passed, 13 skipped, 4 errors in 73.29s**.
+  Its failing ids are the same 3 as the branch **plus five main-only**:
+  `tests/test_qwen3_backend_shims.py::test_qwen3_streaming_shim_exposes_standalone_private_helpers`,
+  `::test_qwen3_vllm_shim_preserves_whisperlivekit_default_model`,
+  `::test_qwen3_vllm_metal_shim_imports_standalone_backend`, `::test_online_factory_routes_qwen3_streaming`,
+  `::test_transcription_engine_routes_qwen3_vllm_metal`. Its 4 error ids are identical to the branch's.
+  (c) **Set relation: branch ⊂ main — no failing node id on the branch is absent from main's set**, so
+  AC-6's falsification clause is not met. Collected totals: 359 vs 343 = **+16, exactly this branch's
+  new tests**, which is the delta AC-6 itself predicts; skips are 13 on both sides.
+  (d) **The five main-only failures are a scratch-worktree artefact, proven, not a code difference.**
+  `third_party/qwen3-asr-causal` is a gitlink submodule; `git -C /tmp/wk-main-ada submodule status`
+  reports `-8975258...` (leading `-` = uninitialized, directory empty) while this long-lived worktree
+  reports `8975258...` (checked out). The shim imports `qwen3_asr_causal` from that path, so all five
+  die with `ModuleNotFoundError: No module named 'qwen3_asr_causal'`. Decisive check, run as a single
+  file rather than a third suite pass: in the main worktree,
+  `PYTHONPATH=<branch worktree>/third_party/qwen3-asr-causal/src pytest -q tests/test_qwen3_backend_shims.py`
+  → `6 passed in 1.30s` (vs `5 failed, 1 passed` without it). With that artefact corrected main would
+  be 340 passed / 3 failed / 13 skipped / 4 errors — the same failing and erroring sets as the branch.
+  AC-6 does not require main to pass more; reporting the branch FAILED for a main-only,
+  submodule-artefact failure would misattribute an environment delta to the tree. For completeness the
+  branch also keeps the pre-existing diarization-path tests green:
+  `pytest -q tests/test_sortformer_event_loop.py tests/test_sortformer_max_speakers.py` → `19 passed`,
+  and `pytest -q tests/test_diarization_mlx_backend.py` → `16 passed` (AC-6 requires ≥16).
 
 - DONE: mutation exercise — three mutations, each restored byte-for-byte, green again after each.
   Baseline hashes: `sortformer_mlx_backend.py`
@@ -448,9 +475,9 @@ between writes, so each is its own `diarize()` call. All four falsification clau
   max_speakers: 2`, confirming `from_namespace` carries the flag into `WhisperLiveKitConfig` so both
   `_do_init` and `online_diarization_factory` see it.
 
-- SKIPPED: AC-6's full-suite vs `ada82d4` comparison — dispatch test-run cap (only
-  `tests/test_diarization_mlx_backend.py` plus a cited test) and 2.6 GiB free. Not a branch defect;
-  the commands for the FO are AC-6's own.
+- DONE: two full-suite runs only (branch, then the `ada82d4` scratch worktree), both via the shared
+  venv interpreter, plus one single-file diagnostic to explain the main-only failures; the scratch
+  worktree was removed afterwards (`git worktree list` no longer shows `/tmp/wk-main-ada`).
 - SKIPPED: re-running the mlx-audio version parity measurement — explicitly out of scope; it is
   Feedback Cycles cycle-2 evidence and not a criterion.
 - FAILED: none.
@@ -465,8 +492,13 @@ mutations prove the tests can fail — dropping the silence offset reds exactly
 the EOF `flush` hook reds exactly `test_audio_processor_flushes_the_partial_tail_at_eof` with
 `[80000]`, and renaming `buffer_audio` reds the processor-level test with the named `timed out
 waiting for the second chunk`; each mutation was restored byte-for-byte (hashes re-verified) and the
-file returned to 16 passed. AC-6 is PARTIAL only in its suite-diff half: the 16-passed clause holds
-and the shared-path risk is bounded by 19 passing pre-existing NeMo-path tests plus a file-level
-scope audit, but the full-suite node-id comparison is not runnable inside this dispatch's test-run
-cap and disk. One wording fix suggested (AC-3's "via run_in_executor" covers `feed()` literally and
-`init_streaming_state()` only in substance). No product code edited, no push, no staged files.
+file returned to 16 passed. AC-6 is now closed by measurement, not by argument: the branch runs
+3 failed / 356 passed / 13 skipped / 4 errors and `origin/main` at `ada82d4` (fresh scratch worktree)
+runs 8 failed / 335 passed / 13 skipped / 4 errors, so the branch's failing set is a strict subset of
+main's; collected totals differ by exactly the 16 new tests, skips match at 13, and the 4 errors are
+the same `test_asr_coalescing_pipeline` cases on both sides. The five main-only failures
+(`test_qwen3_backend_shims.py`) are explained and disposed of: that submodule is uninitialized in a
+fresh worktree, and pointing the main tree at the checked-out submodule turns them green, so they are
+an artefact of my scratch tree, not evidence about the branch. One wording fix suggested (AC-3's "via
+run_in_executor" covers `feed()` literally and `init_streaming_state()` only in substance). No product
+code edited, no push, no staged files.
