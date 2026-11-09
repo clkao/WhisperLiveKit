@@ -24,28 +24,78 @@ one fixed.
 Upstream main has NEITHER file (display surface is `web/live_transcription.js`
 + failure-reporting commits #440-445 that touch display concerns).
 
+## End value
+
+Display behavior and the event stream stop being entangled with the MT layer, and a
+downstream consumer can be built on a recorded stream.
+
 ## Work
 
-1. On a branch cut from origin/main, port the caption display model as THE
-   display-semantics layer: event-stream consumer (the `caption_events`
-   contract from the integration branch), sentence partitioning, hold queue,
-   in-place promotion, monotonic display, dim/bright grammar.
-2. Port the overlay and the TUI as thin views over that model (the TUI keeps
-   its rich three-region layout, loses its independent display logic).
-3. Port the regression suite: sentence partition, queue survival, no-retype,
-   drained-replay test over a checked-in golden stream.
-4. Reconcile with upstream #440-445 display-adjacent changes (failure
-   reporting, final-snapshot drain).
-5. Demonstrate with upstream's harness fields (first-visible-text pacing)
-   where practical.
+1. `whisperlivekit/caption_events.py`: the typed payload `CaptionEvent` (`t`,
+   `audio_t`, `type` one of transcription_provisional / transcription_final /
+   translation_provisional / translation_final, `text`, plus `committed`,
+   `source`, `fresh` on translation provisionals), the `EventSink` protocol, a
+   stateless `EventTap` whose `sink=None` is a no-op, and `EventLog` — a JSONL
+   sink that opens the path in append mode and writes + flushes one line per
+   `emit()`.
+2. Emission points: `audio_processor.py` builds the tap (and an `EventLog` only
+   when `--event-log` is set), emits transcription provisionals/finals at the
+   ASR commit points, the streaming refresh and the finish flush, and closes the
+   log in `cleanup()`; `translation_processor.py` emits `translation_final`
+   (single or list results) and `translation_provisional` (committed summary,
+   full source the MT saw, fresh flag) from the translation loop.
+3. Backend contract: `TranslationProgress` in `timed_objects.py`, plus
+   `provides_drafts` and `progress()` on the translation backends
+   (`MlxLlmTranslation` false/honest-empty, `MlxLlmTranslationSimul` true), read
+   in `translation_processor.py` through a `_ProgressReader` that leaves
+   backends predating the contract on the no-draft path and disables drafts for
+   the rest of a session (one warning) if `progress()` raises.
+4. `--event-log PATH` on the server CLI (`parse_args.py` →
+   `WhisperLiveKitConfig.event_log`), off by default, documented in
+   `docs/configuration.md`.
+
+Not in this PR: the caption display model that consumes the stream — that is
+PR-B, entity `wlk-caption-display`.
 
 ## Acceptance
 
-- [ ] Overlay + TUI render identically (modulo styling) on the same event
-      stream; the sentence guarantees hold for BOTH.
-- [ ] Drained-replay regression test green on a checked-in golden stream;
-      fails on the pre-port TUI logic (verify before deleting it).
-- [ ] Suite counts vs upstream baseline: zero new failures.
+**AC-1 — Typed caption events are emitted at the documented points
+(transcription provisionals/finals, translation provisionals/finals), each
+carrying its text and the source it was produced against.**
+Verified by: `git grep -n 'event_tap.transcription_' whisperlivekit/audio_processor.py`
+shows the provisional/final call sites,
+`tests/test_caption_events.py::TestEventTap::test_forwards_to_sink` pins the
+emitted payload, and
+`tests/test_translation_emission.py::test_translation_final_emitted_for_single_and_list`
+plus `::test_provisional_carries_committed_source_fresh` pin the translation
+side and its `committed`/`source`; it fails if an emission call site is dropped
+or the source fields stop being populated.
+
+**AC-2 — `--event-log` appends one JSONL line per event as it is emitted, with
+no in-memory accumulation and no write-on-cleanup.**
+Verified by: `tests/test_caption_events.py::TestEventLog::test_two_events_are_two_lines_before_close`,
+which emits twice and reads the file while the sink is still open; it fails if
+the sink buffers and writes on close.
+
+**AC-3 — No per-session display state is allocated when nothing consumes the
+stream (no accumulator object when `--event-log` is unset).**
+Verified by: a processor built from args with `event_log=None` has
+`event_tap._sink is None` and no line/display-state attribute, and
+`git grep -n 'EventLog(' whisperlivekit/audio_processor.py` shows the log built
+only on the truthy path; it fails if a session allocates display state
+unconditionally.
+
+**AC-4 — Translation backends declare `provides_drafts` and `progress()`; a
+backend without drafts needs no change and never enters the draft path.**
+Verified by: `tests/test_translation_emission.py::test_provisional_requires_provides_drafts`
+and `::test_base_backend_contract_defaults_are_honest`; they fail if a backend
+that declares no drafts emits a provisional or is forced to implement the
+contract.
+
+**AC-5 — No new suite failures versus `origin/main` at the same commit.**
+Verified by: full-suite counts on the branch compared against a detached
+`origin/main` worktree at the merge-base with the same interpreter, diffing the
+failure + error sets; any failure id absent from the baseline fails the AC.
 
 ## Notes
 
@@ -399,3 +449,36 @@ to disk as it happens instead of growing a list that nothing saved. The display 
 its goldens/replay tests are parked on `wlk/caption-display` for PR-B with the UI wiring
 that consumes them. Proof is the targeted test selection (51 passed), ruff clean, and the
 hermetic unclosed-sink test; no live run was performed because the sandbox has no mic.
+
+## Stage Report: implementation (cycle 1 — entity rescope to PR #449)
+
+Authorization: `rescope — captain approved narrowing entity 6y to PR #449 only (the caption
+event stream). This is an ENTITY BODY edit, no code work.`
+
+- DONE: `## Work` rewritten to the PR #449 scope
+  Four items grounded in the branch at 80a040b: `caption_events.py` (typed payload, no-op
+  `EventTap`, append-and-flush JSONL `EventLog`); emission points `audio_processor.py`:615,
+  662, 797, 804 and `translation_processor.py`:120, 140; `TranslationProgress` +
+  `provides_drafts`/`progress()` read via `_ProgressReader`; `--event-log` through
+  `parse_args.py` -> `WhisperLiveKitConfig.event_log` and `docs/configuration.md`.
+- DONE: `## Acceptance` replaced with AC-1..AC-5 in the bold-line + "Verified by:" shape
+  Each names a check reproducible outside the body that can fail; the six test ids cited in
+  AC-1/AC-2/AC-4 collect and pass (17 passed, `pytest -q tests/test_caption_events.py
+  tests/test_translation_emission.py`), and AC-1/AC-3's `git grep` claims were run.
+- DONE: `## End value` added (one line)
+  Display behavior and the event stream stop being entangled with the MT layer, and a
+  downstream consumer can be built on a recorded stream.
+- DONE: display-model scope kept out; history untouched
+  `git diff` touches only the span between `## Context` and `## Notes`; frontmatter, every
+  `## Stage Report` and `### Feedback Cycles` are byte-identical. No code file, no code
+  branch push, PR #449 untouched.
+- FAILED: none
+
+### Summary
+
+Entity 6y now describes what PR #449 actually ships — the caption event stream and the
+backend draft contract — instead of the display-work unification it was filed for. The
+display half is no longer described here (entity `wlk-caption-display` / 5m owns it).
+Residual: the H1 ("Task B (A2) — unify WLK display semantics...") and the `## Context` and
+`## Notes` sections still narrate the pre-split display scope; they were outside the
+authorized edit list, so they were left byte-identical rather than silently rewritten.
