@@ -69,6 +69,13 @@ the terminator split is dropped);
 a queued sentence is dropped or a draft wipes the backlog; the last two are red
 on any queue bound that evicts an unshown committed caption, including the
 shipped three-item cap, at the shipped hold);
+`test_final_after_a_held_caption_displays_every_sentence` and
+`test_golden_every_final_sentence_displays_verbatim` (held and shown — red if a
+sentence is skipped before it is ever enqueued, which the queue tests cannot
+see: the two-utterance case loses `'Beta one.'` at holds 3.5/5.0 if the previous
+utterance's line index survives into the next final, and
+`zh_long_time_frontier` at the shipped hold loses `'In ophthalmic surgery, lasers
+are used to correct vision.'` in both the final and the draft wording);
 `test_promote_in_place_flips_bright_without_retype` and
 `test_final_replaces_provisional_in_place` (promotion — red if the promote
 re-types identical text or scrolls a draft into history);
@@ -88,7 +95,7 @@ Verified by: exporting the base commit (`git archive origin/main | tar -x -C
 (`uv run pytest -q tests/ --ignore=tests/test_pipeline.py
 --ignore=tests/test_asr_coalescing_pipeline.py`) in both trees, then comparing the
 failed-test ID sets — 8 failed/335 passed/13 skipped on `origin/main` (`ada82d4`)
-versus 8 failed/395 passed/13 skipped on this branch (`c8dce70`), the same eight
+versus 8 failed/420 passed/13 skipped on this branch (`d6def32`), the same eight
 IDs on both sides; red on any failing ID that appears only on the branch.
 
 ## Test plan
@@ -700,3 +707,120 @@ utterance-local sentence index, so one committed sentence of
 `zh_long_time_frontier` never displays at the shipped hold under the repo's own
 replay cadence (also reproducible at the model level in two utterances, holds
 3.5/5.0). Fix and regressions are named above; F-2 is resolved.
+
+## Stage Report: implementation (authorize: fix — stale utterance-local sentence index, R-1)
+
+- DONE: authorize: fix — the fresh re-validation passed F-1 but reports a second, different mechanism that loses content. Fix it; do not weaken AC-2.
+  Code commit `d6def32` on `wlk/caption-display-prb` (parent `5f3ebb7`). AC-2's four rules are byte-identical; its `Verified by:` clause now also names the two new regressions, and AC-4's stale branch figure is corrected. Nothing pushed.
+- DONE: Reproduce the validator's two-utterance case FIRST and show it red on current code.
+  `test_final_after_a_held_caption_displays_every_sentence[3.5]` and `[…-5.0]` fail on `5f3ebb7` (with the new tests present and only the source fix stashed): `['Beta one.']` never reaches the line — neither the final wording nor a draft wording. `[1.2]` passes, exactly the hold sensitivity the validator measured. Green after the fix at 1.2 / 2.0 / 3.5 / 5.0: `Alpha one. → Alpha two. → Beta one. → Beta two. → Beta three.`, in order.
+- DONE: My previous claim that this cell was wording-only was WRONG — say so.
+  It is content loss: at the shipped hold neither the final's `'In ophthalmic surgery, lasers are used to correct vision.'` nor the draft's `'In eye surgery, …'` ever reaches either line, and the actual mechanism is the stale utterance-local index, not `_amend_routed_sentence`. The F-1 commit neither caused nor fixed it (the drop reproduces with the `c8dce70` package).
+- DONE: Define the boundary rule from signals the stream actually has, and justify it in the code comments.
+  Rule below; stated in `_end_utterance_routing()`'s docstring and at the `cur_i` read site.
+- DONE: After the fix the golden sentence reaches the line at the shipped hold.
+  `zh_long_time_frontier` @ 3.5: `[+7.80] BRIGHT 'In ophthalmic surgery, lasers are used to correct vision.'` then `[+9.60] 'They treat myopia and hyperopia.'` (instrument trace); golden-wide, every sentence of every `translation_final` displays verbatim in all five goldens at holds 3.5 and 5.0 — zero missing.
+- DONE: Add a test for it, keep the F-1 invariant test and the four suites green, ruff clean.
+  13 new cases in `tests/test_caption_display.py`; four suites `84 passed` (was 71); `ruff check whisperlivekit/ tests/ scripts/` → `All checks passed!`; full documented suite `8 failed, 420 passed, 13 skipped` — the same eight pre-existing IDs as `origin/main`.
+- SKIPPED: push.
+  Dispatch says DO NOT PUSH; `d6def32` stays local, PR #449 untouched, no PR opened.
+
+### The boundary rule (chosen, and why the other signals cannot do it)
+
+`translation()` derives its enqueue start from `line_j` / `cur_i`, which are
+sentence POSITIONS in the utterance's own translation. The state that produced
+them (`_en_current_sent`, `_en_line_prov`, `_en_line_sent`,
+`_en_prev_sent_idx`, `_en_sent_texts`) is utterance-local, and the stream has
+no utterance identity, so it must die when the utterance does.
+
+**Rule: a `translation_final` ends the utterance, so it ends the routing.** The
+producer finalizes and resets the MT buffer at a segment boundary
+(`translation_processor.run_translation` → `validate_buffer_and_reset` on
+Silence / ChangeSpeaker / sentinel), so every translation event after a final
+describes new text. Implemented as one private `_end_utterance_routing()`
+called at both exits of `translation()`; it clears the five fields, so the next
+utterance's sentences start unindexed at 0 and `start` can never step over
+sentences this utterance has not displayed.
+
+The other signals were checked and rejected as boundaries, on the recorded
+streams:
+- `transcription_final` fires several times INSIDE one MT utterance — in
+  `zh_long_time_frontier` events 1/3/7/10/13/16 are all ASR commits of the
+  utterance whose MT final is event 17. It marks source commits, not MT
+  utterance ends (the MT sees a whole VAD segment).
+- `translation_provisional.committed` / `.source` reset just as much inside an
+  utterance as across one: `zh_long_canonical` events 6/7 have `committed=''`
+  mid-utterance, and it is `''` on both sides of a real boundary (final at 22 →
+  draft at 23). An empty `committed` means "a fresh segment", not "a new
+  utterance", so keying on a reset both fires falsely and misses boundaries.
+- `translation_provisional.fresh` is a cost flag (draft vs cached release), not
+  an identity: `fresh=False` appears mid-utterance (`canonical` 7, 10, 12) and
+  on the first draft of a new one (`canonical` 35).
+
+### Red before the fix (only the source fix stashed; the new tests in place)
+
+```
+FAILED tests/test_caption_display.py::test_final_after_a_held_caption_displays_every_sentence[3.5]
+FAILED tests/test_caption_display.py::test_final_after_a_held_caption_displays_every_sentence[5.0]
+FAILED tests/test_caption_display.py::test_golden_every_final_sentence_displays_verbatim[zh_long_time_frontier-hold3.5]
+3 failed, 63 passed
+```
+Independent reproducer (`/tmp/fix-r1/repro.py`, model-level, public API only)
+agrees on both shapes: two-utterance case loses `'Beta one.'` at 3.5/5.0, and
+the golden replay loses exactly one sentence at hold 3.5 (0 at 1.2/5.0).
+
+### Green after the fix
+
+- Four suites: `84 passed` (71 before: +3 parametrised cases +10 golden/hold
+  cases).
+- Documented full suite: `8 failed, 420 passed, 13 skipped` — the same eight
+  environment-dependent IDs as `origin/main` `ada82d4` (canary ×2, deepgram ×1,
+  qwen3 shims ×5), no branch-only failure.
+- Instrument: `scripts/replay_canonical_overlay.py` twice → byte-identical,
+  md5 `a7ed5390c6a2c27a03c8331926f823ce`, 44 lines — unchanged by this fix, so
+  AC-1's determinism artifact still holds.
+- No dim draft scrolls into history on any golden at holds 1.2/3.5/5.0 (0
+  occurrences; checked directly, since that golden invariant is only pinned on
+  `zh_long_canonical` by a test).
+
+### What changes in the reader-visible trace (only `zh_long_time_frontier` @ 3.5)
+
+Pre/post comparison of the shown-line lists for all five goldens at holds
+1.2/3.5/5.0: the only delta is `zh_long_time_frontier` @ 3.5.
+- Added (committed): `'In ophthalmic surgery, lasers are used to correct vision.'`
+  and its dim draft `'In eye surgery, lasers are used to correct vision.'`.
+- No longer shown: two DRAFT wordings, `'Dentists also use laser technology for
+  this.'` (dim) and `'This reduces bleeding, sweating, and pain.'` (a
+  draft-routed sentence, so it carried the bright style). Their sentences still
+  display in the final's wording — `'Dentists also use laser technology for oral
+  surgery.'` and `'It reduces bleeding, sweating, and pain.'` are both still in
+  the trace, and the golden-wide assertion is on final wording, which now has
+  zero gaps. So the delta is one recovered committed sentence plus one fewer
+  wrong-worded draft, not a swap of one caption for another.
+
+### Falsifiability (each mutation restored byte-for-byte; md5 `0d4c76b2…`)
+
+- Drop BOTH `_en_current_sent = -1` and `_en_line_prov = False` from the helper
+  (= the pre-fix tail) → the 3 new cases above red, nothing else. This is the
+  atomic mutation point: `cur_i` needs `_en_is_final and _en_line_prov and
+  _en_current_sent >= 0`, so dropping either field alone stays green (M1/M2
+  verified green) — the pair is one increment, not two.
+- Drop the `_end_utterance_routing()` call at the LEGACY exit only → green
+  (M3). Honest status: not independently falsifiable today, because any state
+  that can set `_en_current_sent` also fills `_en_sent_texts`, so a final that
+  takes the legacy branch (`len(sents) <= 1 and not _en_sent_texts`) cannot
+  carry stale routing. It is kept so the rule holds at every exit of
+  `translation()` rather than at one of the two — the reviewer can drop it as
+  one line if the redundancy is unwanted.
+
+### Left open (unchanged, still deferred — no new claim)
+
+- `F-2b` still reproduces exactly as the validator described: `preview("Alpha
+  one. Beta two. Gamma thre")` then `translation(...)` with no tick in between
+  displays only `'Gamma three.'` at holds 1.2/3.5/5.0. Different mechanism (the
+  `line_j` branch drops the leading draft-routed QUEUE items, not a stale
+  index), same-utterance, unreachable from the shipped instrument.
+- The pacing note from the F-1 cycle still applies: with no bound on the queue,
+  a producer that outruns the drainer deepens the backlog (the reader falls
+  behind) instead of losing captions. This fix can add one item to that backlog
+  in the cell above; it never removes one.
