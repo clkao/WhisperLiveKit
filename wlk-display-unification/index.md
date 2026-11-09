@@ -311,3 +311,91 @@ sets as before the rename. NOT pushed; awaiting FO review.
   `caption_display.py` together with the UI wiring that consumes it.
   Status: awaiting distinct FO authorization (fix / decline / hold / route for decision)
   before any candidate edit, commit, or reviewer rerun.
+
+## Stage Report: display-unification (cycle 8 — PR-A scope trim, authorized fix)
+
+Authorization: `fix — maintainer findings on PR #449 cycle 1. No scope change. Captain
+approved the split.` Disposition performed: reduce the branch to the caption event stream;
+`caption_display.py` leaves for PR-B with the UI wiring that consumes it.
+
+- DONE: PR branch trimmed to the event stream
+  Removed: `whisperlivekit/caption_display.py` (958 lines), `tests/test_caption_display.py`,
+  `tests/test_overlay_replay.py`, `tests/golden/*` (5 files),
+  `scripts/replay_canonical_overlay.py`. PR-B's seed is preserved two ways: stacked branch
+  `wlk/caption-display` (forked at 513b6fa, the last commit before the trim) and this
+  branch's own history.
+- DONE: the tap and its sink exist only when `--event-log` asks for them
+  `audio_processor.__init__`: `self._event_log = EventLog(path) if args.event_log else None`,
+  `self.event_tap = EventTap(sink=self._event_log)` — with the flag unset that is
+  `EventTap(sink=None)` and nothing else is allocated. `CaptionLineAccumulator` and
+  `audio_processor.caption_lines` are gone; `FanOutSink` went with them (once the
+  accumulator left it had no second sink).
+- DONE: `--event-log` appends one JSONL line per event, flushed per line
+  `EventLog` is a file sink now: opens `PATH` in append mode, writes `json.dumps(...) + "\n"`
+  and flushes inside `emit()`. No in-memory list, no `save()`, no `load()` (the goldens that
+  used `load()` moved to PR-B and nothing else needed it). A write error disables the log
+  with one warning instead of ending a live session; the handle is closed in `cleanup()`
+  after the producer tasks have stopped.
+- DONE: `test_harness.py`'s `TestState.display` hunk dropped
+  The `dataclasses` import, the `display` field and the accumulator snapshot in
+  `_collect_results` are gone; the file is now byte-identical to origin/main.
+- DONE: `--event-log` documented
+  `parse_args` help (append, written as each event is emitted, sessions sharing one PATH
+  interleave lines) plus a `## Caption event log` section in `docs/configuration.md`
+  (line shape, append mode, the interleaving caveat, off-by-default, write-failure
+  behaviour) and a row in the Common settings table.
+- DONE: `test_caption_events.py` / `test_translation_emission.py` kept, adapted
+  The accumulator and stream-comparison tests left with the display module and goldens;
+  what remains covers the event payload, tap no-op/forwarding/blank-text filtering, and the
+  `EventLog` sink (per-event append, append across restarts, emit-after-close,
+  write-error degradation). `test_translation_emission.py` used the old in-memory
+  `EventLog()` as a recording sink; that is now a local `_Recorder` test double — its
+  assertions are unchanged.
+
+### Proof (exactly as run; no overclaim)
+
+- Targeted selection PASSED:
+  `pytest -q tests/test_caption_events.py tests/test_translation_emission.py tests/test_backends.py -p no:randomly`
+  → **51 passed in 3.45s**.
+- `ruff check .` → **clean** (rc=0, "All checks passed!").
+- Append-per-event proven **hermetically**:
+  `tests/test_caption_events.py::TestEventLog::test_two_events_are_two_lines_before_close`
+  constructs the sink on a `tmp_path`, emits two events, and reads the file **while the sink
+  is still open**, asserting two newline-terminated JSONL lines. That is the maintainer's
+  property — written as emitted, not save-on-cleanup — proven without any live session.
+- Live `--event-log` session run: **NOT performed.** This agent sandbox has no microphone,
+  so a live run is impossible here. Do not read this report as claiming one. If a live check
+  is wanted, the FO must run it on a machine with mic access
+  (`wlk serve --event-log /tmp/ev.jsonl ...` and watch the file grow).
+- Full suite: **cannot serve as evidence here.** 4 tests in
+  `tests/test_asr_coalescing_pipeline.py` error during setup with
+  `RuntimeError: Failed to download any test samples` (`whisperlivekit/test_data.py:311`);
+  this sandbox cannot fetch the samples, so those tests sit in network timeouts. These
+  errors are environmental and pre-existing, not PR-A regressions.
+- Supplementary context (recorded earlier in this cycle against 7394a9b, i.e. before the
+  test-only commit 80a040b; NOT re-run against the final tree): branch
+  `3 failed / 331 passed / 12 skipped / 4 errors` vs a detached worktree at the merge-base
+  363e4f6 with the same interpreter `3 failed / 314 passed / 12 skipped / 4 errors`. The
+  failure+error set is identical (canary x2, deepgram, the 4 sample-download errors) and the
+  17-test delta is exactly `tests/test_caption_events.py` + `tests/test_translation_emission.py`.
+  Treat the targeted selection above as the binding evidence; this line is context only.
+
+### Branch state
+
+- `wlk/display-unification` tip **80a040b** (7394a9b = the trim, 80a040b = the hermetic
+  append-per-event test). Worktree clean. NOT pushed; PR #449 not touched — FO publishes.
+- PR-B seed branch `wlk/caption-display` created at 513b6fa (pre-trim), not pushed.
+
+- FAILED: none
+
+### Summary
+
+Cycle 8 executes the authorized fix. The branch now ships one thing: the caption event
+stream — `caption_events.py` (event payload, no-op-able `EventTap`, append-and-flush JSONL
+`EventLog`), the emission points in `audio_processor.py` / `translation_processor.py`, the
+`provides_drafts` + `progress()` backend contract, and the documented `--event-log` flag.
+Nothing allocates per-session display state any more, and `--event-log` writes every event
+to disk as it happens instead of growing a list that nothing saved. The display model and
+its goldens/replay tests are parked on `wlk/caption-display` for PR-B with the UI wiring
+that consumes them. Proof is the targeted test selection (51 passed), ruff clean, and the
+hermetic unclosed-sink test; no live run was performed because the sandbox has no mic.
