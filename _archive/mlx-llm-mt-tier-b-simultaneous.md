@@ -1,6 +1,6 @@
 ---
 title: "mlx-llm-mt Tier B: simultaneous MT via AlignAtt commit policy (in-process, no sidecar)"
-status: validation
+status: done
 source: prototype — port livecaption's simultaneous MT into mlx-llm-mt as the stable test path
 score: 0.8
 id: ksxw8mezhk10fzx2yw7mfvj7
@@ -56,9 +56,12 @@ gates:
                 reason: 'Cycle-3 codex validator PASSED all checks, no blockers. 55/55 tests, ruff clean, no vocab/scope leakage (8 simul-layer files after the rebase onto PR1 tip 3aa3fa4). Registry key normalized to model id hy-mt2-1.8b; 4bit disabled via CalibrationEntry.disabled_quants; cli.py scope strictly --simultaneous. AC-1 live E2E SKIPPED (needs ASR backend on separate branch + mic). 4bit proxy caveat accepted. Captain override: the rebase to stack PR2 onto current PR1 moved the branch tip 27089d7 -> 20fd2e2; approve the rebased tip (same tree, same substance — 56 tests pass on the rebased branch). Approve to done; proceed to pr-merge ceremony.'
               application:
                 target-stage: done
-                state: pending
-mod-block: merge:pr-merge
+                state: consumed
+mod-block:
 pr: pr-merge:423
+verdict: PASSED
+completed: 2026-11-09T00:06:02Z
+archived: 2026-11-09T00:06:03Z
 ---
 
 Port livecaption's `simul_mt.py` simultaneous-MT mechanism into the
