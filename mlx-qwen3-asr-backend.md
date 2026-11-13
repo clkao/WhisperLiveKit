@@ -427,3 +427,8 @@ Run facts: authoritative run used the shared interpreter `/Users/clkao/git/asr/W
 
 Completed the crash-interrupted 0.4.4 adaptation on `mlx-qwen3-asr-backend`: the pin and lock are consistent, the finalize path relies on 0.4.x's window+tail re-decode and commits only the delta, upstream issue #31 is absorbed as an append keyed on the commit's source text instead of raising, and a pause whose tail is under the log-mel floor ends the segment without a decode. Code committed as `ead11b2` on top of the preserved WIP `4ebb18b`; the FLEURS quality number stays with validation.
 - Carry note: this worktree's `mlx-qwen3-asr-backend` is based on `wlk/integration-2` (`9d366f9`), so `git diff origin/main..HEAD` spans 148 files. The PR carve onto `origin/main` is a separate step; the part that must travel from this stage is `pyproject.toml` + `uv.lock` (`4ebb18b`) and `whisperlivekit/asr_mlx_qwen3.py`, `tests/test_mlx_qwen3.py`, `docs/backends.md`, `whisperlivekit/parse_args.py` (`ead11b2`).
+
+Repro of the runs above (from the code worktree; `/tmp/wlk044` holds the 0.4.4 wheel via `uv pip install --offline --no-deps --target`, `/tmp/wlkrunsite` and `/tmp/wlknomlx` are one-line `sitecustomize.py` shims that defeat the shared venv's PEP 660 finder and optionally block `mlx`):
+- `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite /Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python -m pytest tests/test_mlx_qwen3.py -q -rs` → 19 passed
+- `PYTHONPATH=/tmp/wlknomlx:/tmp/wlkrunsite /Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python -m pytest tests/test_mlx_qwen3.py -q` → 14 passed, 5 skipped
+- `UV_NO_CONFIG=1 .venv/bin/python -m ruff check whisperlivekit/asr_mlx_qwen3.py tests/test_mlx_qwen3.py whisperlivekit/parse_args.py` → clean
