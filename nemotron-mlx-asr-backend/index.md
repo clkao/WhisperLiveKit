@@ -989,3 +989,54 @@ state forward — that polluted base is why the pairs looked load-bearing. Moved
 eight acceptance criteria into the top-level block in the bold form the scanner
 recognises (0 -> 8 criteria), corrected AC-6's evidence clause to the measured delta,
 and recorded here which superseded statements this cycle replaces.
+
+## Stage Report: implementation (cycle 4 — AC-2 evidence)
+
+- DONE: The completed AC-2 test is committed on the feature branch with the candidate's behaviour unchanged, so the working tree is clean and the branch tip carries the evidence.
+  Commit 0227da6 on `nemotron-standalone` (`test(nemotron-mlx): pin AC-2 token times
+  mid-utterance`) adds only `tests/test_asr_nemotron_mlx.py` (+24);
+  `whisperlivekit/asr_nemotron_mlx.py` is untouched between 6f32e30 and 0227da6, so the
+  candidate did not move to make the test pass. `git status --porcelain` is empty at the
+  tip. `test_token_starts_are_populated_and_monotonic_before_finish` asserts what AC-2
+  asks: four 1280-sample frames go through `process_iter()` only (asserted mid-utterance
+  by `online._encoder is not None` — `finish()` never ran), and the four returned tokens
+  must carry non-None starts *and* ends, non-decreasing starts and ends, starts distinct
+  per frame, and exactly `[0.0, 0.08, 0.16, 0.24]` / `[0.08, 0.16, 0.24, 0.32]`. Suite
+  green at the tip: 4 passed (`PYTHONPATH=<worktree> .venv/bin/python -m pytest
+  tests/test_asr_nemotron_mlx.py -q`), `ruff check` clean.
+- DONE: The implementation stage report cites the AC-2 test against AC-2, records the falsifiability exercise (the drop, collapse and reverse mutations and how each fails the test), documents the livecaption lineage of AlignedToken and _hypothesis against this port's ASRToken start and end, states what was re-verified in this increment versus inherited, and is committed and pushed to the state branch.
+  AC-2's proof clause ("a unit test mocking the model's encoder/decoder/joint that drives
+  `_decode_chunk` and asserts the committed token list carries non-None, monotonically
+  non-decreasing `start` values mid-utterance (before `finish`)") is satisfied by that
+  test: the fixture mocks encoder/decoder/joint, `process_iter()` reaches
+  `_decode_chunk`, and the assertions run before `finish()`. **Falsifiability** (throwaway
+  pytest plugin at `/tmp/falsify_nemotron/falsify_ac2.py`, outside the worktree, patches
+  `_decode_chunk` before the module import; nothing committed from it): `drop` (start =
+  None) fails at `assert all(start is not None …)`; `collapse` (every start 0.0) fails at
+  `each frame must carry its own start time` (`assert 1 == 4`); `reverse` fails at
+  `token starts must not go backwards` (`[0.24, 0.16, 0.08, 0.0]` vs `[0.0, 0.08, 0.16,
+  0.24]`). Control run with the plugin loaded and no mutation: 4 passed — the plugin
+  alone does not fail the suite. **Lineage** (recorded for the captain; the AC-2 sentence
+  is captain-owned and is NOT rewritten): AC-2's parenthetical names `AlignedToken` and
+  `_hypothesis`, which are `livecaption/livecaption/asr.py` internals (`self._hypothesis`
+  at line 380, appended in `_decode_chunk` at 863, consumed in `_finalize` at 510/541).
+  This port has no hypothesis list: `NemotronMLXOnlineProcessor._decode_chunk` returns
+  `ASRToken(start=…, end=…)` per decode call and keeps only `_last_token` /
+  `_decoder_hidden` as state, so the equivalent of `AlignedToken.start` is `ASRToken.start`
+  on the tokens `process_iter()` / `start_silence()` / `finish()` return, and "mid-utterance,
+  before finalization" is a `process_iter()` result before any `finish()`. **Re-verified
+  this increment**: the AC-2 test and suite (4 passed at 0227da6) and the three mutation
+  runs. **Inherited, not re-measured** (no code file changed, so not invalidated): AC-7's
+  three-clip FLEURS bench and its pre-fix falsification, AC-8's figures against
+  `benchmarks/evaluations/m5-20261107/REVIEW.md`, AC-1's live Mandarin run, and the
+  real-time and Mandarin boundary runs the cycle-2 report lists as residual.
+
+### Summary
+
+This increment did one thing: it landed the missing AC-2 proof. The decode already
+populated `ASRToken` times mid-utterance; the criterion's named test did not exist, which
+is why the scanner reported AC-2 `unevidenced` after cycle 3. The test is now on the
+branch (0227da6) with the candidate byte-identical, falsified three ways, so AC-2 has
+executable evidence rather than a code reading. The one thing an independent reviewer
+should rule on is wording, not behaviour: AC-2's named symbols are livecaption's, and the
+port's equivalents are recorded above.
