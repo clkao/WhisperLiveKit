@@ -67,7 +67,7 @@ gates:
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
-worktree: .worktrees/spacedock-ensign-nemotron-mlx-asr-backend
+worktree: .worktrees/nemotron-standalone
 pr: "#426"
 ---
 
