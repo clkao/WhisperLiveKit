@@ -119,10 +119,46 @@ This is the research-enabling backend: it unlocks the `AccessibleBoundary` adapt
 
 ## Acceptance criteria
 
-- AC-1: `wlk serve --backend nemotron-mlx-asr --language zh` transcribes Mandarin in-process, no torch/transformers/nemo_toolkit/WebSocket sidecar.
-- AC-2: per-token timestamps (`AlignedToken.start`) are populated during the decode, not just at finalization (verifiable via a test that inspects `_hypothesis` mid-utterance).
-- AC-3: the backend coexists with mlx-lm and the mlx-llm-mt backend on the same transformers 5.x.
-- AC-4: a second language (en, or auto) transcribes correctly (the model is multilingual, 40 locales).
+- **AC-1**: `wlk serve --backend nemotron-mlx-asr --language zh` transcribes Mandarin
+  in-process, no torch/transformers/nemo_toolkit/WebSocket sidecar.
+  **Verified by:** a TestHarness (or `wlk-test`) feed of Mandarin audio producing
+  non-empty committed text; an import check that `asr_nemotron_mlx` pulls only
+  `mlx` + `mlx_audio` (no `torch`/`transformers`/`nemo_toolkit` in the import graph).
+- **AC-2**: per-token timestamps (`AlignedToken.start`) are populated during the decode,
+  not just at finalization (verifiable via a test that inspects `_hypothesis`
+  mid-utterance).
+  **Verified by:** a unit test mocking the model's encoder/decoder/joint that drives
+  `_decode_chunk` and asserts the committed token list carries non-None, monotonically
+  non-decreasing `start` values mid-utterance (before `finish`).
+- **AC-3**: the backend coexists with `mlx-lm` and the `mlx-llm-mt` (hunyuan-mlx) backend
+  on transformers 5.x.
+  **Verified by:** `uv sync --extra nemotron-mlx-asr --extra mlx-llm-mt` resolves; both
+  backend modules import in the same interpreter without conflict.
+- **AC-4**: a second language (en, or auto) transcribes correctly (the model is
+  multilingual, 40 locales).
+  **Verified by:** a TestHarness run with `--language en` on English audio producing
+  committed text; the model's `prompt_dictionary` is respected.
+- **AC-5**: the branch stands alone on `main` — no `asr_mlx_qwen3.py`, no
+  `test_mlx_qwen3.py`, no `mlx-qwen3-asr` extra or conflict member, and
+  `git diff --stat main` lists only Nemotron files.
+  **Verified by:** the diff listing; `git grep mlx-qwen3-asr` over the branch returns
+  only pre-existing main content.
+- **AC-6**: `uv.lock` is CI-consistent.
+  **Verified by:** `UV_NO_CONFIG=1 uv lock --check` exits 0 on Python 3.12 and 3.13, with
+  the lock regenerated from `origin/main`'s lock and never from an existing branch lock;
+  against `origin/main` the lock adds `mlx-audio 0.5.9`, `miniaudio 1.73`,
+  `httpx2-jsfetch 1.0` and `win32-setctime 1.2.1`, re-keys the `torch`/`torchaudio`
+  source forks to `download.pytorch.org/whl/cpu` at unchanged versions, and changes no
+  existing package version.
+- **AC-7**: no double space at an utterance boundary, verified end-to-end.
+  **Verified by:** a bench run of the `nemotron-mlx-asr` backend on
+  `fleurs_en_1682`, `fleurs_en_1700`, `fleurs_en_1711` from the M5 evaluation: 0
+  occurrences of `'  '` in every hypothesis, WER identical to the recorded reports
+  (39.39 / 0.00 / 8.82). Fails on the pre-fix source (4 occurrences).
+- **AC-8**: `docs/backends.md` states the low-latency / French-and-Chinese-strong
+  framing with the report's numbers and does not claim a general replacement.
+  **Verified by:** reading the section against
+  `benchmarks/evaluations/m5-20261107/REVIEW.md`.
 
 ## Test plan
 
@@ -841,3 +877,115 @@ candidate package and "passes" — the pre-fix falsification must be run from a
 copy of the test file outside the worktree. Recommendation: **PASSED**, with the
 pyproject conflict-pair visibility question left to the captain as a
 recommendation only.
+
+## Stage Report: implementation (cycle 3 — authorized scope correction)
+
+- DONE: pyproject.toml carries only this backend's uv additions: both non-Nemotron
+  conflict pairs are gone, uv.lock is regenerated under UV_NO_CONFIG=1,
+  UV_NO_CONFIG=1 uv lock --check is green on 3.12 and 3.13, zero existing package
+  versions change, the nvidia (39) / cuda-toolkit 13.0.2 / torch 2.11.0+cu129 set is
+  unchanged, and the resulting package delta is stated honestly in the stage report.
+  Commit 6f32e30. `canary`↔`diarization-diart` and
+  `diarization-diart`↔`diarization-sortformer` deleted; the pyproject diff against
+  `origin/main` is now exactly the `nemotron-mlx-asr` extra plus its three conflict
+  pairs. Lock REGENERATED FROM `git show origin/main:uv.lock` — the branch's own
+  lock is the wrong base (see "Correction record"); re-locking from it reproduces
+  the reviewer's numbers (393 packages, 26 `nvidia-*`, cuda-toolkit 12.9.1 only, 13
+  cu13 wheels dropped) purely from uv's minimal-change resolver carrying the stacked
+  lock's fork state forward. From main's lock: 407 entries, `nvidia-*` = 39 identical
+  to main, cuda-toolkit 12.9.1 + 13.0.2, `torch` 2.11.0+cu129 present, and **zero**
+  existing packages change version. `--check` exits 0 under `--python` 3.11, 3.12 and
+  3.13 (407 packages each). Honest delta vs `origin/main`: +`mlx-audio 0.5.9`,
+  +`miniaudio 1.73`, +`httpx2-jsfetch 1.0`, +`win32-setctime 1.2.1`, plus
+  `torch`/`torchaudio` source-fork re-keying (+torch 2.11.0 and 2.8.0 whl/cpu,
+  +torchaudio 2.11.0 whl/cpu; −torch 2.8.0 and −torchaudio 2.8.0 pypi) at unchanged
+  versions. Control runs: a 5-pair lock, a 3-pair lock and a 5→3 transition, all
+  resolved from main's lock, produce an identical package set (lockdiff on parsed
+  TOML: 0 added, 0 removed, 0 version changes; only marker text naming the pairs
+  differs). AC-3's coexistence check was run: `uv sync --dry-run --extra
+  nemotron-mlx-asr --extra mlx-llm-mt` resolves (mlx 0.31.2 satisfies both ranges);
+  so do `--extra diarization-diart
+  --extra diarization-sortformer` and `--extra canary --extra diarization-diart`,
+  the two combinations whose pairs were removed.
+- DONE: AC-5 through AC-8 sit in the entity's top-level Acceptance criteria block in
+  the same bold form as the earlier criteria, and spacedock status --read --ac-scan
+  --json returns all eight criteria with their Verified-by clauses intact.
+  All eight are `- **AC-N**:` in the top-level block with a `**Verified by:**`
+  continuation (8/8 present). Scanner now returns `count: 8` at lines 122/127/133/
+  137/141/146/153/158; it returned `acs: []` before. The format was established
+  empirically, not guessed: a probe file showed the scanner recognises
+  `- **AC-N**:`, `- **AC-N (title)**:` and `- **AC-N:**`, and ignores plain
+  `- AC-N:` / `- AC-4 (titled):` — which is why AC-1..AC-4 returned nothing.
+  AC-1..AC-4 keep their original criterion sentences verbatim and gained the
+  Verified-by clauses already authored for them; AC-5, AC-7 and AC-8 were moved
+  unchanged. Only AC-6's Verified-by was corrected (see next item). AC-5..AC-8
+  remain visible in the ideation stage report as historical record rather than being
+  deleted, per the "do not rewrite prior stage reports" instruction; the top-level
+  block is the scan-authoritative one.
+- DONE: The implementation disclosure and the two report inaccuracies are corrected
+  (13 not 11 nvidia wheels, and the nemo-toolkit[asr] justification dropped), with
+  the stage report recording what was re-verified versus inherited.
+  Corrected per the FO's authorization to prefer measurement over the package text:
+  the disclosure is rewritten to the measured finding instead of to "13 not 11",
+  because neither figure is right in the corrected state — zero cu13 wheels are
+  dropped and cuda-toolkit is untouched, since the pairs never affected resolution.
+  Both inaccuracies are nonetheless addressed: the cu13 count is removed rather than
+  restated (the enumeration is 13, not 11, whenever it is reproducible at all), and
+  the "canary and diarization-sortformer both need `nemo-toolkit[asr]`" justification
+  is dropped entirely, since a shared dependency is not a conflict. AC-6's
+  Verified-by ("adds only `mlx-audio` and `miniaudio`") was measurably false once
+  corrected, so it now states the four-package delta and the source-fork re-keying;
+  AC-6's criterion ("`uv.lock` is CI-consistent") is untouched. Re-verified in this
+  cycle: the lock delta and reproducibility, the AC scanner, registration imports
+  (`tests/test_backends.py tests/test_session_context.py` -> 47 passed, 1 skipped) and
+  `tests/test_asr_nemotron_mlx.py` (3 passed). NOT re-verified, inherited: AC-7's
+  three-clip FLEURS bench and its pre-fix falsification, AC-8's figures against
+  `benchmarks/evaluations/m5-20261107/REVIEW.md`, AC-1's live Mandarin run, and the
+  real-time and Mandarin boundary runs the cycle-2 report already lists as residual.
+  No code file changed this cycle, so those results are not invalidated — but they
+  are carried, not re-measured.
+
+### Correction record
+
+Superseded by this report: (a) the prior implementation (standalone rebase) report's
+disclosure that the pairs are "load-bearing… removing them… drops 11 `nvidia-*` cu13
+wheels, changes `cuda-toolkit` 12.9.1+13.0.2 -> 12.9.1 and adds unrelated
+`httpx2-jsfetch` / `win32-setctime`; keeping the declarations is what holds the lock
+delta to the two new packages", and its "both need `nemo-toolkit[asr]`" conflict
+justification — the pairs change no package and no version; the 13-wheel drop is
+reproducible only from the stacked branch's old lock; (b) that report's Summary line
+"Two non-Nemotron conflict pairs in pyproject are disclosed and measured as necessary
+to keep that delta minimal", and its "exactly `mlx-audio 0.5.9` + `miniaudio 1.71`"
+delta — the two-package/1.71 delta was itself a stacked-lock artifact, so the
+four-package/1.73 delta is what this backend costs regardless of the pairs; (c) the
+ideation block's AC-6 Verified-by "the diff adds only `mlx-audio` and `miniaudio`",
+corrected in the top-level block only.
+
+Residual for validation: with the pairs gone the lock delta is four packages, and I
+could not show that removing them changes resolution in any direction — both pairs
+and their absence resolve to the same 407-package set from main's lock. Removal is
+therefore scope hygiene, not a behavioural fix: the captain's direction was "make the
+uv stick to the fresh branch", and the pairs were non-Nemotron members inherited from
+the stacked branch, so they go. The counter-reading is fair and stated plainly: if
+inertness is the whole finding, one could argue leaving them costs nothing either —
+the case for removal rests on scope ownership, not on measured harm.
+
+Second residual, unrelated to this correction and surfaced only because the new
+scanner makes it visible: AC-2 is `unevidenced` — `tests/test_asr_nemotron_mlx.py`
+holds three tests (partial-frame drain at pause/EOF, one-space boundary, interleaved
+per-session decoder state) and none asserts non-None monotonically non-decreasing
+`AlignedToken.start` mid-utterance, which is AC-2's stated proof. The per-token
+timestamps are populated in `asr_nemotron_mlx.py`'s decode loop, but the criterion's
+named test does not exist. AC-3 moved to evidenced via the `uv sync` run above.
+
+### Summary
+
+Removed the two inherited non-Nemotron uv conflict pairs and re-locked from pristine
+`origin/main`, which is the only base that reproduces the true delta: four added
+packages, no version changes, the 39-package `nvidia-*` set and cuda-toolkit 13.0.2
+intact. Both the earlier report and the validation reviewer measured a real cu13 drop,
+but from the stacked branch's lock, where uv's minimal-change resolver carries fork
+state forward — that polluted base is why the pairs looked load-bearing. Moved all
+eight acceptance criteria into the top-level block in the bold form the scanner
+recognises (0 -> 8 criteria), corrected AC-6's evidence clause to the measured delta,
+and recorded here which superseded statements this cycle replaces.
