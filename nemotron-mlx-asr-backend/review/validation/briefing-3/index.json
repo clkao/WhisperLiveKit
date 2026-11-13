@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-3:revision-1",
+  "question": "Should the standalone nemotron-mlx branch be delivered after removing the non-Nemotron uv conflict pairs and regenerating the lock?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/aa67274a23caa8b935cce9433a6db9fe58c79617/nemotron-mlx-asr-backend/index.md",
+      "rev": "sha256:3429004bb360907ed87f3f98cd8a19b86161e095f9e4574d577ccb311620d5be",
+      "mediaType": "text/markdown",
+      "summary": "Validation cycle 2 reproduced AC-5 to AC-8 independently and closed the real-time-feed and Mandarin gaps. Rejected on scope: pyproject.toml still carries canary by diarization-diart and diarization-diart by diarization-sortformer, inherited from the stacked branch, which the captain directed be removed so the uv delta stays on this branch. Removal is safe: a re-lock from pristine main with only the Nemotron addition leaves the 39-package nvidia set, cuda-toolkit 13.0.2 and torch 2.11.0+cu129 identical with zero version differences; the cost is two transitive entries and miniaudio 1.71 to 1.73. Also outstanding: AC-5..AC-8 sit in the ideation report instead of the top-level criteria block, so the AC scan returns none."
+    }
+  ]
+}

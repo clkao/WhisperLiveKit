@@ -73,6 +73,11 @@ gates:
                 by: agent:first-officer
                 at: "2026-11-13T23:41:14.767633Z"
                 reason: briefing bound before the gate room-ref format was repaired; re-preparing
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-validation-3
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-3:revision-1
+                digest: sha256:ad734acbfefe5102a44da43f5476fe3c7963ee79c7e778a91798d57cc4c1cc6a
+                room-ref: '@review/validation/briefing-3'
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
