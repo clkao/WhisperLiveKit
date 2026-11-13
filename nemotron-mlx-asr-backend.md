@@ -69,6 +69,10 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-2:revision-1
                 digest: sha256:84a0a04cedf257593fb33a720a1bbd308db9f836e1efef933f7f4dd76684bf9e
                 room-ref: '@review/validation/briefing-2'
+              withdrawal:
+                by: agent:first-officer
+                at: "2026-11-13T23:41:14.767633Z"
+                reason: briefing bound before the gate room-ref format was repaired; re-preparing
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
