@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-2:revision-1",
+  "question": "Does the validation evidence authorize delivering the standalone nemotron-mlx backend, and what is the disposition of the non-Nemotron conflict pairs the branch still carries in pyproject.toml?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/e3b4d2bf8e64a0cef3b358be033f0e45a1a5b03e/nemotron-mlx-asr-backend.md",
+      "rev": "sha256:a2953a51bebc886a6761436abd0717a8f91c47c59b9ab062dabb9b3621eb3480",
+      "mediaType": "text/markdown",
+      "summary": "Validation cycle 2 independently reproduced AC-5 to AC-8 and closed the two gaps implementation left unmeasured (real-time feed, Mandarin boundary). The branch is 12 files against origin/main with no mlx-qwen3 member; lock checks are green on 3.11/3.12/3.13 with a two-package delta and zero version changes; the double-space fix holds end-to-end at immediate and real-time feed (4 to 0) and on Mandarin (8 to 0) with WER and CER unchanged. Open item: pyproject.toml still carries two conflict pairs that are not Nemotron members, inherited from the stacked branch. The reviewer called deletion unsafe and recommended keep-with-comment or split-into-own-commit; that basis does not reproduce. A re-lock from pristine main with only the Nemotron addition leaves the 39-package nvidia set identical, cuda-toolkit 13.0.2 and torch 2.11.0+cu129 unchanged, and zero version differences; the real cost is two extra transitive entries (httpx2-jsfetch, win32-setctime) and miniaudio 1.71 to 1.73. The captain directed that the uv changes stick to the fresh branch, so the recommended request is revise back to implementation for deletion plus a regenerated lock and a corrected disclosure."
+    }
+  ]
+}

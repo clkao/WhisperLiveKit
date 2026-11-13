@@ -64,6 +64,11 @@ gates:
                 at: "2026-08-27T21:41:44.755864Z"
                 decision: revise
                 reason: 'Reject to implementation. One real code fix: AC-1 — NemotronMLXASR.__init__ validates lan against prompt_dictionary directly but the model has zh-CN/zh-ZH, not zh. Livecaption''s normalize_asr_language (livecaption/livecaption/languages.py) maps zh→zh-CN before the check; the nemotron backend skipped this. Fix: add the language normalization before the validation (import or replicate normalize_asr_language; map zh→zh-CN, en→en-US, etc.). AC-3 note: the uv sync failure is the pre-existing qwen3-streaming vs mlx-llm-mt conflict (the known --frozen issue), not the nemotron extra''s fault — the nemotron extra is pure MLX (mlx + mlx-audio). The submodule is now initialized. Re-verify AC-3 by checking the nemotron extra''s deps in isolation, not the full --extra mlx-llm-mt --extra qwen3-streaming tree.'
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-validation-2
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-2:revision-1
+                digest: sha256:84a0a04cedf257593fb33a720a1bbd308db9f836e1efef933f7f4dd76684bf9e
+                room-ref: '@review/validation/briefing-2'
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
