@@ -208,6 +208,23 @@ the `voxtral_mlx_asr.py` / `qwen3_streaming` shape:
   multilingual, 40 locales).
   **Verified by:** a TestHarness run with `--language en` on English audio producing
   committed text; the model's `prompt_dictionary` is respected.
+- **AC-5**: the branch stands alone on `main` — no `asr_mlx_qwen3.py`, no
+  `test_mlx_qwen3.py`, no `mlx-qwen3-asr` extra or conflict member, and
+  `git diff --stat main` lists only Nemotron files.
+  **Verified by:** the diff listing; `git grep mlx-qwen3-asr` over the branch returns
+  only pre-existing main content.
+- **AC-6**: `uv.lock` is CI-consistent.
+  **Verified by:** `UV_NO_CONFIG=1 uv lock --check` exits 0 on Python 3.12 and 3.13;
+  the diff adds only `mlx-audio` and `miniaudio` and changes no existing version.
+- **AC-7**: no double space at an utterance boundary, verified end-to-end.
+  **Verified by:** a bench run of the `nemotron-mlx-asr` backend on
+  `fleurs_en_1682`, `fleurs_en_1700`, `fleurs_en_1711` from the M5 evaluation: 0
+  occurrences of `'  '` in every hypothesis, WER identical to the recorded reports
+  (39.39 / 0.00 / 8.82). Fails on the pre-fix source (4 occurrences).
+- **AC-8**: `docs/backends.md` states the low-latency / French-and-Chinese-strong
+  framing with the report's numbers and does not claim a general replacement.
+  **Verified by:** reading the section against
+  `benchmarks/evaluations/m5-20261107/REVIEW.md`.
 
 ### Test plan
 
@@ -574,3 +591,121 @@ Round 3 eliminates the dim→bright identical-content retype by promoting the wa
 ### Summary
 
 Flipped the user-facing frontier default per the captain's approval: "auto" now selects the time frontier for every simul-capable backend; text stays available via --simul-frontier text. The engine constructor default remains "text" (internal safety net; core.py always passes the resolved value explicitly). Text-mode behavior itself untouched — fixture replay byte-identical. Residual: single-run coverage on this clip varies 0.60-0.87 with machine thermal state; the multi-run record for time mode is 0.80-0.87 vs text 0.63-0.69.
+
+## Stage Report: implementation (standalone rebase — dispatch nemotron-mlx-asr-backend-implementation)
+
+This stage verified the four commits already on `nemotron-standalone`
+(338251e extra/conflicts, 095ab24 backend, a091254 docs, dfe842d boundary fix)
+against the artifacts rather than re-implementing them. One new commit,
+01e3547, carries the two defects the verification found.
+
+- DONE: The branch stands alone on current main: the diff against main lists only
+  Nemotron files and no mlx-qwen3-asr adapter, test, extra or uv conflict member
+  remains, and `UV_NO_CONFIG=1 uv lock --check` exits 0 on Python 3.12 and 3.13.
+  `git diff --name-status origin/main` is 12 files (docs/backends.md,
+  pyproject.toml, tests/test_asr_nemotron_mlx.py, uv.lock,
+  whisperlivekit/{asr_nemotron_mlx.py new, backend_support.py,
+  benchmark/compat.py, cli.py, config.py, core.py, parse_args.py,
+  session_asr_proxy.py}); no `asr_mlx_qwen3.py`, no `test_mlx_qwen3.py`. The
+  branch is 0 behind / 5 ahead of `origin/main` (1b2986d); the local `main` ref in
+  this checkout is stale at ed571b6 (fork/main), so every check used `origin/main`.
+  `git grep -l 'mlx-qwen3-asr\|mlx_qwen3' HEAD` intersected with
+  `git diff --name-only origin/main` is empty — every surviving mention is in
+  files the branch does not touch (benchmarks/evaluations/**, corpora,
+  benchmark/metrics.py's package-name list). `UV_NO_CONFIG=1 uv lock --check`
+  exits 0 under `--python` 3.11, 3.12 and 3.13 (404 packages) and
+  `UV_NO_CONFIG=1 uv lock --dry-run` reports "No lockfile changes detected".
+  Lock content diff, parsed with tomllib on both sides: 402 -> 404 packages,
+  exactly `mlx-audio 0.5.9` and `miniaudio 1.71` added, none removed, and **zero**
+  existing packages changed version; the 29k-line diff is `resolution-markers`
+  and dependency-marker text for existing packages growing by one extra, plus the
+  new conflict entries. Disclosure: pyproject.toml adds two conflict pairs that
+  are not Nemotron members — `canary`↔`diarization-diart` and
+  `diarization-diart`↔`diarization-sortformer`. They are load-bearing, not
+  cosmetic: removing them and re-locking under `UV_NO_CONFIG=1` makes uv satisfy
+  canary and diart in one universe (diart pins `torch<2.9.0`), which drops 11
+  `nvidia-*` cu13 wheels, changes `cuda-toolkit` 12.9.1+13.0.2 -> 12.9.1 and adds
+  unrelated `httpx2-jsfetch` / `win32-setctime`; keeping the declarations is what
+  holds the lock delta to the two new packages. They are also true install
+  conflicts (diart pins `torch<2.9.0`; canary and diarization-sortformer both need
+  `nemo-toolkit[asr]`). Commit 338251e's message does not mention them; recorded
+  here instead of rewriting history.
+- DONE: No double space at an utterance boundary, proven end-to-end through the
+  real pipeline on the named FLEURS clips rather than a mocked vocabulary: zero
+  occurrences of two consecutive spaces in every hypothesis and WER identical to
+  the recorded reports (39.39 / 0.00 / 8.82).
+  The three recordings are present locally as `.pcm.wav`
+  (`~/.cache/whisperlivekit/benchmark_data/fleurs_v1/en_us/`
+  {9924305423057523453, 15228527404193944906, 1043394666292127188}), and their
+  sha256 equal the corpus manifest's `audio_sha256`, so the FO's
+  substitute-`.wav` / `audio_sha256: ""` workaround was not needed: the reproducer
+  manifest is the three real rows cut from `benchmarks/corpora/fleurs-90.json`,
+  and hash verification stayed live (each report row carries the matching
+  `audio_sha256`). `wlk bench --backend nemotron-mlx-asr --manifest <3 rows>
+  --languages en --repeats 1 --transcriptions --json <out>` on the branch tip:
+  `hypothesis.count('  ')` is 0/0/0 and WER is 0.393939 / 0.0 / 0.088235 =
+  39.39 / 0.00 / 8.82, the recorded report values. The same command against the
+  pre-fix source (`dfe842d^`, `git archive` of `whisperlivekit/`, isolated by
+  PYTHONPATH) yields 2+1+1 = 4 double spaces plus a trailing space per
+  hypothesis, with WER unchanged at 39.39 / 0.00 / 8.82 — the fix moves boundary
+  spacing only, not recognition. Per the FO's caution this was verified
+  behaviourally, and the pre/post difference is confined to the pause boundary
+  (a standalone `▁` token closing the flushed utterance plus the next
+  utterance's space-prefixed first word), which is why the fix sits in the
+  `final` branch that clears per-utterance decode state. Unit falsification:
+  `test_sentence_boundary_keeps_one_space` fails on pre-fix source
+  (`assert ' We. ' == ' We.'`) and passes on the branch;
+  `pytest tests/test_asr_nemotron_mlx.py -q` -> 3 passed. Registration surfaces:
+  `tests/test_backends.py tests/test_session_context.py` -> 47 passed, 1 skipped;
+  `tests/test_benchmark.py tests/test_silent_backend_guard.py` -> 14 passed.
+- DONE: docs/backends.md presents it as a low-latency option with the report's
+  measured figures and the English weakness, and the entity body carries AC-5
+  through AC-8 with Verified-by clauses exactly as authorized plus this stage
+  report.
+  The "## Nemotron through MLX (candidate)" section carries the extra/install
+  line, the WLK+RNNT mechanism, the att-context default, the token-timestamp
+  caveat, "This is a low-latency option, not a general replacement for the other
+  backends.", the p95 figures, the French/Chinese/English quality split and
+  "prefer Whisper where English accuracy matters more than end-of-utterance
+  latency". Every number was cross-checked against
+  `benchmarks/evaluations/m5-20261107/{REVIEW.md,summary.json}`: EOF p95 0.12 /
+  0.11 / 0.05 s = nemotron-native-{en,fr,zh} `finalization_time_s_p95` 0.1219 /
+  0.1083 / 0.0516; 19.27 / 14.97 WER and 22.62 CER = 0.19266 / 0.14971 /
+  0.22615; baselines Whisper small 11.66 / 17.66 / 25.77 and Qwen Metal 21.36 /
+  24.68 / 11.85 = 0.11664 / 0.17661 / 0.25769 and 0.21363 / 0.24678 / 0.11846.
+  Two defects found and fixed in 01e3547 (branch only, not pushed): the latency
+  sentence compressed the review's two ranges into "71% to 94% below Whisper
+  small and Qwen Metal" — restored to the review's per-baseline figures ("71% to
+  87% below Whisper small and 74% to 94% below Qwen Metal"); and `parse_args.py`
+  had lost the newline between the `--backend` choices list and its `help=`
+  string, leaving both on one 1.2k-character line. A third blank line that
+  `backend_support.py` had gained between functions was also dropped. AC-5..AC-8
+  are authored above with the captain's exact text in the `**AC-N**:` +
+  `**Verified by:**` shape.
+- SKIPPED: nothing required by the checklist.
+  Out of this dispatch's scope and deliberately not done: no push of the code
+  branch, no PR change, no other entity's state touched. AC-1's live Mandarin run
+  was not re-run in this stage (the dispatch asked for AC-7's English bench run
+  plus the AC-5/6/8 checks); the mocked zh-CN path and the `--language zh`
+  normalization remain covered by `tests/test_asr_nemotron_mlx.py`.
+
+### Summary
+
+Verified the standalone `nemotron-standalone` branch against its artifacts
+instead of trusting the four existing commits. AC-5 holds: the branch is 12 files
+against `origin/main` with no mlx-qwen3-asr member anywhere it touches, and every
+surviving `mlx-qwen3-asr` mention is pre-existing main content. AC-6 holds: the
+lock is reproducible on 3.11/3.12/3.13 under `UV_NO_CONFIG=1` and its package
+delta is exactly `mlx-audio 0.5.9` + `miniaudio 1.71` with no version change —
+the 29k-line diff is marker text. Two non-Nemotron conflict pairs in pyproject
+are disclosed and measured as necessary to keep that delta minimal. AC-7 holds
+end-to-end on the real pipeline: the three named FLEURS clips drop from 4 double
+spaces to 0 with WER unchanged at 39.39 / 0.00 / 8.82, and the new unit test
+fails on pre-fix source. AC-8 holds against the review's numbers, after
+restoring the review's per-baseline latency ranges and repairing the mangled
+`--backend` help line (commit 01e3547). Residual: AC-7's evidence is three
+English clips at feed speed 0, so a real-time (speed 1) boundary run and a
+Mandarin boundary run are unmeasured; the ASR RTF differed between my two runs
+(0.183 pre-fix, 0.224 post-fix) without any WER change, consistent with machine
+thermal variation rather than the fix; and the review's pre-existing ten-minute
+Chinese artifact (twenty Thai `า` characters) is untouched by this branch.
