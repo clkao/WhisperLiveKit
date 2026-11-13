@@ -709,3 +709,113 @@ Mandarin boundary run are unmeasured; the ASR RTF differed between my two runs
 (0.183 pre-fix, 0.224 post-fix) without any WER change, consistent with machine
 thermal variation rather than the fix; and the review's pre-existing ten-minute
 Chinese artifact (twenty Thai `า` characters) is untouched by this branch.
+
+## Stage Report: validation (cycle 2)
+
+Candidate: `nemotron-standalone` @ `01e3547` (0 behind / 5 ahead of
+`origin/main` 1b2986d), worktree `.worktrees/nemotron-standalone`. Candidate and
+HEAD were left unmodified (clean tree, 0 staged). Every pre-fix comparison used
+`git archive dfe842d^` materialised under `/tmp`, driven by `PYTHONPATH`.
+
+- DONE: AC-5 and AC-6 reproduced from the artifact itself, not from the report.
+  `git diff --name-status origin/main...HEAD` is exactly 12 files with no
+  `asr_mlx_qwen3.py` / `test_mlx_qwen3.py`; `grep -E 'mlx-qwen3|mlx_qwen3'`
+  over all 12 touched files returns 0 hits, and the only tree-wide mentions live
+  in files the branch does not touch (`benchmark/metrics.py`, byte-identical to
+  `origin/main`, plus `benchmarks/evaluations/**`). `UV_NO_CONFIG=1 uv lock
+  --check --python {3.11,3.12,3.13}` exits 0 on all three (404 packages; that
+  is CI's own matrix in `.github/workflows/ci.yml`) and `--dry-run` reports "No
+  lockfile changes detected". tomllib name-level compare of both locks: 402 ->
+  404, added exactly `mlx-audio 0.5.9` + `miniaudio 1.71`, removed none, **zero**
+  existing version changes. Control: the same check WITHOUT `UV_NO_CONFIG=1`
+  exits 1 ("Resolving ... due to addition of global exclude newer"), so the
+  committed lock is the config-free one.
+- DONE: AC-7 reproduced end-to-end through the real pipeline on the three named
+  FLEURS clips, independently of the implementation's run.
+  Rows were cut verbatim from `benchmarks/corpora/fleurs-90.json` (all fields,
+  `audio_sha256` kept), the three cached `.pcm.wav` files hash-match, and hash
+  verification stayed live. Post-fix (speed 0): `'  '` = 0/0/0, WER
+  0.393939/0.0/0.088235 = 39.39/0.00/8.82. Pre-fix (`dfe842d^`): `'  '` =
+  2/1/1 = 4 plus a trailing space in each hypothesis, WER identical. Unit
+  falsification: `test_sentence_boundary_keeps_one_space` fails on
+  `dfe842d^` (`assert ' We. ' == ' We.'`) and passes on the branch.
+- DONE: the mechanism is the pause boundary, confirmed by exercise, not by
+  reading the diff.
+  Token-level instrumentation in throwaway trees (`/tmp/prefix`, `/tmp/posttree`,
+  candidate untouched) over the same bench run shows every `final=True` (pause)
+  flush ends with a whitespace-only token and every following utterance opens
+  with a space-prefixed token; all four in-clip `'  '` are exactly that
+  cross-call seam pair, and **zero** within-call adjacent token pairs ever join
+  to `'  '`. Post-fix pops exactly 3/2/2 tokens, one per flush that carried a
+  trailing whitespace token, 1:1 with each defect. The FO's caution was also
+  exercised: I built the natural within-`_decode_chunk` seam collapse (strip a
+  leading space when the previous token ends with one; drop a whitespace-only
+  token after a space-terminated token) and it changed nothing — still 4 double
+  spaces and trailing spaces — because the pause resets decoder state and the
+  two tokens never meet inside one chunk.
+- DONE: real-time feed exercised (was an unmeasured gap in the implementation
+  report). `--speed 1`: pre-fix 4 double spaces -> post-fix 0, WER unchanged at
+  39.39/0.00/8.82; the post-fix real-time hypotheses are identical to the
+  recorded `reports/nemotron-native-en.json.gz` hypotheses except for the removed
+  double spaces and trailing space.
+- DONE: Mandarin boundary case exercised (also previously unmeasured).
+  `fleurs_zh_{1682,1700,1711}` (same sentence IDs, cached, hash-verified):
+  pre-fix 8 double spaces (6+2+0), post-fix 0, CER unchanged at
+  45.28/30.00/4.17. The same defect and the same fix apply to zh.
+- DONE: AC-8 cross-checked figure by figure against REVIEW.md and summary.json.
+  p95 0.12/0.11/0.05 = nemotron-native-{en,fr,zh} `finalization_time_s_p95`
+  0.121947/0.108331/0.051602; "71% to 87% below Whisper small" = per-pass
+  `finalization_time_s_p95` gains min 0.7108 / max 0.8739, "74% to 94% below
+  Qwen Metal" = 0.7430/0.9407; 19.27 / 14.97 / 22.62 = 0.192661 / 0.149708 /
+  0.226154; baselines 11.66/17.66/25.77 = 0.116645/0.176608/0.257692 and
+  21.36/24.68/11.85 = 0.213630/0.246784/0.118462; "7.6 points" =
+  `quality_delta_pp` 7.602; per-language statements match the summary's
+  `numerical_gate` verdicts; "This is a low-latency option, not a general
+  replacement" is present verbatim. Regression suites on the branch:
+  `tests/test_asr_nemotron_mlx.py` 3 passed; `test_backends.py` +
+  `test_session_context.py` 47 passed 1 skipped; `test_benchmark.py` +
+  `test_silent_backend_guard.py` 14 passed.
+- DONE: recommendation on the two non-Nemotron pyproject conflict pairs
+  (observation only; candidate unmodified). Recommendation: keep, but make the
+  reason visible in the repo.
+  Observed: `origin/main` declares 17 conflict pairs, the branch 22 = 17 + 3
+  nemotron + `canary`x`diarization-diart` + `diarization-diart`x
+  `diarization-sortformer`. Necessity reproduced in `/tmp/relock` by re-locking
+  the branch `pyproject.toml` anchored on the branch `uv.lock`, with only those
+  two pairs removed and everything else identical: 378 -> 367 packages, 13
+  `nvidia-*` cu13 wheels dropped (the report says 11; I measure 13),
+  `cuda-toolkit` 13.0.2 -> 12.9.1, and `httpx2-jsfetch` + `win32-setctime` added
+  — so they are load-bearing, and deleting them is not a safe scope cleanup.
+  They are also real incompatibilities (`diarization-diart` pins
+  torch/torchaudio<2.9.0 and torchvision<0.24.0 for python<3.13; `canary` and
+  `diarization-sortformer` require `nemo-toolkit[asr]>=3.0,<4`). Two caveats the
+  report should carry: the stated reason for the canary x sortformer pair ("both
+  need nemo-toolkit[asr]") is not itself a conflict, and the count is 13 not 11.
+  Because the disclosure lives only in this stage report, nothing ships to the
+  repo explaining why two non-Nemotron pairs were added; the captain should
+  either accept that as-is or require a TOML comment at the conflict list and/or
+  a separate commit. Split-out, not deletion, is the only consistent option if a
+  Nemotron-only pyproject delta is required. Two thin docs gaps, not AC-8
+  failures: `docs/backends.md` quotes "completes without a repetition loop" but
+  omits the review's disclosed Thai `า` artifact, and it omits that Nemotron has
+  the slowest measured startup (6.26 s vs 4.56/4.16/1.76) — its "low-latency"
+  claim is end-of-file latency, which is what the review measures.
+
+### Summary
+
+All four checklist items pass on independent reproduction: AC-5 and AC-6 hold on
+the artifact itself (12 files, no mlx-qwen3-asr member, three Python versions,
+exactly two package additions with zero version churn), AC-7 holds end-to-end on
+the real pipeline (4 double spaces -> 0, WER byte-identical to the recorded
+reports), and AC-8's figures all reconcile with `summary.json`. Two gaps the
+implementation stage left open are now closed rather than accepted as gaps: the
+real-time feed and the Mandarin boundary case both reproduce the defect pre-fix
+and the fix post-fix with unchanged WER/CER. The mechanism is confirmed as the
+pause boundary by token-level instrumentation, and the earlier token-seam
+approach was rebuilt and shown to do nothing. One validation-hygiene note for
+anyone re-checking this: pytest inserts the worktree root at `sys.path[0]`, so a
+`PYTHONPATH=/tmp/prefix pytest <worktree>/tests/...` run silently imports the
+candidate package and "passes" — the pre-fix falsification must be run from a
+copy of the test file outside the worktree. Recommendation: **PASSED**, with the
+pyproject conflict-pair visibility question left to the captain as a
+recommendation only.
