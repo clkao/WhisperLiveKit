@@ -92,6 +92,11 @@ gates:
                 by: agent:first-officer
                 at: "2026-11-09T05:29:19.852132Z"
                 reason: 'Stale open authority: the briefing-3 room was prepared 2026-08-27, the entity body changed on 2026-11-08 (stage-report repair), and PR #425 is CONFLICTING against upstream main (head 24082a0, no maintainer review). Evidence must be re-prepared against a refreshed branch before a captain decision.'
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-validation-4
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-4:revision-1
+                digest: sha256:82465a193c2dd3d42cfdcb4683c5b8cb61be4bca446d6b3db5c878730a81daf5
+                room-ref: '@review/validation/briefing-4'
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer

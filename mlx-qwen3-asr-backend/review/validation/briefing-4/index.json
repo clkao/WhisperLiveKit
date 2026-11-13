@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-4:revision-1",
+  "question": "PR #425's maintainer review (2026-11-13) finds the backend not mergeable on output quality (en 27.7 / fr 44.7 WER, zh 28.5 CER, worse than Qwen Metal on identical weights, EOF p95 slower). The captain has directed the rework and chosen the dependency-bump route. Does the validation stage close as revise, routing the work back to implementation with that scope?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-4:revision-1:item-1",
+      "uri": "git-root://state/eaaec3d2dc9fa020d6ed8b06ed32c2e0199e4dd6/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:1f0bfc7ed6258c406b85e3bae3afd1b910d63953eb203a268ece4b885e2bff35",
+      "mediaType": "text/markdown",
+      "summary": "Rework decision for mlx-qwen3-asr after the maintainer's #425 review. Scope: bump mlx-qwen3-asr 0.3.5 to 0.4.4 so the finish-path window re-decode replaces the 0.3.5 tail-refine pass that duplicates text at pauses; show no exception on a short tail at a pause; handle upstream issue #31 (non-prefix/non-monotone stable_text) instead of the current RuntimeError abort; reproduce FLEURS zh/en/fr quality under the #444 protocol against Whisper small MLX and Qwen Metal. The reviewed adapter is the maintainer's own 34a2b5e rewrite, which deleted our wrapper layer and its stable-prefix fallback."
+    }
+  ]
+}
