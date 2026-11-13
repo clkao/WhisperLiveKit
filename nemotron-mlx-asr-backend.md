@@ -15,7 +15,7 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:backlog:attempt-1:revision-1
                 digest: sha256:6c35c01023fdc2b61f3fea41a241a74c7103313d2b6285bd3d417a585a7a2a69
                 request-digest: sha256:a870d5ef7b2bb1b44305abeb7483f3ac9387778e297fef6b7d9d051bb7ac219e
-                room-ref: ./nemotron-mlx-asr-backend/review/backlog/briefing-1
+                room-ref: '@review/backlog/briefing-1'
               resolution:
                 type: Resolution
                 id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:backlog:1
@@ -35,7 +35,7 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:ideation:attempt-1:revision-1
                 digest: sha256:17f9f624a0da2b5f132ebd9fb8fcb4fcfe0aab0002bbfb43442e51f4a2768010
                 request-digest: sha256:1db595626d0c7ec2ceb5f080272e7d2618cbccef7498134782c27bfe119ad79e
-                room-ref: ./nemotron-mlx-asr-backend/review/ideation/briefing-1
+                room-ref: '@review/ideation/briefing-1'
               resolution:
                 type: Resolution
                 id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:ideation:1
@@ -55,7 +55,7 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-1:revision-1
                 digest: sha256:6514e2f562c7517ce3a62cecf7fddbc88b1e5a01b13e8682f58f556b201c522b
                 request-digest: sha256:ccf094ee304b789e20985067053a3cec6a10c2e90cf6e793e52995486e1d026b
-                room-ref: ./nemotron-mlx-asr-backend/review/validation/briefing-1
+                room-ref: '@review/validation/briefing-1'
               resolution:
                 type: Resolution
                 id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:validation:1
