@@ -277,3 +277,36 @@ wrong base and an unmeasurable target.
    commit policy. `simul_fixture.py` does, by replaying the engine's exact inputs. Name
    both tools, and say that the fixture port belongs to the simul PR entity `km`, not
    here.
+
+#### Cycle 2 — filed upstream as issue #477, and the scope is now the measurement harness (2026-11-14)
+
+1. **Filed publicly.** `QuentinFuxa/WhisperLiveKit` issue #477, "Benchmark suite: score the
+   translation, and report its latency". It quotes the repo's own `benchmarks/README.md`:
+   "A WLK audio-to-translation benchmark is a separate experiment; it must record both ASR and
+   MT configurations." So this answers a gap the maintainer documented.
+2. **Upstream has no translation metric at all.** `whisperlivekit/benchmark/` scores WER/CER
+   and records `first_text_time_s`, `first_visible_time_s`, `first_translation_time_s`,
+   `avg_latency_ms`, `p95_latency_ms`. Zero of 23 checked-in reports carry a non-null
+   `first_translation_time_s`. `grep -riE "code.?switch|bleu|comet"` over the benchmark module,
+   `benchmarks/` and `docs/` returns nothing. There is one corpus, `fleurs-90.json`.
+3. **The references need no download.** FLEURS is parallel and the checked-in manifest holds
+   30 identical `sentence_id`s across en, fr and zh. A join on `sentence_id` supplies the
+   translation reference. This satisfies the rule the maintainer stated in #343: public
+   datasets only.
+4. **The narrow gap.** `runner.py:52` builds `kwargs` from `model_size`, `pcm_input`,
+   `backend` and `engine_kwargs`, then calls `TestHarness(**kwargs)`. `TestHarness` forwards
+   to `AudioProcessor`, which already accepts `target_language` and a translation backend. So
+   the work is forwarding two options plus a metric, not building a pipeline path.
+5. **What this entity is now.** The measurement harness contribution, and issue #477 is its
+   capstone. Tier 1 is the local harness, portable from the now-deprecated `livecaption`,
+   whose authorship split is recorded in `_work/livecaption-findings.md`. Of its six bench
+   scripts, `bench_e2e_latency.py` (92 lines) and `bench_commit_fraction.py` (241) are ours,
+   while the base pipeline techniques are upstream's. Tier 2 is the standard pair, XCOMET-XL
+   at LongYAAL CA/CU through `alignatt-eval`, on the IWSLT devset.
+6. **Why a measurement may be a task.** The workflow rule is that a task carries user-visible
+   value, and a measurement is normally the acceptance of the task it serves. This is the
+   exception the rule names: upstream has no translation metric, so a harness is a capability
+   other people run. That is what makes it a deliverable rather than a number.
+7. **Still open.** `Unabel/XCOMET-XL` is gated and needs the captain's HF access. Choose
+   between that, the ungated `Unabel/wmt22-comet-da`, and `--skip-comet` for a first pass.
+   State an acceptance number, not "non-null".
