@@ -75,13 +75,14 @@ ported or available in MLX:
   transducer — separate entity, in implementation — gives a time-based frontier
   too, via `AlignedToken.start`; complementary, not required for the anchor.)
 - **Scoring** — `alignatt-eval` (AlignAtt4LLM) wraps `omnisteval.evaluate_instances`
-  + `resegment` + `write_evaluation_outputs`, defaulting to `Unabel/XCOMET-XL`.
+  + `resegment` + `write_evaluation_outputs`, defaulting to `Unbabel/XCOMET-XL`
+  (`artifacts.py:56`; earlier notes misspelled it `Unabel`).
   Scores `hypothesis.jsonl` → XCOMET-XL (quality) + LongYAAL (latency). No port
   needed; MLX-agnostic.
 - **IWSLT devset refs** — `AlignAtt4LLM/data/devset/ref/{en,zh,it,de}.txt`
-  (919 lines each, aligned) + `audio-segments.yaml` are tracked. Audio files
-  (`*.wav`) are NOT tracked (gitignored); must be sourced from the IWSLT 2026
-  shared task.
+  (919 lines each, aligned) + `audio-segments.yaml` (919 segments).
+  `data/devset/audio/` holds **21 wav files on disk**; the claim that they must
+  be sourced is stale.
 
 ## The one real gap — hypothesis emitter (simple)
 
@@ -110,29 +111,82 @@ So the emitter is: run our MLX ASR+MT over each devset audio, timestamp each
 emitted word, call `build_asr_hypothesis_record` (or write the dict directly),
 emit one `hypothesis.jsonl` per run + a `manifest.json`. Then `alignatt-eval`.
 
-## Acceptance criteria
+## Base and capstone
 
-- AC-1: A `hypothesis.jsonl` emitter exists and round-trips through
-  `alignatt-eval` producing non-null XCOMET-XL + LongYAAL on one devset audio.
-  Verified by: a single-audio smoke run producing a scored `evaluation.json`.
-- AC-2: The anchor run (en→zh, forced-aligner ASR + Hy-MT2-1.8B simul-MT) scores
-  on the full 919-line devset. Verified by: `alignatt-eval` over all devset
-  audios producing a devset-level score.
-- AC-3: The emitter works for both ASR-only (transcribe) and ASR+MT (translate)
-  modes. Verified by: two `hypothesis.jsonl` files, one per mode, both scored.
-- AC-4: The flagship run (nemotron-mlx + Hy-MT2-1.8B simul-MT, en→zh heads)
-  drops into the same harness. Verified by: swapping the ASR frontend in the
-  runner and producing a scored devset run.
+**Base:** `wlk/integration-3`, cut from `origin/main` @ `496b5f6` with PR #426
+already upstream. The `wlk/integration-2` branch named in the dispatch artifact
+is retired and is not a target.
 
-## Open dependencies
+**Capstone:** `QuentinFuxa/WhisperLiveKit` issue #477, "Benchmark suite: score
+the translation, and report its latency". Every AC below must be satisfiable by
+the PR that answers #477. The captain owns that conversation; this entity never
+opens, edits or comments on the issue.
 
-- **IWSLT devset audio** — refs + segmentation tracked in `AlignAtt4LLM/data/devset/`;
-  audio wavs gitignored, must be sourced (IWSLT 2026 shared task download).
-- **en→zh heads for Hy-MT2-1.8B** — backgrounded (separate slow task); the
-  anchor can run with zh→en heads' mirror or fall back to serial MT if en→zh
-  heads aren't calibrated yet. Flagship compare needs them.
-- **nemotron-mlx** — in implementation (separate entity); flagship compare
-  needs it. Anchor uses the forced-aligner, not blocked.
+## Why a measurement is a task here
+
+The workflow rule is that a task carries user-visible value, and a measurement
+is normally the acceptance of the task it serves. This is the exception the rule
+names: upstream has no translation metric at all — `whisperlivekit/benchmark/`
+scores WER/CER, and zero of 23 checked-in reports carry a non-null
+`first_translation_time_s` — so a harness is a capability other people run, not
+a number we consume.
+
+## Acceptance criteria (tiered; numbers in the cycle-2 report)
+
+- **Tier 1 — local harness (AC-1..AC-3), the shippable #477 PR.** Translation is
+  engaged, joined and scored on `benchmarks/corpora/fleurs-90.json` through the
+  `sentence_id` join that needs no download; the latency fields carry real
+  numbers instead of placeholders.
+- **Tier 2 — the standard pair (AC-4..AC-6), `scripts/` only.** XCOMET(-XL) +
+  LongYAAL CA/CU through `alignatt-eval` on the IWSLT devset: one wav
+  round-trips, the 919-segment anchor runs, the flagship swaps a flag. Kept out
+  of the #477 PR because it needs Alignatt4LLM, a COMET checkpoint and
+  non-shipped audio.
+- **Boundary with `km` (`wlk-simul-time-frontier-pr`).** Tier 1's *realizable
+  commit fraction* is km's number: km owns the port of
+  `bench_commit_fraction.py` (the calibrated-attention coverage script) and this
+  entity reuses that file rather than writing a second capture path. If km's
+  file is not on the base, tier 1 reports that row as `not run` — it is not
+  reimplemented here. This entity measures the whole cascade on emitted output;
+  it does not isolate the commit policy.
+
+## Open dependencies (status after cycle 2)
+
+- **IWSLT devset audio — RESOLVED.** `AlignAtt4LLM/data/devset/audio/` holds 21
+  wav files; `data/devset/ref/{de,en,it,zh}.txt` measure 919 lines each;
+  `audio-segments.yaml` lists 919 segments. Nothing to source.
+- **en→zh heads — RESOLVED.**
+  `whisperlivekit/calibrations/translation_heads_mlx-community_Hy-MT2-1_8B-8bit_en-zh.json`
+  is in the base. No mirror, no serial fallback.
+- **nemotron-mlx — RESOLVED.** Merged in the base via PR #426; AC-6 is a flag
+  swap, not an integration.
+- **FLEURS audio — cached and reproducible.** All 90 manifest files are present
+  in `~/.cache/whisperlivekit/benchmark_data/fleurs_v1/`, and
+  `scripts/prepare_fleurs_benchmark.py` (111 lines) recreates them from the
+  pinned Hub revision. No new download and no new corpus.
+- **Evaluation environment — REGRESSED since the implementation stage.**
+  `_eval_venv` no longer exists, and `_eval_cache/hub` holds only
+  `xlm-roberta-large`: no COMET checkpoint is cached anywhere. The runbook's
+  "wmt22-comet-da downloaded and load-verified" is stale. A venv rebuild plus a
+  checkpoint fetch is a tier-2 prerequisite.
+- **Disk — hard blocker for tier 2.** 210 MiB free on the volume. COMET
+  checkpoints are ~2.2 GB (`wmt22-comet-da`) or larger. Tier 1 needs no
+  download; tier 2 cannot fetch a scorer until space is freed.
+- **COMET access — the captain decides** (next section).
+
+## COMET access is the captain's decision
+
+All three options are satisfiable by the same `hypothesis.jsonl`; only the
+scorer invocation changes.
+
+| Option | What it buys | Consequence |
+|---|---|---|
+| **A. Captain HF access for `Unbabel/XCOMET-XL`** | The IWSLT 2026 primary metric and the scorer's default, so our number sits beside the paper's published anchors | Gated: needs an approved token plus a venv rebuild and a multi-GB download — impossible at 210 MiB free until disk is freed |
+| **B. Ungated `Unbabel/wmt22-comet-da`** | No approval needed; an internal quality signal on the same devset | A different metric (reference DA COMET, not XCOMET-XL): the number cannot be placed beside the paper's. Still ~2.2 GB of disk |
+| **C. `--skip-comet` first pass** | No download at all: BLEU/chrF + LongYAAL CA/CU | The latency comparison stays valid, because LongYAAL is the paper's latency metric and needs no model; the quality comparison to the paper is unavailable, and tier 1's chrF carries the quality story |
+
+Tier 2's latency AC is independent of this choice; only its quality bound moves.
+This entity does not choose — the captain decides, the first officer records it.
 
 ## Stage Report: ideation
 
@@ -310,3 +364,221 @@ wrong base and an unmeasurable target.
 7. **Still open.** `Unabel/XCOMET-XL` is gated and needs the captain's HF access. Choose
    between that, the ungated `Unabel/wmt22-comet-da`, and `--skip-comet` for a first pass.
    State an acceptance number, not "non-null".
+
+## Stage Report: ideation (cycle 2)
+
+- DONE: Name the base explicitly: wlk/integration-3, cut from origin/main @ 496b5f6, plus issue #477 as the capstone.
+  `git log -1 wlk/integration-3` = `9bd11ca` descending from `496b5f6` (PR #426); base + capstone stated in the body's "Base and capstone".
+- DONE: Close the three blockers the body still lists: nemotron-mlx is upstream, the en to zh heads are upstream, and AlignAtt4LLM/data/devset holds 21 wav files.
+  `ls AlignAtt4LLM/data/devset/audio | wc -l` = 21; refs 919 lines each × {de,en,it,zh}; `whisperlivekit/calibrations/..._en-zh.json` present; PR #426 in the base. Body section rewritten to "Open dependencies (status after cycle 2)".
+- SKIPPED: Decide the COMET access.
+  The first officer's scope note assigns this decision to the captain, so the body presents options A/B/C with the consequence of each and states plainly that the captain decides. Nothing in the design branches on it except tier 2's quality bound.
+- DONE: State an acceptance number for quality and latency per run, not non-null.
+  AC-1..AC-6 below carry thresholds (corpus chrF ≥ 20.0 with a 26.21 partial-run reference, latency ratio p95 ≤ 0.85, ≥ 28/30 rows, provisional lead ≥ 0.20 s when drafting, ≥ 900/919 segments, ±1.0 repeat bound), each with a falsifier.
+- DONE: Split tier 1 (local harness: user-visible latency and realizable commit fraction) from tier 2 (XCOMET-XL at LongYAAL through alignatt-eval).
+  Tier 1 = `whisperlivekit/benchmark/` + `benchmarks/README.md` + tests (the #477 PR). Tier 2 = `scripts/simulst_*.py` + a local runbook, excluded from the PR because it needs Alignatt4LLM, a COMET checkpoint and non-shipped audio.
+- DONE: Draw the boundary with km: km owns the copy of the coverage script it uses, and 8z reuses that file rather than writing a second capture path.
+  Body section "Boundary with km (`wlk-simul-time-frontier-pr`, id `kmjvq6k0q7c2p265xgbj56cm`)": the realizable-commit-fraction number is km's `bench_commit_fraction.py` port; absent it, the row reads `not run` and is not reimplemented.
+- DONE: Record that a measurement is a task here only because upstream has no translation metric, per issue #477.
+  Body section "Why a measurement is a task here".
+- FAILED: Full 30-sample en→zh corpus baseline (attempted, aborted).
+  The run was launched and aborted on the disk constraint (210 MiB free). No corpus-level chrF or latency distribution exists; every number below is a partial run with its n stated. Not re-run.
+
+### Selected approach
+
+Two tiers, one capture path each, no pipeline change:
+
+1. **Tier 1 — extend the module `wlk bench` already runs** (the #477 PR). Add per-row
+   `target_language` + `translation_reference` (joined on `sentence_id`), `chrf`,
+   `final_translation_time_s`, `provisional_lead_s`; add `compute_chrf` to
+   `benchmark/metrics.py`; record the ASR *and* MT configuration in the report
+   `config` block as `benchmarks/README.md` requires; first-class
+   `--target-language` / `--translation-backend` / `--mt-model` flags; bump
+   `benchmark_version` 3.1 → 3.2. The join is a `load_manifest` change, not a
+   corpus change: `fleurs-90.json` already carries `sentence_id` for all 90 rows
+   (30 ids × {en, fr, zh}), so no download and no re-preparation.
+2. **Tier 2 — one emitter over the same pipeline.** `scripts/simulst_hypothesis.py`
+   drives `TestHarness` (the `wlk bench` path, not a private MLX loop) over one
+   devset wav, taps the caption event stream, and writes `hypothesis.jsonl`
+   (`delays` = `CaptionEvent.audio_t`, `elapsed` = wallclock since feed start,
+   normalized by `alignatt4llm.artifacts.normalize_computation_aware_timestamps`).
+   `scripts/simulst_run.py` loads the devset (`audio-segments.yaml` + refs) and
+   invokes `alignatt-eval` from a venv named by an env var, failing loudly when
+   absent. The record builders and word-diff registration come from
+   `alignatt4llm`; nothing is re-implemented.
+
+**Not the base:** `f673273` (5 files, 1249 lines, only on the orphan branch
+`feat/apple-silicon-backends-old`) drives `mlx_qwen3_asr.streaming` and
+`MlxLlmTranslationSimul` directly and bypasses `AudioProcessor`/`TestHarness`, so
+its numbers are not the pipeline's. Its record-shape work is the reference; the
+file is not reused as-is.
+
+### Risk evidence (probed — read or run; nothing re-run for this report)
+
+1. **`--config` already reaches translation; `first_translation_time_s` already
+   populates.** `BenchmarkRunner(backend="mlx-qwen3-asr", speed=1,
+   engine_kwargs={target_language:"zh", translation_backend:"mlx-llm-mt",
+   mlx_llm_mt_model:"hy-mt2-1.8b-8bit"})` on `fleurs_en_1700` (7.2 s) → `status ok`,
+   `wer 0.0`, `first_text_time_s 3.757`, `first_visible_time_s 3.757`,
+   **`first_translation_time_s 4.081`**, `finalization_time_s 0.527`. The 23
+   reports are null because no run ever set a target language, not because the
+   field is unreachable. `runner.py:52` validates `engine_kwargs` against
+   `WhisperLiveKitConfig` field names, and `target_language`,
+   `translation_backend` and `mlx_llm_mt_*` are all fields.
+2. **The two derived fields are observable without touching the pipeline.**
+   A `/tmp` probe drove `TestHarness` directly with `on_update` and recorded
+   first provisional, first committed-line translation and last committed-line
+   translation. Non-simul, n=4 launched / 3 rows retained (the first row was lost
+   to output truncation, not re-run), zh references joined on `sentence_id`:
+   chrF **8.10** (`en_1700`), **37.15** (`en_1993`), **33.39** (`en_1921`) →
+   mean **26.21**; first line translation **3.97 / 6.71 / 7.84 s** on durations
+   7.2 / 8.66 / 9.72 s → ratios **0.55 / 0.77 / 0.81**. Single runs, no repeats,
+   thermal state uncontrolled.
+3. **`provisional_lead_s` needs a drafting backend, by construction.**
+   `translation_mlx_llm_mt.py` clears the buffer every pass ("Source words must
+   not appear in the target-language buffer"), so the non-simul backend emitted a
+   provisional on **0/3** probed samples. With `mlx_llm_mt_simultaneous=True`,
+   n=2: provisional at **4.052 / 3.745 s**, committed translation at
+   **4.316 / 6.652 s** → lead **0.26 / 2.91 s**, chrF 8.10 / 34.51. So the field
+   is null on a default run and non-null on a drafting run — the same convention
+   as `cer` being null for English, and it must be documented or the AC looks
+   broken rather than unsatisfied.
+4. **chrF needs no dependency.** `benchmark/metrics.py` holds `normalize_text`,
+   `compute_wer` and `compute_timestamp_accuracy`; there is no `sacrebleu` in
+   `pyproject.toml`. The probe's 25-line whitespace-stripped char n-gram F-beta
+   (n = 1..6, β = 2) is the version the PR ships, and it is what makes zh score
+   without a tokenizer — the same rationale as the existing CER path.
+5. **Report shape is known.** `BenchmarkReport.to_dict()` emits
+   `benchmark_version: "3.1"`, a `measurement` documentation dict, `summary`, and
+   per-sample rows; `report.py` formats the terminal table. New fields land in
+   all four places, and the `measurement` dict is where the new field semantics
+   get documented for future readers.
+6. **Test pattern exists.** `tests/test_benchmark.py` (158 lines) already runs a
+   real harness with `backend="whisper"`, `transcription=False`,
+   `pcm_input=True` and a silence wav, asserting measurement plumbing rather than
+   model quality. New fields can be asserted the same way without any model.
+7. **Tier 2 environment has regressed.** `_eval_venv` is gone; `_eval_cache/hub`
+   holds only `xlm-roberta-large`, so no COMET checkpoint is cached. Disk is
+   210 MiB free. The prior stage's `--skip-comet` smoke (BLEU 23.35, chrF 68.49,
+   LongYAAL CA 3262, CU 3645 on `ccpXHNfaoy.wav`) is real evidence that the
+   scorer path works and that CA ≤ CU holds, but it ran through the orphan
+   emitter and an environment that no longer exists.
+
+### Semantic changes (precise)
+
+- `chrf` — whitespace-stripped character n-gram F-beta (n = 1..6, β = 2) between
+  the translation and the joined reference; `null` when the run has no
+  translation, mirroring `cer` for English.
+- `translation_reference` — the reference of the *same sentence_id* in the target
+  language, resolved at manifest load; `null`/absent for a sentence with no
+  target-language recording.
+- `final_translation_time_s` — the last moment a committed line first showed a
+  translation, measured from feed start; paced runs only (speed = 1), like
+  `first_visible_time_s`.
+- `provisional_lead_s` — `final_translation_time_s − first_translation_time_s`;
+  `null` unless a drafting backend produced provisional text.
+- `delays[i]` (tier 2) — audio position of the emission that first carried word
+  *i*, in ms. **Not** the acoustic position: the forced aligner's `end_time_s`
+  would collapse LongYAAL below the chunk length.
+- No engine, `AudioProcessor`, `TestHarness` or CLI-runtime behaviour changes;
+  `effective_config` already records the MT settings per row.
+
+### Expected files and lines (tolerance ±30%)
+
+Tier 1 — the #477 PR: `whisperlivekit/benchmark/metrics.py` +45..65
+(`compute_chrf`, five `SampleResult` fields, report summary, version bump);
+`benchmark/datasets.py` +20..30 (`sentence_id`, `translation_references`,
+the group-by join in `load_manifest`); `benchmark/runner.py` +30..45 (observation
+of the two new latency fields, chrF scoring, row population);
+`benchmark/report.py` +10..20 (chrF and translation-latency lines);
+`whisperlivekit/cli.py` +20..35 (three flags, pair validation);
+`benchmarks/README.md` +25..40 (the translation experiment, field semantics,
+schema 3.2); `tests/test_benchmark.py` +80..120. Total ≈ 230..355 added lines.
+
+Tier 2 — `scripts/` only, not in the PR: `simulst_hypothesis.py` 160..240;
+`simulst_run.py` 100..160; `_work/SIMULST_EVAL_RUNBOOK.md` 60..100 (local, since
+it names machine paths). No re-derivation of `f673273`'s 486-line emitter.
+
+### Acceptance criteria (cycle 2, with numbers)
+
+- **AC-1 (translation engaged, joined, scored — tier 1).** `wlk bench --languages
+  en --target-language zh --translation-backend mlx-llm-mt --speed 1 --manifest
+  benchmarks/corpora/fleurs-90.json --json out.json` over the 30 English FLEURS
+  samples: 30/30 rows carry `target_language == "zh"` and a non-empty
+  `translation_reference`; ≥ 28/30 rows carry a non-null `chrf`; corpus mean
+  `chrf` ≥ 20.0; and the three probed samples reproduce 8.10 / 37.15 / 33.39
+  within ±0.01. *Verified by:* the run's JSON plus the reproduction check.
+  *Falsified by:* a mean below 20.0, any null `translation_reference`, or a
+  reproduction drift above 0.01.
+- **AC-2 (latency per run — tier 1).** Same run: ≥ 28/30 rows carry a non-null
+  `first_translation_time_s`; the p95 of `first_translation_time_s /
+  duration_s` ≤ 0.85 (observed 0.55 / 0.77 / 0.81, mean 0.71); ≥ 28/30 rows carry
+  a non-null `final_translation_time_s`, and `final ≥ first` wherever both exist.
+  With `--config '{"mlx_llm_mt_simultaneous": true}'`, `provisional_lead_s` is
+  non-null and ≥ 0.20 s on at least one row (observed 0.26 s and 2.91 s), while
+  the default non-drafting run has it null on every row. *Falsified by:* a null
+  `first_translation_time_s` on a `status == "ok"` row, `final < first`, or a
+  non-null lead on the non-drafting run.
+- **AC-3 (no regression, no new dependency — tier 1).** A `--languages en` run
+  without `--target-language` yields `chrf: null`, `target_language: ""` and
+  unchanged WER/CER/RTF and `first_visible_time_s` on the same samples;
+  `benchmark_version` reads 3.2; `pyproject.toml` gains no dependency. *Verified by:* the ASR-only run diffed against a pre-change run
+  of the same manifest. *Falsified by:* any changed WER/CER/RTF value, or a new
+  dependency.
+- **AC-4 (one devset wav round-trips — tier 2).** `simulst_run.py --audio
+  <wav>` → `hypothesis.jsonl` → `alignatt-eval --skip-comet` →
+  `evaluation.json` with finite LongYAAL CA and CU satisfying `0 < CA ≤ CU`, and
+  `len(delays)` equal to the prediction's unit count (char-wise for zh).
+  *Falsified by:* a null score, `CA > CU`, or a length mismatch.
+- **AC-5 (919-segment anchor — tier 2).** The anchor run (en→zh,
+  `--asr-backend forced-align` + Hy-MT2-1.8B-8bit simul, en→zh heads) writes 919
+  records from 21 wavs; ≥ 900 (97.9%) score; two consecutive runs agree within
+  ±1.0 point of the chosen quality metric and ±10% on LongYAAL CA. The first
+  run's quality number becomes the recorded anchor: an absolute quality
+  threshold cannot be pre-committed because our cascade has never been measured
+  on this devset, so this AC's number is a reproducibility bound stated as such.
+  *Falsified by:* fewer than 900 scored segments, or a repeat outside the bounds.
+- **AC-6 (flagship swap — tier 2).** `--asr-backend nemotron-mlx` changes nothing
+  else: same 919 records, same `alignatt-eval` invocation, same AC-5 bounds.
+  *Falsified by:* any emitter code change beyond the flag, or a different
+  `delays` semantic between the two runs.
+
+### Test plan (staged, falsifiable)
+
+1. **Unit — chrF arithmetic.** Identical strings → exactly 100.0; empty
+   hypothesis → 0.0; a fixed pair → an exact expected value; whitespace
+   differences → identical score. Falsified by any other value.
+2. **Unit — the `sentence_id` join.** Every row of `fleurs-90.json` gets a
+   non-empty `translation_references["zh"]`; a row whose `sentence_id` has no
+   target-language sibling gets `{}` without raising, and the run reports a null
+   `chrf` rather than a fabricated one. Falsified by a wrong pairing or a crash.
+3. **Plumbing (existing pattern, no model).** `backend="whisper"`,
+   `transcription=False`, `pcm_input=True`, silence wav, engine kwargs
+   `target_language="zh"` → row has `target_language == "zh"`, `chrf is None`
+   (no hypothesis to score), `provisional_lead_s is None`; without the kwarg →
+   `target_language == ""` and `chrf is None`. Falsified if a row shows a score
+   without a hypothesis.
+4. **Reproduction (the AC-1/AC-2 gate).** The 30-sample run reproduces 8.10 /
+   37.15 / 33.39 ±0.01 and the observed latency ratios. Falsified by drift.
+5. **Tier-2 smoke (AC-4).** One devset wav through the emitter and
+   `alignatt-eval --skip-comet`; assert `0 < CA ≤ CU` and the unit-count match.
+6. **Tier-2 anchor and flagship (AC-5, AC-6).** 919 records, ≥ 900 scored, repeat
+   within the bounds; then the same with `--asr-backend nemotron-mlx`.
+
+### Summary
+
+The scope is now a measurement harness whose capstone is issue #477, not a
+private pipeline. Reading the base shows the gap is far narrower than the entity
+assumed: `--config` already forwards `target_language` and `translation_backend`,
+and a probe produced a non-null `first_translation_time_s` of 4.081 s on an
+unmodified base — the null field in 23 reports is unexercised code, not missing
+plumbing. What the PR owes is the `sentence_id` reference join, a ~40-line chrF,
+two derived latency fields, the row/report fields and three CLI flags, with a
+3.1 → 3.2 schema bump. Tier 2 keeps the standard pair where it belongs — in
+`scripts/`, behind the existing `alignatt-eval` — and shares one capture path
+with tier 1 by driving `TestHarness` rather than a private MLX loop, which is
+also why the orphan 1249-line emitter is not reused as-is. Measured evidence is
+partial and says so: 3 non-simul and 2 simul samples, single runs, corpus-wide
+numbers absent because the 30-sample run was aborted on the disk constraint. The
+one open input is the COMET access choice, presented as three options with
+consequences and left to the captain.
