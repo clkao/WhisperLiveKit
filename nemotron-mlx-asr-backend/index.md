@@ -1426,3 +1426,56 @@ a probe found the same rule violated in a second way — a popped closing space 
 which `fb26656` fixes and pins. The pin experiment answers Finding 3(a) with a clear no: the
 drift is re-forking, not mlx-audio's cone, and the boundary clips prove 0.5.9 behaves identically
 to the measured 0.5.1, so the disclosure can say so plainly.
+
+## Stage Report: validation (cycle 5 — narrow correction pass on fb26656)
+
+Branch `nemotron-standalone`, tip `fb26656`, three commits on `1fe5973` (`b01fbb6`, `2662e0f`,
+`fb26656`). Tree clean, nothing staged, HEAD unchanged by this pass. Verdict: **PASSED**.
+
+- DONE: The maintainer's reported symptom is closed on the committed bytes: a line that ends in a space, a finish that emits no token, and a space-prefixed next line join with exactly one space, and both new tests fail when their corresponding carry is removed rather than passing by construction.
+  `test_space_ending_line_survives_a_tokenless_finish` asserts the joining `' We. '` + `[]` + `'We.' == ' We. We.'`;
+  with the b01fbb6 carry removed (pre-fix `1fe5973` block restored) it alone fails, `[' ', 'We', '.'] != ['We', '.']`.
+  `test_space_only_final_chunk_does_not_glue_the_next_utterance`; deleting only the carry (keeping the collapse-time
+  flag) fails it alone, `'WeWe.' != 'We We.'`. Mutations ran in `/tmp/mut/{m1_pre_fix,m2_no_carry}` copies, 1 failed /
+  8 passed each; committed bytes 9 passed under mlx-audio 0.4.8, 0.5.1 and 0.5.9.
+  Two extra probes of the same invariant on committed bytes also pass: two consecutive tokenless finishes after a
+  space-ending line, and a non-space-ending line followed by a tokenless finish, both join to `' We. We.'`.
+- DONE: The maintainer-style findings are present in the tree rather than only in the report: no acceptance-criterion, livecaption or hypothesis vocabulary in the test comments, the two config fields at the end of the dataclass, and the docs section inside the backend list with no candidate qualifier and the ten-minute stream artifact stated.
+  `git diff origin/main...HEAD` additions contain no `AC-`/`livecaption`/`_hypothesis`/`AlignedToken`/`acceptance criterion`;
+  `fields(WhisperLiveKitConfig)[-2:]` is `['nemotron_mlx_asr_model', 'nemotron_mlx_asr_att_context']` (keyword-only
+  construction everywhere, so the move is safe); `docs/backends.md` headings are `Canary` (129) -> `Nemotron through MLX`
+  (159) -> `Environment constraints` (199, last), no "(candidate)", and the section states the 0.03 s EOF delay and the
+  twenty Thai `า` at character 1543, both matching `benchmarks/evaluations/m5-20261107/REVIEW.md:54-56`.
+- DONE: The lock disclosure reproduces from the committed lock: the drawn-out list of packages that move in the default install and in the extras, the claim that pinning the measured mlx-audio version narrows that movement by zero packages, and the equivalence of boundary behaviour across the mlx-audio versions compared.
+  `uv sync --frozen --dry-run` under `UV_NO_CONFIG=1`, origin/main `1b2986d` vs this tip: default 75->75 `fsspec`
+  2026.6.0->2025.12.0 + `packaging` 26.2->24.2; `mlx-llm-mt`/`voxtral-mlx`/`qwen3-streaming` the same two; `funasr`
+  101->101 + `hydra-core` 1.3.8->1.3.2; `qwen3-vllm` 106->106 + `setuptools` 81.0.0->80.10.2; `diarization-diart`
+  3.12 128->128 + `lightning` 2.6.6->2.4.0, 3.13 the two only; `diarization-sortformer`/`qwen3-vllm-metal` none; the
+  extra adds exactly the seven claimed. The pin tree `/tmp/lockcmp/pin051` differs from the committed lock in mlx-audio
+  alone (407 entries / 380 names both) and moves the identical packages in all five shapes -> narrows by zero;
+  `branch-regen/uv.lock` is md5-identical to the committed lock (`b4105ed`), `main/uv.lock` to `origin/main`'s.
+  Boundary: re-ran fleurs_en_1932 + fleurs_zh_1850 on `fb26656` under 0.4.8 and 0.5.9 -> byte-identical hypotheses,
+  zero double spaces, WER 7.55 / CER 47.22 unchanged; matches the nine-clip artefact. `uv lock --check` rc 0 on 3.12
+  and 3.13; `ruff check` clean on both changed files.
+
+### Findings
+
+- Polish, report wording: the lock section cites "both 380 entries"; the lock holds 407 `[[package]]` entries and 380
+  distinct names. The equality claim itself is true on either count — the cited number is ambiguous, not wrong.
+- Deferred risk, e2e coverage: every benchmark clip is one utterance (`n_lines: 1`), so the end-to-end evidence still
+  never crosses a real utterance boundary — the gap that let this bug survive a 60-clip AC-7 pass. Promote to material
+  if a boundary regression is ever suspected again; the falsifier would be a two-utterance harness case in AC-7.
+- Advisory, reproducibility: the repo `.venv`'s editable install is a meta-path finder, so `python -c`/`wlk` launched
+  from the repo root imports the *main checkout's* `whisperlivekit` (branch `wlk/integration-2`), not the worktree's.
+  Running from inside the worktree, or via `pytest <worktree>/tests/...`, is what selects the worktree bytes; the
+  bench JSONs' `git_commit: fb26656` confirm the implementation's runs did import the branch.
+- Advisory: local `main` is stale (`ed571b6`) against `origin/main` (`1b2986d`); AC-5's diff should be read against
+  `origin/main`, where it is 12 commits of Nemotron-only files. No defect in the branch.
+
+### Summary
+
+The double-space correction holds on the committed bytes and both new tests are falsifiable — each fails alone when its
+own carry is removed, which is what the two earlier passing passes could not show. The sixth case (a popped closing
+space gluing two lines) is fixed and pinned. Lock drift, the zero-narrowing pin result and version-invariant boundary
+behaviour all reproduce from the committed lock and artefacts; maintainer-style hygiene is in the tree, not just the
+report. Observation only — disposition is the captain's.
