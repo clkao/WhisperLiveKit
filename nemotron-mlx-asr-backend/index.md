@@ -1040,3 +1040,104 @@ branch (0227da6) with the candidate byte-identical, falsified three ways, so AC-
 executable evidence rather than a code reading. The one thing an independent reviewer
 should rule on is wording, not behaviour: AC-2's named symbols are livecaption's, and the
 port's equivalents are recorded above.
+
+## Stage Report: validation (cycle 3)
+
+Candidate: `nemotron-standalone` @ `0227da6` (0 behind / 7 ahead of `origin/main`
+`1b2986d`), worktree `.worktrees/nemotron-standalone`, left unmodified (clean tree, 0
+staged, no worktree write); every comparison ran in `/tmp` throwaway trees, pre-fix bytes
+via `git show dfe842d^:…`. Adapter bytes unchanged since the inherited measurements:
+`asr_nemotron_mlx.py` last touched by `dfe842d`, `docs/backends.md` by `01e3547`, and
+`git diff 01e3547..0227da6 -- whisperlivekit/` is empty.
+
+- DONE: AC-1 — re-verified here.
+  Fresh interpreter importing the backend pulls none of `torch`/`transformers`/
+  `nemo_toolkit`/`onnxruntime`/`websockets` (empty; `mlx`/`mlx_audio` deferred to
+  construction, stronger than asked). `wlk bench --backend nemotron-mlx-asr --languages
+  zh,en --manifest benchmarks/corpora/fleurs-90.json` → 30/30 zh `ok`, non-empty
+  hypotheses, audio hash-verified, `effective_config.backend = nemotron-mlx-asr`.
+- DONE: AC-2 — re-verified here by mutation; satisfied in substance.
+  Tip suite 4 passed and an unmutated `/tmp` copy also 4 passed, so the harness is not what
+  fails. Mutations there: `final-only` (null starts/ends unless `final`) → `assert all(start
+  is not None …)`; `drop` → fails in the `end` term; `collapse` → `each frame must carry its
+  own start time` (`assert 1 == 4`); `reverse` → `token starts must not go backwards`.
+  AC-2 names livecaption's `AlignedToken`/`_hypothesis`, absent here; the equivalent is
+  `ASRToken.start/end` from `process_iter()` before any `finish()`, and `final-only` — the
+  criterion's literal question — fails. The AC sentence is left as written.
+- DONE: AC-3 — re-verified here.
+  `UV_NO_CONFIG=1 uv sync --dry-run --extra nemotron-mlx-asr --extra mlx-llm-mt` rc=0; one
+  interpreter imports `asr_nemotron_mlx`, `translation_mlx_llm_mt` and
+  `translation_hunyuan_mlx` with `mlx_lm`+`mlx_audio` on transformers 5.15.0.
+- DONE: AC-4 — re-verified here.
+  Same run: 30/30 en `ok`, non-empty committed hypotheses; language goes through
+  `model.prompt_dictionary`, and the session test covers zh/fr/auto on one shared model.
+- DONE: AC-5 — re-verified here.
+  `git diff --name-status origin/main...HEAD` = 12 files, no `asr_mlx_qwen3.py` /
+  `test_mlx_qwen3.py`; the `pyproject.toml` delta is exactly the `nemotron-mlx-asr` extra
+  plus three pairs that all name it; the only `mlx-qwen3-asr` under `whisperlivekit/` is
+  `benchmark/metrics.py:238`, byte-identical to `origin/main`.
+- DONE: AC-6 — re-verified here, inertness control included (F2).
+  `UV_NO_CONFIG=1 uv lock --check` exits 0 at 407 packages on 3.11/3.12/3.13; without it,
+  exit 1 ("global exclude newer"), so the committed lock is the config-free one. Compare vs
+  `origin/main`: +`mlx-audio` 0.5.9, +`miniaudio` 1.73, +`httpx2-jsfetch` 1.0,
+  +`win32-setctime` 1.2.1, none removed, **zero existing version changes**, `nvidia-*`
+  39 = 39, `cuda-toolkit` 12.9.1+13.0.2, `torch`/`torchaudio` re-keyed to `whl/cpu` at
+  unchanged versions. Re-locking the committed `pyproject.toml` from
+  `git show origin/main:uv.lock` reproduces the committed `uv.lock` byte for byte.
+- DONE: AC-7 — re-verified here, not merely transferred (F1).
+  Named clips at speed 0: `'  '` = 0/0/0, WER 39.39/0.00/8.82; on `dfe842d^` `'  '` =
+  2/1/1 = 4 plus a trailing space each, WER identical — the clause and its pre-fix figure
+  reproduce exactly. Adapter unchanged since `dfe842d`, licensing the rest of its evidence.
+- DONE: AC-8 — inherited with reason, plus a spot check here.
+  `docs/backends.md` unchanged since `01e3547`, the bytes cycle 2 reconciled, so that pass
+  stands. Re-checked: 0.12/0.11/0.05 s pooled EOF p95, "71% to 87% below Whisper small",
+  "74% to 94% below Qwen Metal", 19.27/14.97/22.62 vs 11.66/17.66/25.77 and
+  21.36/24.68/11.85, "7.6 points", "This is a low-latency option, not a general
+  replacement" all match `m5-20261107/REVIEW.md` verbatim. Cycle 2's two thin docs gaps
+  (Thai `า`, 6.26 s startup) remain gaps, not errors.
+
+### Findings
+
+F1 — material to AC-7's criterion sentence; its named falsifier still passes. Double
+spaces survive at utterance starts on clips adjacent to the three AC-7 names: 6 en + 2 zh
+cached FLEURS clips on the branch adapter give 5 occurrences (`en_1793`, `en_1825` at
+hypothesis start; `en_1932`, `en_1975` at a mid-clip pause; `zh_1850` in "802 .  1E"),
+against 17 for the same 6 en clips on `dfe842d^`; WER/CER and whitespace-normalised
+hypotheses are identical pre/post, so the fix only ever moved whitespace. The instrumented
+decode shows why: the new utterance's first call returns two whitespace-only tokens before
+the word (`first_tokens=[' ', ' ', 'I']`), which the previous utterance's trailing trim
+cannot reach — the seam moved inside one call rather than being removed. Strictly, AC-7's
+sentence ("no double space at an utterance boundary, verified end-to-end") is unmet; as
+its `Verified by:` clause it is met exactly. Which reading governs is captain-owned; the
+fix is to drop a duplicate leading whitespace token in an utterance's first decode call.
+
+F2 — the correction is confirmed; the inertness claim is base-relative. From
+`origin/main`'s lock, 3-pair, 5-pair and the 5→3 transition all give 407 entries / 380
+names / 39 `nvidia-*` / `cuda-toolkit` 12.9.1+13.0.2, with the 3-pair result
+byte-identical to the committed lock — inert, confirmed. From the branch's old stacked
+lock the removal reproduces the earlier reviewer's numbers exactly (393 entries, 26
+`nvidia-*`, 12.9.1 only, same 13 cu13 wheels), but an unrelated empty extra forcing a full
+53 s re-resolve from that same base keeps all 39 — so in that base the pairs are the
+trigger, not passively carried state. Only the main-derived lock ships, so the conclusion
+holds; the report's "purely … carrying fork state forward" gloss overstates.
+
+F3 — polish. `httpx2-jsfetch` (emscripten marker) and `win32-setctime` (win32) drop out of
+the four-package delta if the branch lock is re-locked after any unrelated pyproject edit
+(407→404, reproduced twice), while the same edit on `origin/main`'s lock is a no-op
+(402→402). No CI or platform effect; AC-6's delta describes the committed lock, which
+ships. Worth a line so a future re-lock does not read as a regression.
+
+### Summary
+
+All eight criteria are evidenced against this report: AC-1..AC-7 re-verified on this tip,
+AC-8 inherited from identical docs bytes with a fresh spot check. Other checks at the tip:
+`pytest tests/test_asr_nemotron_mlx.py` 4 passed, `test_backends.py test_session_context.py`
+47 passed/1 skipped, `test_benchmark.py test_silent_backend_guard.py` 14 passed, `ruff
+check .` clean; ~150 real-audio bench sessions over 60/8/6/3-sample manifests, one model at
+a time. The cycle-3 correction is right on the point that matters — from `origin/main`'s
+lock the removed pairs change nothing and the committed lock is byte-reproducible — though
+its mechanism wording is looser than the measurements support.
+
+Recommendation: REJECTED, narrowly, on AC-7 alone: F1 is either a one-call fix or an AC-7
+narrowing, both captain-owned. Read as scoped to its `Verified by:` clause, AC-7 passes and
+this report supports PASSED with F1 filed as follow-up. F2 and F3 need no action.
