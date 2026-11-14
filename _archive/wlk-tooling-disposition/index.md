@@ -4,6 +4,7 @@ status: backlog
 score: 0.7
 id: jjfex8ra01bb6m07tqck8fa6
 worktree: .
+archived: 2026-11-14T20:07:56Z
 ---
 
 # Task F — tooling disposition
