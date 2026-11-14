@@ -100,6 +100,17 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-5:revision-1
                 digest: sha256:a81760ca21b6b7fe903bf104d4505145d57d8f0a7fa59fc5081587c04d289123
                 room-ref: '@review/validation/briefing-5'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:n5g2sjy16zzy9rhdk8d1zn1p:validation:5
+                briefing: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-5:revision-1
+                by: person:captain
+                at: "2026-11-14T01:53:27.588727Z"
+                decision: approve
+                reason: 'Captain approved delivery. Validated tree 42f7433, 9 commits: the reported double-space symptom is closed with mutation-falsified tests, the maintainer-style findings are in the tree, the lock delta is measured and disclosed, and the branch is independent of #425.'
+              application:
+                target-stage: done
+                state: pending
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
