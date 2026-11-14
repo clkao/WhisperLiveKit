@@ -1212,3 +1212,84 @@ tree — showed it. Root cause was the utterance-start gate; the fix now collaps
 wherever the decoder emits it, the six pre-fix sites are clean, WER/CER are unchanged, and
 two falsified tests pin both residual shapes. The generalisation was FO-authorised after the
 finding was reported; no candidate bytes moved before that authorisation.
+
+## Stage Report: validation (cycle 4)
+
+Candidate `nemotron-standalone` @ `1fe5973` (0 behind / 9 ahead of `origin/main` `1b2986d`),
+worktree `.worktrees/nemotron-standalone` left unmodified (clean tree, 0 staged, no code edit).
+Every number below is from the worktree's committed bytes (`PYTHONPATH=<worktree>`, module
+confirmed to resolve there); the pre-fix side is a `/tmp` tree differing only in
+`asr_nemotron_mlx.py` at `0227da6` (md5 `9e369bd0…`, no `_collapse_space_runs`).
+
+- DONE: AC-7 reproduced on the committed bytes over the wide clip set, not the three clips it names and not a prototype tree: zero occurrences of a double space across all 60 cached en and zh clips, weighted WER 19.2661% and CER 22.5385% unchanged from pre-fix, and the six sites that carried one before the fix named as closed.
+  `wlk bench --backend nemotron-mlx-asr --manifest` = the 30 en + 30 zh rows of
+  `benchmarks/corpora/fleurs-90.json` with the shipped `audio_sha256` (60/60 hash-verified;
+  `runner.py:107` raises on mismatch). Tip: 60 ok / 0 failed, `hypothesis.count('  ')` = 0 in
+  all 60. Same manifest on `0227da6`: 60 ok, **6 occurrences in 6 clips** — `fleurs_en_1793`,
+  `fleurs_en_1825` (double *leading* space), `fleurs_en_1932`, `fleurs_en_1975`,
+  `fleurs_en_1985` (mid-utterance after `mountaineering.  The`), `fleurs_zh_1850`
+  (`802 .  1E`) — now 0/0/0/0/0/0. Weighted WER 19.2661% / CER 22.5385% are identical pre and
+  post, as are per-clip WER and CER (60/60), whitespace-normalised word sequences (60/60) and
+  the six-clip confirm run; only those six raw hypotheses differ, and only in whitespace.
+- DONE: AC-2 independently exercised and falsified by mutation on this tip, and every acceptance criterion is cited against this report.
+  Adapter suite 7 passed. Mutations on the AC-2 test only: times nulled unless `final` →
+  `assert all(start is not None …)`; all starts 0.0 → "each frame must carry its own start
+  time" (1 != 4); descending starts → "token starts must not go backwards"; `end` nulled →
+  fails. Orthogonality control: replacing `_collapse_space_runs` with identity leaves AC-2
+  passing and fails all three space tests, so the new rule touches token text only and the
+  AC-2 test still has power on this tip. AC-1..AC-8 are each evidenced below.
+- DONE: AC-3, AC-5 and AC-6 re-verified on this tip, with the registration suites passing.
+  AC-3 `UV_NO_CONFIG=1 uv sync --dry-run --extra nemotron-mlx-asr --extra mlx-llm-mt` rc=0,
+  and one interpreter imports `asr_nemotron_mlx` + `translation_mlx_llm_mt` with mlx_lm 0.31.3
+  and mlx_audio on transformers 5.15.0. AC-5 12 files in `git diff --name-status
+  origin/main...HEAD`, no `asr_mlx_qwen3.py` / `test_mlx_qwen3.py`, pyproject delta = 1 extra
+  plus 3 conflict pairs all naming it, and the only `mlx-qwen3-asr` under `whisperlivekit/` is
+  `benchmark/metrics.py:238`, byte-identical to `origin/main`. AC-6 `UV_NO_CONFIG=1 uv lock
+  --check` rc=0 at 407 packages on 3.11/3.12/3.13 (rc=1 / 404 without it, so the committed
+  lock is the config-free one); against `origin/main` +`httpx2-jsfetch` 1.0, +`miniaudio` 1.73,
+  +`mlx-audio` 0.5.9, +`win32-setctime` 1.2.1, 0 removed, **0 version changes across the 376
+  shared names**, `nvidia-*` 39 = 39, `cuda-toolkit` 12.9.1+13.0.2, torch/torchaudio forks
+  re-keyed to `whl/cpu` at unchanged versions, and re-locking from `origin/main`'s lock
+  reproduces the committed `uv.lock` byte-identically (md5 `b4105edb…`). Suites:
+  `test_backends` + `test_session_context` + `test_benchmark` + `test_silent_backend_guard`
+  61 passed / 1 skipped; `ruff check` clean on the nine touched files.
+
+### Every acceptance criterion against this report
+
+- AC-1 DONE: fresh interpreter importing the backend loads none of torch/transformers/nemo_toolkit/onnxruntime/websockets, and not even mlx/mlx_audio (deferred to construction); the wide run transcribed 30/30 zh in-process, non-empty, hash-verified.
+- AC-2 DONE: falsified by mutation as above; the equivalent of `AlignedToken.start` here is `ASRToken.start` from `process_iter()` before any `finish()`, and the "timestamps only at finalization" mutation is caught.
+- AC-3 DONE: dry-run rc=0 with both extras; both modules import in one transformers-5.15.0 interpreter.
+- AC-4 DONE: 30/30 en `ok` with non-empty hypotheses; language resolves through `model.prompt_dictionary` and the session test pins zh→`zh-CN`, fr→`fr-FR`, auto→None, unsupported→`ValueError`.
+- AC-5 DONE: standalone diff as above; no qwen3 module, test or extra.
+- AC-6 DONE: lock reproduces from main's lock, additions only, zero existing version changes, nvidia/cuda/torch sets unchanged.
+- AC-7 DONE: wide 60-clip A/B above — 6 pre-fix occurrences in 6 named clips, 0 at the tip, WER/CER unchanged. AC-7's own `Verified by:` clause also reproduces exactly at the tip (`fleurs_en_1682/1700/1711` = 0/0/0, WER 39.39/0.00/8.82) and reads 0 there pre-fix too, which is why it could never expose the seam.
+- AC-8 DONE: `docs/backends.md` matches `m5-20261107/REVIEW.md` and `summary.md` verbatim — 0.12/0.11/0.05 s pooled EOF p95, 71–87% below Whisper and 74–94% below Metal, 19.27/14.97/22.62 against Whisper 11.66/17.66/25.77 and Qwen Metal 21.363/24.678/11.846, "7.6 points", and "This is a low-latency option, not a general replacement".
+
+### Findings
+
+F1 — observation, not an AC-7 defect. This manifest gives zh CER 22.5385% where the m5 REVIEW
+records 22.615% (en WER matches to the digit at 19.2661%). The figure is identical pre and post
+fix on the same manifest and model artifact, so it predates this increment; the implementation
+report's "identical to … the m5 figures" is exact for WER and ~0.08 pt loose for CER.
+
+F2 — every hypothesis still opens with exactly one space (60/60), unchanged pre and post. The
+two pre-fix double-*leading*-space sites (`en_1793`, `en_1825`) now read one space. Single
+leading space is not a double space and is not part of AC-7.
+
+F3 — the rule strips a leading run only on a token whose predecessor's text ended in a space, so
+a single token carrying two internal leading spaces would survive. The tokenizer emits a
+standalone `▁` plus space-prefixed words, and no such shape appears in 60 clips: a coverage
+limit, not an observed defect.
+
+F4 — `docs/backends.md` still omits the REVIEW's twenty Thai `า` artifact and the startup figure;
+carried unchanged from cycle 2, thin gaps rather than errors.
+
+### Summary
+
+The candidate's general rule holds over the wide set: 6 double-space sites in 6 clips at
+`0227da6`, 0 at `1fe5973`, with WER/CER and word sequences unchanged pre to post and the three
+clips AC-7 names shown incapable of exposing the seam. AC-2 was falsified by mutation rather than
+read, and the whitespace rule was shown orthogonal to the timestamps; AC-1 and AC-3..AC-8 all
+re-verify on this tip, including a byte-identical re-lock from `origin/main`'s lock.
+
+Recommendation: **PASSED**. F1–F4 need no action this cycle.
