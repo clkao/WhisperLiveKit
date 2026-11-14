@@ -91,6 +91,10 @@ gates:
                 id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-4:revision-1
                 digest: sha256:2e48e1c7c5fe5bd35fc2179d917906f1931d8e0e3f4b2208b1923bc1d36a6bc7
                 room-ref: '@review/validation/briefing-4'
+              withdrawal:
+                by: agent:first-officer
+                at: "2026-11-14T01:30:09.764828Z"
+                reason: a maintainer-perspective review reproduced the reported double-space symptom on a tokenless final chunk; the fix has a hole and four style findings that must land before the gate
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
