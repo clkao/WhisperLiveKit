@@ -100,8 +100,11 @@ def test_overlay_sink_feeds_the_model_text():
     assert renderer.state().partial == "我們今天來討論"
 
     sink.emit(_event("transcription_final", "我們今天來討論鐳射。"))
-    # a commit does not change the rendered source text (no flicker on commit)
-    assert renderer.state().partial == "我們今天來討論鐳射。"
+    # the commit clears the live row (the model owns it) and retires what the
+    # reader was reading into the source history — the segment text is not
+    # re-assembled into a line
+    assert renderer.state().partial == ""
+    assert renderer.layout().history == ("我們今天來討論",)
 
     sink.emit(_event("translation_provisional", "Today we discuss laser."))
     renderer.pump()  # the frame clock releases the draft onto the line

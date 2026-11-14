@@ -2,11 +2,20 @@
 
 ``OverlayRenderer`` is the native window view over the shared caption display
 model. It owns a ``CaptionDisplay`` (``caption_display.py``) — the same model
-the terminal view and the replay consumer render — and feeds it plain text:
-committed source clauses, provisional translations, committed translations. All
+the terminal view and the replay consumer render — and feeds it plain text: the
+rolling source row, provisional translations, committed translations. All
 display policy (hold-drain, draft-to-final promotion, sentence partitioning,
-scroll-up, expiry) stays in the model; this module only moves the model's
-``DisplayState`` onto ``NSTextField``s and animates the deltas.
+monotonic source, scroll-up, expiry) stays in the model.
+
+The projection from model to screen is a pure function, ``layout(state,
+history) -> Layout``: the committed source lines, the live source row, the
+previous target line and the active target line, each as plain text plus a
+resolved style name (``DRAFT`` dim / ``COMMITTED`` bright). ``OverlayRenderer``
+draws what ``layout`` returns and decides nothing else; ``reveal_steps`` is the
+one piece of view policy left (how much of a grown line appears at once). Both
+are AppKit-free and unit-tested in ``tests/test_overlay_layout.py`` — a view that
+re-derived "is this provisional?", "did the line extend or was it rewritten?"
+from string prefixes is what this seam removed.
 
 Design:
 - One NSWindow, borderless, transparent, draggable, level 27 (above
@@ -32,16 +41,19 @@ bump ``OVERLAY_LEVEL`` (try a high raw NSInteger above
 from __future__ import annotations
 
 import re
-import sys
 import threading
+import time
+from dataclasses import dataclass
+from typing import List, Sequence, Tuple
 
 from whisperlivekit.caption_display import (
+    FINAL_ADD,
+    FINAL_SAME,
     PROVISIONAL,
     CaptionDisplay,
-    _common_prefix_len,
-    _truncate_spans,
+    DisplayState,
 )
-from whisperlivekit.src_buffer import SrcReadingBuffer
+from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
 
 # AppKit is imported lazily at instantiation (see _create_window) so this module
 # imports cleanly even on a headless host or without pyobjc installed. The level /
@@ -105,50 +117,151 @@ def _segments_text(segments: list) -> str:
     return "  ".join(parts)
 
 
+# ---- the layout: DisplayState -> the rows the window draws (no AppKit) ----
+
+# The window's visual vocabulary. The model publishes three span tags
+# (PROVISIONAL / FINAL_SAME / FINAL_ADD); the window's grammar is two — dim is a
+# draft, bright is committed — because the draft already grew by append and a
+# third colour read as noise.
+DRAFT = "draft"
+COMMITTED = "committed"
+_STYLE_NAMES = {PROVISIONAL: DRAFT, FINAL_SAME: COMMITTED, FINAL_ADD: COMMITTED}
+
+# The row fonts (pt) and the brightness each resolved style renders at: the
+# history row sits back so the active line owns the eye.
+TARGET_FONT_PT = 42.0
+PREV_FONT_PT = 28.0
+_TARGET_WHITE = {DRAFT: 0.55, COMMITTED: 1.0}
+_PREV_WHITE = {DRAFT: 0.5, COMMITTED: 0.8}
+
+
+@dataclass(frozen=True)
+class Run:
+    """One styled text run: a model span with its tag resolved to a style name."""
+    text: str
+    style: str
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Everything the window draws, and nothing it decides.
+
+    history: the committed source lines, oldest first (append-only)
+    source:  the live source row — the model's ``DisplayState.partial``
+    prev:    the previous target line (the row above the active one)
+    current: the active target line
+    """
+    history: Tuple[str, ...] = ()
+    source: str = ""
+    prev: Tuple[Run, ...] = ()
+    current: Tuple[Run, ...] = ()
+
+
+def runs_text(runs: Sequence[Run]) -> str:
+    """The plain text of a run list."""
+    return "".join(run.text for run in runs)
+
+
+def _runs(spans) -> Tuple[Run, ...]:
+    """The model's spans as runs, in order (empty spans dropped)."""
+    return tuple(Run(span.text, _STYLE_NAMES[span.style]) for span in spans if span.text)
+
+
+def _truncate(runs: Sequence[Run], n: int) -> Tuple[Run, ...]:
+    """The first n characters of a run list (the boundary run is split)."""
+    out: List[Run] = []
+    used = 0
+    for run in runs:
+        if used >= n:
+            break
+        text = run.text[:n - used]
+        out.append(Run(text, run.style))
+        used += len(text)
+    return tuple(out)
+
+
+def reveal_steps(shown: Sequence[Run],
+                 target: Sequence[Run]) -> Tuple[Tuple[Run, ...], ...]:
+    """The frames the active row is revealed in, from what is on screen to the
+    model's line.
+
+    A line that only GREW types its delta on unit by unit, so the reader watches
+    the sentence continue. Anything else — a new caption, a rewrite, a draft
+    replaced by its final — appears at once: typing a fresh chunk character by
+    character is unreadable. Every step's styles are the model's own (each step
+    is a prefix of ``target``), so the reveal can never disagree with the model
+    about which part of the line is committed.
+    """
+    shown_text, target_text = runs_text(shown), runs_text(target)
+    if not target or not shown_text or not target_text.startswith(shown_text):
+        return (tuple(target),) if target else ()
+    cur = shown_text
+    steps: List[Tuple[Run, ...]] = []
+    for unit in _merge_cjk_pairs(_DIFF_TOKEN_RE.findall(target_text[len(shown_text):])):
+        needs_space = (cur and unit and not unit.startswith(" ")
+                       and not cur.endswith(" ") and not _is_cjk(unit[0]))
+        cur = (cur + " " + unit) if needs_space else (cur + unit)
+        steps.append(_truncate(target, len(cur)))
+    return tuple(steps)
+
+
+def layout(state: DisplayState, history: Sequence[str] = ()) -> Layout:
+    """Project a ``DisplayState`` onto the window's rows.
+
+    Pure: the same state and history always give the same layout, with no clock
+    and no AppKit. Every display decision was made by the model — which text is
+    provisional, where a sentence ends, when a committed line scrolls up, how
+    long it holds; this only names the four parts the window has rows for.
+    """
+    return Layout(history=tuple(history), source=state.partial,
+                  prev=_runs(state.prev), current=_runs(state.current))
+
+
 class OverlayRenderer:
     """The caption overlay window: a view over ``CaptionDisplay``.
 
     Feed it text (``partial`` / ``final`` / ``preview`` / ``translation``); the
-    model it owns decides every display rule, the drain thread renders the
-    resulting ``DisplayState``. ``--mem`` and the latency status line belong to
-    the driver's ``StatsTracker``, not to the window: the caption event stream
-    carries no per-utterance start time, so the view reports no latency.
+    model it owns decides every display rule, the drain thread lays the resulting
+    ``DisplayState`` out (``layout``) and draws it. ``--mem`` and the latency
+    status line belong to the driver's ``StatsTracker``, not to the window: the
+    caption event stream carries no per-utterance start time, so the view reports
+    no latency.
     """
 
     def __init__(
         self,
         overlay_mode: str = "both",
         hold_sec: float = MIN_HOLD_SEC,
+        clock=time.monotonic,
     ) -> None:
         self._overlay_mode = overlay_mode  # "both" | "target" | "source"
-        self._lock = threading.Lock()
         self._stop = threading.Event()
-        # zh reading buffer: the src row shows committed clauses ACCUMULATED
-        # plus the rolling tail; when the sentence completes (terminator) the
-        # buffer freezes; the NEXT sentence's first words promote it to the zh
-        # history field. The float happens when new words need the line.
-        self._src = SrcReadingBuffer()    # src reading buffer (pure, tested)
         # window + fields (created in __enter__ on the main thread)
         self._win: AppKit.NSWindow | None = None
-        self._field_zh: AppKit.NSTextField | None = None
+        self._field_zh: AppKit.NSTextField | None = None        # newest committed source line
         self._field_en: AppKit.NSTextField | None = None
         self._field_en_prev: AppKit.NSTextField | None = None  # two-row target mode only
-        self._field_partial: AppKit.NSTextField | None = None
+        self._field_partial: AppKit.NSTextField | None = None   # the live source row
         # Display model: the pure, AppKit-free state machine (hold-drain, provisional
-        # -> final replacement, scroll-up-to-history, expiry) in caption_display.py. The
-        # renderer feeds committed/draft TEXT in; the drainer ticks the model and this
-        # view reconciles the returned DisplayState onto the NSTextFields. Tests drive
-        # the model directly with a fake clock (tests/test_caption_display.py).
-        self._model = CaptionDisplay(hold_sec=hold_sec)
+        # -> final replacement, monotonic source, scroll-up-to-history, expiry) in
+        # caption_display.py. The renderer feeds TEXT in; the drainer ticks the model,
+        # ``layout`` projects the returned DisplayState onto the rows and this view draws
+        # it. Tests drive the model directly with a fake clock
+        # (tests/test_caption_display.py) and the projection without a window
+        # (tests/test_overlay_layout.py).
+        self._model = CaptionDisplay(hold_sec=hold_sec, clock=clock)
+        # The source lines the reader has already been shown, oldest first: a commit
+        # retires the model's live row into this list (see ``final``). A record, not a
+        # decision — nothing here is re-derived from committed text.
+        self._source_history: List[str] = []
         self._en_drain_stop = threading.Event()
-        self._append_stop = threading.Event()  # cancels a stale streaming thread
-        self._src_stop = threading.Event()     # cancels the src-row reveal thread
-        self._src_streaming = False
-        self._src_streaming_target: str = ""
-        self._shown_en_plain: str = ""  # plain text currently rendered on the current row
-        self._shown_en_final: bool = False  # is the shown row in committed (bright) style
-        self._streaming_target: str = ""  # what the streaming thread is streaming toward
-        self._streaming_active = False  # is a streaming thread running
+        self._append_stop = threading.Event()  # cancels a stale reveal thread
+        # The frame buffer: the runs already typed onto the active row. The view's only
+        # state, and it decides only HOW MUCH of the model's line is on screen — never
+        # which part of it is provisional (the runs carry the model's styles).
+        self._shown: Tuple[Run, ...] = ()
+        self._streaming_target: Tuple[Run, ...] = ()  # the line a reveal is typing toward
+        self._streaming_active = False  # is a reveal thread running
         self._en_drain_thread: threading.Thread | None = None
 
     # ---- lifecycle (context manager, same shape as render.Renderer) ----
@@ -316,197 +429,112 @@ class OverlayRenderer:
             self.pump()
 
     def pump(self):
-        """Advance the model one frame and render it; None if nothing changed.
+        """Advance the model one frame and draw it; None if nothing changed.
 
         The frame clock's single step: all hold/expiry/scroll-up policy lives in
-        the model (caption_display.py, unit-tested); this only moves the returned
-        DisplayState to the screen. The drain thread calls it on a timer; a test
-        can call it directly (AppKit-free: the field writes no-op when no window
-        was created)."""
+        the model (caption_display.py, unit-tested); this lays the returned
+        DisplayState out and draws it. The drain thread calls it on a timer; a
+        test can call it directly (AppKit-free: the field writes no-op when no
+        window was created)."""
         state = self._model.tick()
         if state is not None:
-            self._reconcile(state)
+            self._reconcile(layout(state, self._source_history))
         return state
 
-    def _reconcile(self, state) -> None:
-        """Apply a DisplayState to the fields. The streaming effect lives HERE (the
-        view), not in the model: when the new current text EXTENDS what's already
-        rendered, reveal the delta word-by-word with a micro-delay (perceived
-        continuity); on a rewrite or first show, hard-swap to the latest.
+    def layout(self) -> Layout:
+        """What the window would draw now: the model's state laid out, without
+        advancing its clock."""
+        return layout(self._model.state(), self._source_history)
 
-        The model handles hold/scroll/expiry/queue logic; the view handles the
-        visual animation. All AppKit updates are dispatched to the main thread."""
-        cur_plain = "".join(sp.text for sp in state.current)
-        _prev_plain = "".join(s.text for s in state.prev)  # noqa: F841 — kept for the diff trace
-        is_provisional = bool(state.current) and state.current[0].style == PROVISIONAL
+    def _reconcile(self, frame: Layout) -> None:
+        """Draw one ``Layout``: four parts onto four fields, nothing decided.
 
-        # Current row: stream on extends (appending), hard-swap on everything else
-        # (new caption, rewrite, provisional→final). Typing a fresh large chunk
-        # char-by-char is unreadable; only appending a small delta benefits from
-        # the streaming effect.
-        if cur_plain != self._shown_en_plain:
-            if not cur_plain:
+        The frame buffer (``_shown``) is the view's only state, and it only
+        decides HOW MUCH of the model's line appears at once (``reveal_steps``,
+        which reveals a grown line and shows anything else whole). Provisional vs
+        committed is never re-derived here — every run carries the model's style.
+
+        With no window (a headless host, or before ``__enter__``) there is
+        nothing to animate: the buffer takes the model's line at once.
+        """
+        if frame.current != self._shown:
+            if not frame.current:
+                self._append_stop.set()
+                self._streaming_active = False
+                self._shown = ()
                 self._set(self._field_en, "")
-                self._shown_en_plain = ""
-            elif (self._shown_en_plain and cur_plain.startswith(self._shown_en_plain)
-                  and len(cur_plain) > len(self._shown_en_plain)):
-                # extends: stream the delta word-by-word
-                import os
-                if os.environ.get("OV_DEBUG"):
-                    print(f"[ov] extends: {self._shown_en_plain!r} -> {cur_plain!r}", file=sys.stderr, flush=True)
-                self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
+            elif AppKit is None or self._field_en is None:
+                self._shown = frame.current
             else:
-                # reword or new caption. A REWORD with a substantial common
-                # prefix keeps the prefix on screen and streams the divergent
-                # suffix (the MT self-corrected mid-draft — CL: non-appending
-                # provisional); a genuinely new caption hard-swaps.
-                cpl = _common_prefix_len(self._shown_en_plain, cur_plain)
-                if (cpl >= 8
-                        and cpl >= len(self._shown_en_plain) * 0.35
-                        and self._shown_en_plain.startswith(cur_plain[:cpl])):
-                    self._append_stop.set()
-                    self._streaming_active = False
-                    attr = self._spans_to_attributed(
-                        _truncate_spans(state.current, cpl))
-                    self._set_attr(self._field_en, attr)
-                    self._shown_en_plain = cur_plain[:cpl]
-                    self._shown_en_final = False
-                    self._stream_delta(self._shown_en_plain, cur_plain, is_provisional)
-                else:
-                    # new caption: hard-swap (just appear, no typing)
-                    import os
-                    if os.environ.get("OV_DEBUG"):
-                        print(f"[ov] hard-swap: {self._shown_en_plain!r} -> {cur_plain!r} (is_prov={is_provisional})", file=sys.stderr, flush=True)
-                    self._append_stop.set()
-                    self._streaming_active = False
-                    attr = self._spans_to_attributed(state.current)
-                    self._set_attr(self._field_en, attr)
-                    self._shown_en_plain = cur_plain
-                    self._shown_en_final = not is_provisional
-        elif (cur_plain and not is_provisional
-              and not getattr(self, "_shown_en_final", False)):
-            # same text, provisional → final: flip to bright IN PLACE (no retype)
-            # — the commit signal is the style change alone
-            attr = self._spans_to_attributed(state.current)
-            if attr is not None:
-                self._set_attr(self._field_en, attr)
-            self._shown_en_final = True
-
-        # Prev row: hard-swap (no streaming — it's history)
-        prev_attr = self._spans_to_attributed(state.prev) if state.prev else None
-        if prev_attr is not None:
-            self._set_attr(self._field_en_prev, prev_attr)
-        elif not state.prev and self._field_en_prev is not None:
+                self._reveal(frame.current)
+        if frame.prev:
+            self._set_attr(self._field_en_prev,
+                           self._attributed(frame.prev, PREV_FONT_PT, _PREV_WHITE))
+        else:
             self._set(self._field_en_prev, "")
+        # the newest committed source line (the window has one row for the history;
+        # the whole list travels in the Layout), then the live source row
+        self._set(self._field_zh, frame.history[-1] if frame.history else "")
+        self._set(self._field_partial, frame.source)
 
-        # src row: rendered from the model state (single writer, change-
-        # detected). committed prefix stable, rolling tail dim — same
-        # two-tone grammar as the EN row. The committed length is the reading
-        # buffer's (the model carries one plain partial string: it renders
-        # text, the view owns the two-tone split).
-        if self._field_partial is not None:
-            n = max(0, min(len(self._src.committed), len(state.partial)))
-            self._set_src(state.partial[:n], state.partial[n:])
+    def _reveal(self, target: Tuple[Run, ...]) -> None:
+        """Type a grown line onto the active row at a readable pace.
 
-    def _set_src(self, committed: str, tail: str) -> None:
-        """Render the source reading buffer with the committed/provisional split.
-        Single font, color-only distinction (dim = provisional, bright =
-        committed): mixed fonts reflow the line on every tail update — a
-        flicker source. Change-detected: identical content never re-renders.
-        Growth types out (CJK char pairs / Latin words); shrink or rewrite
-        (commit, promote, hypothesis revision) hard-swaps."""
-        if self._overlay_mode == "target" or self._field_partial is None:
+        The steps are ``reveal_steps``' (pure, tested); this only paces them on a
+        daemon thread and keeps the frame buffer in step, so the next frame knows
+        what is already on screen. A line that is not a growth is one step — it
+        simply appears."""
+        if self._streaming_active and self._streaming_target == target:
+            return  # already typing toward this line (the clock ticks every 100ms)
+        steps = reveal_steps(self._shown, target)
+        self._append_stop.set()  # cancel any reveal in flight
+        self._streaming_active = False
+        self._streaming_target = target
+        if len(steps) <= 1:
+            self._shown = target
+            self._set_attr(self._field_en, self._attributed(target, TARGET_FONT_PT, _TARGET_WHITE))
             return
-        key = (committed, tail)
-        if key == getattr(self, "_last_src_key", None):
-            return
-        full = committed + tail
-        prev_full = getattr(self, "_last_src_full", "")
-        if (AppKit is not None and getattr(self, "_src_streaming", False)
-                and getattr(self, "_src_streaming_target", None) == full):
-            return  # a reveal thread is already typing toward this text
-        if (prev_full and full.startswith(prev_full)
-                and len(full) > len(prev_full)):
-            # extends: type the appended units instead of snapping them in
-            self._src_last_committed = committed
-            self._stream_src_delta(full)
-            return
-        # reword (the hypothesis re-decoded): keep the common prefix on screen
-        # and type the divergent suffix — same grammar as the EN row. Only when
-        # the committed part is unchanged (the boundary text is stable).
-        # reword (the hypothesis re-decoded): keep the common prefix on screen
-        # and type the divergent suffix — same grammar as the EN row. The
-        # committed part must be preserved (cpl >= committed) — EXCEPT for a
-        # small boundary divergence (a premature tail terminator, e.g. the
-        # hypothesis guessed '来进行。' and the commit continues '来进行口腔
-        # 手术。'): allow the shown text to lose <= 2 boundary chars and still
-        # type, otherwise every mid-sentence commit snaps (CL: typing only on
-        # one sentence).
-        _prev_full_eff = prev_full
-        if prev_full and full:
-            cpl = 0
-            m = min(len(prev_full), len(full))
-            while cpl < m and prev_full[cpl] == full[cpl]:
-                cpl += 1
-            boundary_stable = (cpl >= len(committed)
-                               or (len(full) > len(prev_full)
-                                   and cpl >= len(prev_full) - 2))
-            if cpl >= 2 and boundary_stable and cpl != len(full):
-                self._src_last_committed = committed
-                self._src_streaming_target = ""
-                self._src_streaming = False
-                self._last_src_full = full[:cpl]
-                self._last_src_key = (full[:len(committed)], full[len(committed):cpl])
-                self._render_src_text(full[:cpl], len(committed))
-                self._stream_src_delta(full)
-                return
-        # rewrite / shrink / first show: hard-swap (no typing)
-        self._src_stop.set()
-        self._src_streaming = False
-        self._last_src_key = key
-        self._last_src_full = full
-        if AppKit is None:
-            self._set(self._field_partial, full)
-            return
-        font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
-        # the attributed string must carry the field's paragraph style — without
-        # it the text falls back to left alignment (make_field centers)
-        para = AppKit.NSMutableParagraphStyle.alloc().init()
-        para.setAlignment_(AppKit.NSCenterTextAlignment)
-        stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
-        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 1.0)
-        mut = AppKit.NSMutableAttributedString.alloc().init()
-        if committed:
-            mut.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    committed, {"NSFont": font, "NSColor": stable, "NSParagraphStyle": para}))
-        if tail:
-            mut.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    tail, {"NSFont": font, "NSColor": dim, "NSParagraphStyle": para}))
-        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "setAttributedStringValue:", mut, False)
+        self._append_stop = threading.Event()
+        stop = self._append_stop
+        # readable pacing: ~0.08s per step for short deltas, the whole reveal
+        # bounded at ~1.8s so a large single-event append still tracks the speech
+        step_sec = min(0.08, 1.8 / len(steps))
+        self._streaming_active = True
+
+        def _type() -> None:
+            for step in steps:
+                if stop.is_set():
+                    break
+                self._shown = step
+                self._set_attr(self._field_en,
+                               self._attributed(step, TARGET_FONT_PT, _TARGET_WHITE))
+                time.sleep(step_sec)
+            if self._append_stop is stop:  # a newer reveal did not supersede this one
+                self._streaming_active = False
+
+        threading.Thread(target=_type, daemon=True, name="ov-append").start()
 
     # ---- callback contract (source text in, display text to the model) ----
     def partial(self, label: str, text: str) -> None:
-        # New rolling words arrive. If the buffer holds a COMPLETED sentence,
-        # it floats up to the zh history field now — the float happens when
-        # new words need the line, not at commit. The src ROW is rendered by
-        # the drainer (_reconcile) from the model state — single writer.
-        display = self._src.tail(text)
-        promoted = self._src.consume_promotion()
-        if promoted is not None and self._overlay_mode != "target":
-            self._set(self._field_zh, promoted)
-        self._model.set_partial(display)
+        """The rolling ASR tail. The model owns it — monotonic within a sentence,
+        dropped when a commit lands or the row goes stale — and ``layout`` renders
+        it as the source row."""
+        self._model.set_partial(text)
 
     def final(self, label: str, segments: list) -> None:
-        # The committed clause accumulates into the reading buffer (append);
-        # a sentence-final terminator freezes the buffer. The zh history field
-        # keeps the PREVIOUS sentence — no duplicate rows. The tail the commit
-        # did not absorb stays on screen — the display text must not change at
-        # commit time (CL: flickering prefix at every mid-sentence commit).
-        self._src.commit(_segments_text(segments))
-        self._model.set_partial(self._src.display)
+        """A committed source clause: the row the reader was reading retires into
+        the source history, and the model clears it.
+
+        The committed segments are not re-assembled into a line: the model's own
+        ``partial`` is the accumulated row the reader watched, while a commit
+        carries one ASR segment of it (``我们今天`` of a sentence the row showed
+        whole). Expiry is not a commit — a row the model drops after a silence
+        was never committed, so it leaves no history line.
+        """
+        current = self._model.state().partial
+        if current:
+            self._source_history.append(current)
+        self._model.clear_partial()
 
     def translation(self, label: str, segments: list) -> None:
         """A committed translation: the caption text the reader keeps."""
@@ -542,153 +570,30 @@ class OverlayRenderer:
             "setStringValue:", value, False
         )
 
-    def _render_src_text(self, text: str, committed_len: int) -> None:
-        """Two-tone render of the src row: committed bright, rest dim."""
-        if AppKit is None:
-            self._set(self._field_partial, text)
-            return
-        font = AppKit.NSFont.systemFontOfSize_weight_(19, AppKit.NSFontWeightRegular)
+    def _attributed(self, runs: Sequence[Run], size: float, whites: dict):
+        """Runs -> a styled NSAttributedString, each run in its own style's
+        colour. ``whites`` maps a resolved style name to its calibrated white
+        level (dim draft, bright committed). None when there is nothing to draw
+        (no window, no runs)."""
+        if not runs or AppKit is None:
+            return None
+        font = AppKit.NSFont.systemFontOfSize_weight_(size, AppKit.NSFontWeightBold)
+        # the attributed string must carry the field's paragraph style — without
+        # it the text falls back to left alignment (make_field centers)
         para = AppKit.NSMutableParagraphStyle.alloc().init()
         para.setAlignment_(AppKit.NSCenterTextAlignment)
-        stable = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.85, 1.0)
-        dim = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.5, 1.0)
         mut = AppKit.NSMutableAttributedString.alloc().init()
-        n = min(committed_len, len(text))
-        if n:
+        for run in runs:
+            attrs = {
+                "NSFont": font,
+                "NSColor": AppKit.NSColor.colorWithCalibratedWhite_alpha_(
+                    whites[run.style], 1.0),
+                "NSParagraphStyle": para,
+            }
             mut.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    text[:n], {"NSFont": font, "NSColor": stable, "NSParagraphStyle": para}))
-        if len(text) > n:
-            mut.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                    text[n:], {"NSFont": font, "NSColor": dim, "NSParagraphStyle": para}))
-        self._field_partial.performSelectorOnMainThread_withObject_waitUntilDone_(
-            "setAttributedStringValue:", mut, False)
-
-    def _stream_src_delta(self, target: str) -> None:
-        """Type the src row's appended units (CJK char pairs / Latin words) —
-        the same typing grammar as the EN row, applied to the ASR reading
-        buffer. Cancels a stale reveal thread; the drainer's guard
-        (_src_streaming_target) prevents tick-restarts."""
-        from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
-        prev = getattr(self, "_last_src_full", "")
-        committed_len = len(getattr(self, "_src_last_committed", "") or "")
-        delta = target[len(prev):] if prev and target.startswith(prev) else target
-        self._src_stop.set()
-        self._src_stop = threading.Event()
-        stop = self._src_stop
-        self._src_streaming_target = target
-        self._src_streaming = True
-        def _stream(prev=prev, delta=delta, stop=stop, target=target,
-                    committed_len=committed_len):
-            import time as _t
-            cur = prev
-            units = _merge_cjk_pairs(_DIFF_TOKEN_RE.findall(delta))
-            n_units = max(1, len(units))
-            step = min(0.08, 1.8 / n_units)
-            for w in units:
-                if stop.is_set():
-                    self._src_streaming = False
-                    return
-                needs_space = (cur and w and not w.startswith(" ")
-                              and not cur.endswith(" ")
-                              and not _is_cjk(w[0]) and not _is_cjk(cur[-1]))
-                cur = (cur + " " + w) if needs_space else (cur + w)
-                self._last_src_full = cur
-                self._last_src_key = (cur[:committed_len], cur[committed_len:])
-                self._render_src_text(cur, committed_len)
-                _t.sleep(step)
-            self._src_streaming = False
-        threading.Thread(target=_stream, daemon=True, name="ov-src-type").start()
-
-    def _stream_delta(self, shown: str, target: str, is_provisional: bool) -> None:
-        """Stream from `shown` to `target` word-by-word at 0.05s intervals via a
-        daemon thread. Cancels any stale streaming thread first. Updates
-        _shown_en_plain incrementally so the next tick's check sees the growth.
-
-        Tokenization is CJK-aware: each CJK char is its own token, Latin runs
-        stay whole (reuses inline_diff._DIFF_TOKEN_RE so the streaming units
-        match the diff units)."""
-        # Don't re-trigger if already streaming toward the same target — the
-        # drainer ticks at 100ms and would restart the streaming every tick,
-        # creating a stuttering char-by-char effect.
-        if self._streaming_active and self._streaming_target == target:
-            return
-        from whisperlivekit.inline_diff import _DIFF_TOKEN_RE
-        delta = target[len(shown):] if shown and target.startswith(shown) else target
-        self._append_stop.set()
-        self._append_stop = threading.Event()
-        stop = self._append_stop
-        is_prov = is_provisional
-        self._streaming_target = target
-        self._streaming_active = True
-        def _stream(shown=shown, delta=delta, stop=stop, is_prov=is_prov, target=target):
-            import time as _t
-            cur = shown if (shown and target.startswith(shown)) else ""
-            if not target.startswith(shown):
-                self._set(self._field_en, "")
-            tokens = _DIFF_TOKEN_RE.findall(delta)
-            words = _merge_cjk_pairs(tokens)
-            # readable pacing: ~0.08s per unit for short deltas, total reveal
-            # bounded at ~1.8s so a large single-event append still finishes
-            # fast enough to track the speech (CL: a big append at 0.05s/unit
-            # flashed by unreadably fast)
-            n_units = max(1, len(words))
-            step = min(0.08, 1.8 / n_units)
-            for w in words:
-                if stop.is_set():
-                    self._streaming_active = False
-                    return
-                needs_space = (cur and w and not w.startswith(" ")
-                              and not cur.endswith(" ")
-                              and not _is_cjk(w[0]))
-                cur = (cur + " " + w) if needs_space else (cur + w)
-                self._shown_en_plain = cur
-                attr = self._spans_to_attributed_simple(cur, is_prov)
-                self._set_attr(self._field_en, attr)
-                _t.sleep(step)
-            self._streaming_active = False
-        threading.Thread(target=_stream, daemon=True, name="ov-append").start()
-
-    def _spans_to_attributed(self, spans: list) -> "AppKit.NSAttributedString | None":
-        """Build a styled NSAttributedString from the model's DisplayState spans.
-        Style → color: PROVISIONAL → dimmed, committed (FINAL_SAME and FINAL_ADD
-        alike) → white. The overlay's only visual grammar is dim = provisional,
-        bright = committed — no diff coloring (the draft already grew by
-        append; green deltas were noise). Returns None for empty spans."""
-        if not spans:
-            return None
-        if AppKit is None:
-            return None
-        font = AppKit.NSFont.systemFontOfSize_weight_(42, AppKit.NSFontWeightBold)
-        para = AppKit.NSMutableParagraphStyle.alloc().init()
-        para.setAlignment_(AppKit.NSCenterTextAlignment)
-        white = AppKit.NSColor.whiteColor()
-        dimmed = AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
-        mut = AppKit.NSMutableAttributedString.alloc().init()
-        for sp in spans:
-            if sp.style == PROVISIONAL:
-                color = dimmed
-            else:  # FINAL_SAME, FINAL_ADD — committed is committed: bright
-                color = white
-            attrs = {"NSFont": font, "NSColor": color, "NSParagraphStyle": para}
-            mut.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(sp.text, attrs)
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(run.text, attrs)
             )
         return mut
-
-    def _spans_to_attributed_simple(self, text: str, is_provisional: bool) -> "AppKit.NSAttributedString":
-        """Build a single-style attributed string for the streaming thread (plain
-        text, one color: dimmed for provisional, white for final)."""
-        if AppKit is None:
-            return None
-        font = AppKit.NSFont.systemFontOfSize_weight_(42, AppKit.NSFontWeightBold)
-        para = AppKit.NSMutableParagraphStyle.alloc().init()
-        para.setAlignment_(AppKit.NSCenterTextAlignment)
-        color = (AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0)
-                 if is_provisional else AppKit.NSColor.whiteColor())
-        attrs = {"NSFont": font, "NSColor": color, "NSParagraphStyle": para}
-        return AppKit.NSAttributedString.alloc().initWithString_attributes_(text, attrs)
 
     def _set_attr(self, field: AppKit.NSTextField | None, attr) -> None:
         """Update a field with an attributed string on the MAIN thread."""

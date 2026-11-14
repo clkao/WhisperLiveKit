@@ -1,57 +1,30 @@
-"""The src-row reading buffer (view-side state machine, pure).
+"""The one helper left in ``src_buffer.py`` (the source-row sentence test).
 
-SrcReadingBuffer accumulates committed source clauses for the reading row and
-suppresses promoted sentences from the live hypothesis. These are view-layer
-tests; the caption display policy's own tests live with the model
-(test_caption_display.py on the display branch).
+``ends_sentence`` is what the terminal driver asks about a grown cumulative
+source line: has it landed a whole sentence, so the suffix may print on its own
+(``scripts/lc_terminal.py:TerminalSink``). The overlay's reading buffer — the
+second copy of the source row rule, with its own promote/freeze bookkeeping — is
+gone; the caption display model owns that rule now (``DisplayState.partial``,
+``tests/test_caption_display.py``, and the overlay layout tests).
 """
 
-# ---- SrcReadingBuffer (the src row state machine, pure) ----
 
-def test_src_buffer_full_zh_long_sequence():
-    """Drive the real src buffer through the golden sentence-2 sequence:
-    clause commits accumulate, the sentence completes at the terminator,
-    the next sentence's words promote it to history."""
-    from whisperlivekit.src_buffer import SrcReadingBuffer
-    b = SrcReadingBuffer()
-    # sentence 1
-    assert b.tail("我们今天来讨论") == "我们今天来讨论"
-    b.commit("我们今天来讨论")
-    assert b.tail("镭射在医学上的应用") == "我们今天来讨论镭射在医学上的应用"
-    assert b.commit("镭射在医学上的应用。") == "我们今天来讨论镭射在医学上的应用。"
-    assert b.sentence_complete
-    # sentence 2 starts: sentence 1 promotes
-    assert b.tail("镭射技术可以精确的切除肿瘤组织") == "镭射技术可以精确的切除肿瘤组织"
-    assert b.consume_promotion() == "我们今天来讨论镭射在医学上的应用。"
-    b.commit("镭射技术可以精确的切除肿瘤组织")
-    assert b.tail("减少对周围健康组织的伤害") == "镭射技术可以精确的切除肿瘤组织减少对周围健康组织的伤害"
-    assert b.commit("减少对周围健康组织的伤害。") == "镭射技术可以精确的切除肿瘤组织减少对周围健康组织的伤害。"
-    assert b.sentence_complete
+def test_ends_sentence_latin_and_cjk_terminators():
+    """A finished sentence in either script ends the line; an in-flight clause
+    does not (the terminal prints the suffix only when this is true)."""
+    from whisperlivekit.src_buffer import ends_sentence
+    assert ends_sentence("and I will give a short overview of the paper.")
+    assert ends_sentence("镭射在现代医学中扮演着越来越重要的角色。")
+    assert ends_sentence("真的吗？")
+    assert ends_sentence("太棒了！")
+    assert ends_sentence('He called it "the laser age."')
+    assert not ends_sentence("and I will give")
+    assert not ends_sentence("镭射在医学上的应用")
 
 
-def test_src_join_cjk_no_space_latin_space():
-    from whisperlivekit.src_buffer import src_join
-    assert src_join("我们今天来讨论", "镭射在医学上的应用。") == "我们今天来讨论镭射在医学上的应用。"
-    assert src_join("Hello everyone.", "My name is Ihab Bilad") == "Hello everyone. My name is Ihab Bilad"
-    assert src_join("", "text") == "text"
-    assert src_join("text", "") == "text"
-
-
-def test_src_buffer_suppresses_promoted_sentence_in_tail():
-    """After a promote, backends' rolling buffers still carry the promoted
-    sentence — it must NOT re-appear as a dim draft in the same row."""
-    from whisperlivekit.src_buffer import SrcReadingBuffer
-    b = SrcReadingBuffer()
-    b.commit("我们今天来讨论镭射在医学上的应用。")   # sentence 1 complete
-    # next sentence's words arrive: promote fires, but the raw hypothesis
-    # still carries the promoted sentence + the new tail
-    display = b.tail("我们今天来讨论镭射在医学上的应用。镭射技术可")
-    assert "我们今天来讨论镭射在医学上的应用。" not in display, (
-        f"promoted sentence re-appeared in the draft: {display!r}")
-    assert display == "镭射技术可", display
-    assert b.consume_promotion() == "我们今天来讨论镭射在医学上的应用。"
-    # once the hypothesis moves past the promoted text, suppression ends
-    display = b.tail("镭射技术可以精确")
-    assert display == "镭射技术可以精确"
-
-
+def test_ends_sentence_ignores_trailing_whitespace():
+    """The ASR fragment carries trailing spaces; they are not the last character
+    the test looks at."""
+    from whisperlivekit.src_buffer import ends_sentence
+    assert ends_sentence("of the paper.  ")
+    assert not ends_sentence("")
