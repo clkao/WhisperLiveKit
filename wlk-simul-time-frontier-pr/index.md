@@ -99,3 +99,41 @@ WIP was completed rather than restarted, and the live A/B confirmation is
 deferred to the captain's machine (disk pressure). The gate-semantics
 decision (task wlk-fixture-gate-semantics) remains open for the PR
 description edit.
+
+### Feedback Cycles
+
+#### Cycle 1 — base rebuilt, and the metric we were using is wrong (2026-11-14)
+
+The entity returns to `ideation` from `backlog` with these corrections. Two premises in the
+body are stale, and the headline numbers are not transferable.
+
+1. **Base.** The frontier is merged into `wlk/integration-3`, rebuilt on `origin/main` @
+   `496b5f6` (PR #426 already upstream), at merge `8b1e283`. Name that base.
+2. **Precondition closed.** The body asks to "re-verify against the maintainer's adapted
+   simul code first". Done: the merge measured 0 conflicts on both the old base `1b2986d` and
+   the new one. The engine selects `frontier: auto` and finds its 8 calibrated heads on a
+   real run.
+3. **Prerequisite closed.** Task A's zh-en calibration is upstream. The "mirror or serial
+   fallback" contingency no longer applies.
+4. **The metric is wrong, and the numbers do not transfer.** `check_simul_heads.py` computes
+   `mean over finals of |final_words ∩ union(pre-final provs)| / |final_words|`. It filters
+   provisionals by `pt < ft` with **no utterance scoping**, and it intersects word **sets**
+   rather than aligned prefixes. Measured on a working stream from `integration-3` with two
+   provisionals and two finals, it reported 0.33, FAIL. Use instead, both portable from the
+   now-deprecated `livecaption` (`_work/livecaption-findings.md`):
+   - user-visible latency: provisional and final E2E from utterance onset,
+   - realizable commit fraction from attention against committed source.
+5. **The claim is backend-conditional.** The frontier cuts on `t.end <= cutoff`. Nemotron
+   emits per-token ends. `mlx-qwen3-asr` emits one token spanning the utterance. So the
+   frontier is word-accurate on nemotron and near-utterance granularity on qwen3. Report both
+   backends, or state which timestamp source the number came from. The 0.63 to 0.82-0.87
+   figures came from the coarse path and mean nothing on this branch.
+6. **Thresholds.** 0.6 is the only scripted PASS. The 0.75 in this entity's Acceptance is a
+   target no script implements. Label it as a target.
+7. **`jj` is off the critical path.** `check_simul_heads.py` is 65 lines, stdlib only.
+   Copy it, or run it from the other branch. Rule: `km` owns the copy it uses, `8z` reuses
+   that file. Decide `jj`'s dispositions later, with evidence.
+8. **A better tail than interpolation.** Upstream `livecaption` maps aligned words with
+   Qwen3-ForcedAligner, and `asr_qwen.py` uses it for speaker splits. The same technique
+   supplies real word times for the unstable tail, replacing the proportional `frac`
+   approximation. Evaluate it before shipping the approximation as the design.
