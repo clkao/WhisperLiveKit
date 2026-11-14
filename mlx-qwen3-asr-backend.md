@@ -110,6 +110,17 @@ gates:
                 id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-5:revision-1
                 digest: sha256:2d9d22e6d1642d046e6a9b9d6db60d6e69489bb082233cfa4be3bb0921384f04
                 room-ref: '@review/validation/briefing-5'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:validation:5
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-5:revision-1
+                by: person:captain
+                at: "2026-11-14T19:03:21.501584Z"
+                decision: approve
+                reason: 'Validation approved on head 91d2b01: maintainer reproduced the numbers and reported the crash and repetitions gone; CI green; one open item is his confirmation of the segment-start duplication fix.'
+              application:
+                target-stage: done
+                state: pending
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
