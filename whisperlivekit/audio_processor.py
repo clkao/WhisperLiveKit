@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator, List, Optional, Union
 import numpy as np
 
 from whisperlivekit.audio_input import AudioInput
+from whisperlivekit.caption_events import EventLog, EventSink, EventTap
 from whisperlivekit.config import validate_pause_segmentation_seconds
 from whisperlivekit.core import (
     TranscriptionEngine,
@@ -69,6 +70,25 @@ def should_defer_inference(deferred_s: float, chunk_s: float, min_s: float) -> b
         return False
     return deferred_s + chunk_s < min_s
 
+
+class _FanOutSink:
+    """Deliver each caption event to both stream consumers.
+
+    ``EventTap`` carries one sink. Two independent consumers can want the same
+    stream — the display model a caller handed in (renders captions) and the
+    optional ``--event-log`` JSONL recording (a replay artifact) — so this
+    forwards every event to each of them. With one consumer, or none, the tap
+    holds the sink (or nothing) directly and this is never constructed.
+    """
+
+    def __init__(self, sinks: List[EventSink]) -> None:
+        self._sinks = list(sinks)
+
+    def emit(self, event: Any) -> None:
+        for sink in self._sinks:
+            sink.emit(event)
+
+
 class AudioProcessor:
     """
     Processes audio streams for transcription and diarization.
@@ -90,6 +110,11 @@ class AudioProcessor:
         # "diff" clients keep their own copy and allow bounded server memory.
         session_mode = kwargs.pop('mode', 'full')
         session_target_language = kwargs.pop('target_language', None)
+        # The display model is a consumer of the caption event stream: a caller
+        # that wants to render captions passes its own CaptionDisplay here and
+        # the event tap feeds it (see the tap construction below). No consumer,
+        # no display state.
+        session_caption_display = kwargs.pop('caption_display', None)
 
         if 'transcription_engine' in kwargs and isinstance(kwargs['transcription_engine'], TranscriptionEngine):
             models = kwargs['transcription_engine']
@@ -219,6 +244,31 @@ class AudioProcessor:
         # not flicker while the partial text evolves.
         self.translate_on_complete: bool = bool(getattr(self.args, "translate_on_complete", False))
         self._pending_translation_tokens: List[ASRToken] = []
+
+        # Caption event tap: emits the standardized caption event stream
+        # (transcription/translation provisional+final) alongside the FrontData
+        # snapshot path. The web UI is untouched. A sink exists only when
+        # something consumes the stream: the display model the caller handed in
+        # (``caption_display=``) renders captions from it, and --event-log
+        # records it to JSONL for replay. With neither, the tap is a no-op and
+        # no display state is allocated.
+        self.caption_display: Optional[Any] = session_caption_display
+        _event_log_path = getattr(self.args, "event_log", None)
+        self._event_log: Optional[EventLog] = EventLog(_event_log_path) if _event_log_path else None
+        _event_sinks: List[EventSink] = [
+            sink for sink in (self.caption_display, self._event_log) if sink is not None
+        ]
+        if not _event_sinks:
+            _sink: Optional[EventSink] = None
+        elif len(_event_sinks) == 1:
+            _sink = _event_sinks[0]
+        else:
+            _sink = _FanOutSink(_event_sinks)
+        self.event_tap = EventTap(sink=_sink)
+        # dedupe state: emit ASR provisional only when the tail text changes
+        # (MT-provisional dedupe lives in the translation loop — it keys off
+        # the backend's progress contract there)
+        self._last_asr_prov: str = ""
 
         # Silent-backend watchdog: flips once the ASR has produced anything.
         self._any_asr_output: bool = False
@@ -606,6 +656,11 @@ class AudioProcessor:
                     )
             if final_tokens:
                 logger.info(f"Finish flushed {len(final_tokens)} tokens")
+                # caption events: the terminal flush commits the remaining tail
+                self.event_tap.transcription_final(
+                    final_tokens[-1].end or end_time,
+                    self.sep.join(t.text for t in final_tokens),
+                )
                 # Synthetic buffer recovery did not come from a counted backend
                 # call, but it still creates output tokens exposed to consumers.
                 self.metrics.n_tokens_produced += synthetic_token_count
@@ -646,6 +701,13 @@ class AudioProcessor:
                     _buffer_transcript = self.transcription.get_buffer()
                     async with self.lock:
                         self.state.buffer_transcription = _buffer_transcript
+                    _prov = (_buffer_transcript.text or "").strip()
+                    if _prov and _prov != self._last_asr_prov:
+                        self._last_asr_prov = _prov
+                        self.event_tap.transcription_provisional(
+                            _buffer_transcript.end if _buffer_transcript.end is not None else self.state.end_buffer,
+                            _prov,
+                        )
                     continue
 
                 if item is SENTINEL:
@@ -775,6 +837,20 @@ class AudioProcessor:
                 else:
                     self._warn_if_backend_silent(cumulative_pcm_duration_stream_time)
 
+                # caption events: committed tokens (final) + rolling tail (provisional)
+                if new_tokens:
+                    self.event_tap.transcription_final(
+                        new_tokens[-1].end or current_audio_processed_upto,
+                        self.sep.join(t.text for t in new_tokens),
+                    )
+                prov_text = (_buffer_transcript.text or "").strip()
+                if prov_text and prov_text != self._last_asr_prov:
+                    self._last_asr_prov = prov_text
+                    self.event_tap.transcription_provisional(
+                        _buffer_transcript.end if _buffer_transcript.end is not None else current_audio_processed_upto,
+                        prov_text,
+                    )
+
                 await self._queue_tokens_for_translation(new_tokens)
                 await self._queue_hypothesis_tail_for_translation(_buffer_transcript)
                 if isinstance(item, Silence) and item.is_starting:
@@ -865,7 +941,10 @@ class AudioProcessor:
         logger.info("Diarization processor task finished.")
 
     async def translation_processor(self) -> None:
-        await run_translation(self.translation_queue, self.translation, self.state, self.lock)
+        await run_translation(
+            self.translation_queue, self.translation, self.state, self.lock,
+            self.event_tap,
+        )
 
     async def results_formatter(self) -> AsyncGenerator[FrontData, None]:
         """Format processing results for output."""
@@ -1035,6 +1114,10 @@ class AudioProcessor:
         if created_tasks:
             await asyncio.gather(*created_tasks, return_exceptions=True)
         logger.info("All processing tasks cancelled or finished.")
+
+        # The producers have stopped, so the event log can be closed here.
+        if self._event_log is not None:
+            self._event_log.close()
 
         if not self.is_pcm_input and self.ffmpeg_manager:
             try:
