@@ -2,9 +2,10 @@
 """In-process captioning on WhisperLiveKit — terminal output OR native overlay.
 
 In-process: no server, no WebSocket. Builds the pipeline through
-``TestHarness`` with the two in-process MLX backends:
+``TestHarness`` with the in-process MLX backends:
 
-  --backend mlx-qwen3-asr   pure-MLX Qwen3-ASR streaming ASR
+  --backend                  any ASR backend this base ships; the MLX one is
+                             nemotron-mlx-asr (default)
   --translation-backend      mlx-llm-mt (generic decoder-LLM MT via mlx-lm)
 
 Two display paths, both consuming the same session:
@@ -20,17 +21,17 @@ Two display paths, both consuming the same session:
 The overlay path is the production target:
 
     uv run --frozen --extra opencc --extra listen --extra mlx-llm-mt \\
-      --extra overlay --extra mlx-qwen3-asr scripts/lc_terminal.py \\
-      --backend mlx-qwen3-asr --source mic --no-second-pass \\
-      --mlx-qwen3-asr-model mlx-community/Qwen3-ASR-0.6B-8bit \\
+      --extra overlay --extra nemotron-mlx-asr scripts/lc_terminal.py \\
+      --backend nemotron-mlx-asr --source mic --no-second-pass \\
       --mlx-llm-mt-model hy-mt2-1.8b-8bit --simultaneous --simul-commit mass \\
       --overlay --overlay-mode target \\
       --opencc s2twp --target-language en --mem
 
 Flags that this base cannot support fail loudly rather than silently doing
 nothing: ``--second-pass`` (this ASR backend has no two-pass re-decode, so
-``--no-second-pass`` is the honest default) and ``--opencc-mt`` (MT-input
-conversion is a pipeline change, not a display one).
+``--no-second-pass`` is the honest default), ``--opencc-mt`` (MT-input
+conversion is a pipeline change, not a display one) and ``--hotwords`` (only
+``--backend mlx-qwen3-asr`` carries a hotword context).
 """
 from __future__ import annotations
 
@@ -107,7 +108,6 @@ def _make_engine_kwargs(args) -> dict:
         "pause_segmentation_seconds": float(os.environ.get("LC_PAUSE", "0.35")),
         "mlx_llm_mt_simul_soft_max_s": float(os.environ.get("LC_SOFT_MAX", "4.0")),
         "mlx_llm_mt_simul_hard_max_s": float(os.environ.get("LC_HARD_MAX", "20.0")),
-        "mlx_qwen3_asr_model": args.mlx_qwen3_asr_model,
         # Simultaneous MT: AlignAtt commit policy over the calibrated heads.
         "mlx_llm_mt_simultaneous": bool(args.simultaneous),
         "mlx_llm_mt_simul_commit": args.simul_commit,
@@ -116,9 +116,15 @@ def _make_engine_kwargs(args) -> dict:
         # Single-presenter use case: no speaker diarization, so no [S1] markers.
         "diarization": False,
     }
-    # Hotwords: a static --hotwords list becomes the recognizer's initial context.
-    if args.hotwords:
-        kw["mlx_qwen3_asr_context"] = args.hotwords
+    # ASR model selection is per backend and each backend's id is its own config
+    # field, so only the selected backend's key is passed: an unknown key fails
+    # inside WhisperLiveKitConfig.
+    if args.backend == "mlx-qwen3-asr":
+        kw["mlx_qwen3_asr_model"] = args.mlx_qwen3_asr_model
+        # Hotwords: a static --hotwords list becomes the recognizer's initial
+        # context (see ``main``: rejected for backends without one).
+        if args.hotwords:
+            kw["mlx_qwen3_asr_context"] = args.hotwords
     # --event-log: the AudioProcessor opens the JSONL sink itself and fans the
     # caption event stream out to it alongside the display consumer.
     if args.event_log:
@@ -486,7 +492,9 @@ def _run_source(args, caption_display, on_state, stop_event):
 def _print_banner(args, src_config, tgt_config) -> None:
     """Print a compact one-time config summary to stderr before the pipeline starts."""
     lines: list[str] = []
-    lines.append(f"ASR: {args.backend} \u00b7 {args.mlx_qwen3_asr_model}")
+    lines.append(f"ASR: {args.backend}")
+    if args.backend == "mlx-qwen3-asr":
+        lines.append(f"ASR model: {args.mlx_qwen3_asr_model}")
     lines.append("ASR finalize: streaming only (this base has no two-pass re-decode)")
     mt_mode = "simultaneous" if args.simultaneous else "serial"
     lines.append(f"MT: {args.mlx_llm_mt_model} \u00b7 {mt_mode}")
@@ -532,21 +540,38 @@ def _print_banner(args, src_config, tgt_config) -> None:
     print("\n".join(lines), file=sys.stderr, flush=True)
 
 
+def _backend_choices() -> list[str]:
+    """The pipeline's own ``--backend`` choices, so the driver offers exactly the
+    backends the engine can build — no more, no less."""
+    from whisperlivekit.parse_args import build_parser as build_engine_parser
+
+    for action in build_engine_parser()._actions:
+        if action.dest == "backend":
+            return list(action.choices)
+    raise RuntimeError("whisperlivekit's parser no longer declares --backend")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="in-process captioning on WhisperLiveKit")
     p.add_argument("--audio", help="audio file path (--source file)")
     p.add_argument("--source", choices=["mic", "file"], default="file")
     p.add_argument("--language", default="zh", help="ASR source language (default zh)")
     p.add_argument("--target-language", default="en", help="MT target language (default en)")
-    p.add_argument("--backend", choices=["mlx-qwen3-asr"], default="mlx-qwen3-asr",
-                   help="ASR backend (this driver supports the pure-MLX mlx-qwen3-asr adapter)")
+    p.add_argument("--backend",
+                   choices=_backend_choices(),
+                   default="nemotron-mlx-asr",
+                   help="ASR backend (default nemotron-mlx-asr, the in-process MLX "
+                        "transducer; the choice list is whisperlivekit's own --backend "
+                        "surface)")
     p.add_argument("--mlx-qwen3-asr-model", default="mlx-community/Qwen3-ASR-0.6B-8bit",
-                   help="ASR model id for --backend mlx-qwen3-asr "
-                        "(default mlx-community/Qwen3-ASR-0.6B-8bit)")
+                   help="ASR model id, passed only for --backend mlx-qwen3-asr, the "
+                        "adapter that reads it")
     p.add_argument("--mlx-llm-mt-model", default="hy-mt2-1.8b-8bit",
                    help="in-process MLX MT model (default hy-mt2-1.8b-8bit)")
     p.add_argument("--hotwords", default="", metavar="TERMS",
-                   help="static hotword list (space-separated) for ASR biasing")
+                   help="static hotword list (space-separated) for ASR biasing; "
+                        "requires --backend mlx-qwen3-asr, the only backend with a "
+                        "hotword context")
 
     # --- display ---
     p.add_argument("--overlay", action="store_true",
@@ -601,7 +626,6 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     # Pre-import modules that call logger.setLevel(DEBUG) at import time, so the
     # WARNING override below runs AFTER their module-level setup.
-    import whisperlivekit.asr_mlx_qwen3  # noqa: F401
     import whisperlivekit.audio_processor  # noqa: F401
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
@@ -609,7 +633,7 @@ def main() -> None:
     for h in logging.getLogger().handlers:
         h.setLevel(logging.WARNING)
     for _noisy in ("transformers", "mlx_lm", "tokenizers", "httpx", "openai", "urllib3",
-                   "whisperlivekit.audio_processor", "whisperlivekit.asr_mlx_qwen3"):
+                   "whisperlivekit.audio_processor"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
 
     p = _build_parser()
@@ -618,8 +642,12 @@ def main() -> None:
     if args.source == "file" and not args.audio:
         p.error("--audio is required for --source file")
     if args.second_pass:
-        p.error("--second-pass is not available: this ASR backend (mlx-qwen3-asr) has no "
+        p.error("--second-pass is not available: this ASR backend has no "
                 "two-pass re-decode. Drop the flag (--no-second-pass is the honest default).")
+    if args.hotwords and args.backend != "mlx-qwen3-asr":
+        p.error("--hotwords is not available on --backend " + args.backend +
+                ": only the mlx-qwen3-asr adapter carries a hotword context. "
+                "Drop the flag.")
     if args.opencc_mt:
         p.error("--opencc-mt is not available: the MT input is built from ASR tokens "
                 "inside the pipeline, so there is no display-side MT-input conversion "

@@ -32,8 +32,7 @@ def _driver():
 # The captain's production command line, minus the program name and the extras
 # (which are ``uv run``'s business, not the parser's).
 PRODUCTION_ARGV = [
-    "--backend", "mlx-qwen3-asr", "--source", "mic", "--no-second-pass",
-    "--mlx-qwen3-asr-model", "mlx-community/Qwen3-ASR-0.6B-8bit",
+    "--backend", "nemotron-mlx-asr", "--source", "mic", "--no-second-pass",
     "--mlx-llm-mt-model", "hy-mt2-1.8b-8bit", "--simultaneous",
     "--simul-commit", "mass", "--overlay", "--overlay-mode", "target",
     "--opencc", "s2twp", "--target-language", "en", "--mem",
@@ -42,10 +41,9 @@ PRODUCTION_ARGV = [
 
 def test_production_command_line_parses():
     args = _driver()._build_parser().parse_args(PRODUCTION_ARGV)
-    assert args.backend == "mlx-qwen3-asr"
+    assert args.backend == "nemotron-mlx-asr"
     assert args.source == "mic"
     assert args.second_pass is False
-    assert args.mlx_qwen3_asr_model == "mlx-community/Qwen3-ASR-0.6B-8bit"
     assert args.mlx_llm_mt_model == "hy-mt2-1.8b-8bit"
     assert args.simultaneous is True
     assert args.simul_commit == "mass"
@@ -54,6 +52,21 @@ def test_production_command_line_parses():
     assert args.opencc == "s2twp"
     assert args.target_language == "en"
     assert args.mem is True
+
+
+def test_backend_choices_are_the_engine_choices():
+    """The driver offers exactly the backends this base can build.
+
+    A choice the engine does not have (the PR #425 ``mlx-qwen3-asr`` adapter this
+    driver was ported from) fails only at model load, so the two lists must
+    agree."""
+    from whisperlivekit.parse_args import build_parser as build_engine_parser
+
+    driver = {a.dest: a for a in _driver()._build_parser()._actions}
+    engine = {a.dest: a for a in build_engine_parser()._actions}
+    assert list(driver["backend"].choices) == list(engine["backend"].choices)
+    assert driver["backend"].default in engine["backend"].choices
+    assert driver["backend"].default == "nemotron-mlx-asr"
 
 
 def test_second_pass_defaults_off_and_is_only_offered_as_optional():
