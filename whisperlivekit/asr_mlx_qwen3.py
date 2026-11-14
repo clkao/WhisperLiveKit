@@ -68,9 +68,15 @@ def _resolve_language(language):
 
 
 def _common_prefix_length(left: str, right: str) -> int:
+    """Length of the shared prefix, ignoring case.
+
+    Case matters at a segment start: a window re-decode can capitalise the first
+    word of the same sentence, and comparing case-sensitively would report the
+    whole segment as new text and append it a second time.
+    """
     limit = min(len(left), len(right))
     for index in range(limit):
-        if left[index] != right[index]:
+        if left[index].casefold() != right[index].casefold():
             return index
     return limit
 

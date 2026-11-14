@@ -356,3 +356,33 @@ async def _drive(processor, items):
         await processor.transcription_queue.put(item)
     await processor.transcription_queue.put(SENTINEL)
     await processor.transcription_processor()
+
+
+def test_case_only_revision_at_segment_start_does_not_duplicate():
+    """The maintainer's trace: only the first letter changed case.
+
+    source_before = 'là il y a eu tel'
+    candidate     = 'Là il y a eu tel second de silence et je repars'
+    """
+    source, delta = _append_only_delta(
+        "là il y a eu tel", "Là il y a eu tel second de silence et je repars"
+    )
+    assert source == "Là il y a eu tel second de silence et je repars"
+    assert delta.strip() == "second de silence et je repars"
+    assert "Là" not in delta
+
+
+def test_case_only_revision_keeps_no_duplicate_on_fleurs_fr_1935():
+    source, delta = _append_only_delta(
+        "cependant ce n'est pas vrai bien",
+        "Cependant ce n'est pas vrai bien qu'il y ait une raison",
+    )
+    assert delta.strip() == "qu'il y ait une raison"
+
+
+def test_rewrite_inside_a_word_reconstructs_instead_of_duplicating():
+    # The source is cut inside "petit"; the tail completes it, so what clients
+    # hold plus the delta must equal the candidate, with nothing repeated.
+    held = "c'est le plus pet"
+    source, delta = _append_only_delta(held, "C'est le plus petit pays du monde")
+    assert (held + delta).casefold() == "c'est le plus petit pays du monde".casefold()
