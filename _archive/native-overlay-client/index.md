@@ -10,6 +10,7 @@ score:
 worktree:
 issue:
 pr:
+archived: 2026-11-14T19:19:03Z
 ---
 
 # Native macOS overlay client
