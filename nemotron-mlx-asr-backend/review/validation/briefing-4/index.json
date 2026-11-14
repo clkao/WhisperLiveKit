@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-4:revision-1",
+  "question": "Does the evidence authorize delivery of this branch to pull request 426?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-4:revision-1:item-1",
+      "uri": "git-root://state/23fd37a60066a9634c5c7eb6558ad0ccd3d8febe/nemotron-mlx-asr-backend/index.md",
+      "rev": "sha256:5898a6df1be2fc191dac3e5ade7277dc278dc15cfe238ae6426373158dffd208",
+      "mediaType": "text/markdown",
+      "summary": "The validator recommends PASSED. The double space is fixed on the committed bytes. The wide check used 60 cached FLEURS clips in English and Chinese: zero double spaces in every clip. The same check on the pre-fix bytes found 6 occurrences in 6 named clips. The word error rate and the character error rate did not change, and the word sequences are the same after whitespace normalization. AC-2 is falsified by mutation: null start times, zero start times, and descending start times each fail the test. The branch is 12 files against origin/main, with no Qwen adapter. The lock reproduces byte-identically from main's lock. Four packages are added and no version changes. The scanner shows a gap for AC-4. The validator cites AC-4 in the same form as the other seven, at line 47 of its report: 30 of 30 English clips complete with non-empty text. The validator also records four small risks. The Chinese character error rate is 22.54 percent against 22.62 percent in the review, and it is the same before and after the fix. Every hypothesis still starts with one space. A single token with two internal leading spaces would pass the rule, but no clip has that shape. The docs do not mention the Thai artifact from the review."
+    }
+  ]
+}

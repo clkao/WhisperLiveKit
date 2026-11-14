@@ -86,6 +86,11 @@ gates:
                 at: "2026-11-13T23:41:51.167041Z"
                 decision: revise
                 reason: 'Reject to implementation on scope. Three authorized asks. (1) Remove the two non-Nemotron uv conflict pairs from pyproject.toml (canary by diarization-diart, diarization-diart by diarization-sortformer) and regenerate uv.lock with UV_NO_CONFIG=1, proving zero existing version changes and an unchanged nvidia (39 packages) / cuda-toolkit 13.0.2 / torch 2.11.0+cu129 set; state the resulting package delta honestly (expected: mlx-audio 0.5.9, miniaudio 1.73, httpx2-jsfetch, win32-setctime). (2) Move AC-5 through AC-8 out of the ideation stage report into the top-level ''## Acceptance criteria'' block and put all eight in the same bold form so ''status --read --ac-scan'' returns them; it currently returns none. (3) Correct the implementation disclosure plus two inaccuracies: the cost is 13 nvidia cu13 wheels, not 11, and the justification that canary and diarization-sortformer ''both need nemo-toolkit[asr]'' is not itself a conflict. Captain direction verbatim: ''make the uv stick to the fresh branch''.'
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-validation-4
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-4:revision-1
+                digest: sha256:2e48e1c7c5fe5bd35fc2179d917906f1931d8e0e3f4b2208b1923bc1d36a6bc7
+                room-ref: '@review/validation/briefing-4'
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
