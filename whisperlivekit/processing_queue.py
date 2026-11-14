@@ -9,6 +9,9 @@ import numpy as np
 from whisperlivekit.timed_objects import ChangeSpeaker, Silence
 
 SENTINEL = object()
+# Poke the translation loop: the audio feed is complete, evaluate the
+# end-of-feed release now (see MlxLlmTranslationSimul.source_complete).
+DRAIN_RELEASE = object()
 
 
 class PipelineClosed(RuntimeError):
