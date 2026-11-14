@@ -1302,3 +1302,127 @@ read, and the whitespace rule was shown orthogonal to the timestamps; AC-1 and A
 re-verify on this tip, including a byte-identical re-lock from `origin/main`'s lock.
 
 Recommendation: **PASSED**. F1–F4 need no action this cycle.
+
+## Stage Report: implementation (cycle 6 — mantainer-perspective fix package, five findings)
+
+Branch `nemotron-standalone`, worktree `.worktrees/nemotron-standalone`, three commits on top of
+`1fe5973`: `b01fbb6` (trailing-space carry), `2662e0f` (docs placement + config field order),
+`fb26656` (the popped closing space). Tree clean, nothing staged, nothing pushed, PR untouched.
+
+- DONE: The double-space hole is closed: the trailing-space flag carries across a tokenless finish, a test pins the exact sequence of a space-ending line, a tokenless final chunk, and a space-prefixed next line joined into the same line, and that test fails when the carry is removed.
+  `b01fbb6`: `test_space_ending_line_survives_a_tokenless_finish` asserts `' We. '` + `[]` +
+  `'We.'` joins to `' We. We.'`. Falsified by restoring the pre-fix assignment
+  (`bool(tokens and tokens[-1].text.endswith(' '))`): 1 failed / 8 passed, exactly this test,
+  with `assert [' ', 'We', '.'] == ['We', '.']` — the retained leading space.
+- DONE: The lock drift is measured and disclosed: whether a pinned mlx-audio narrows the base-install and extras movement is reported with numbers, the boundary scenarios are re-run on the version the lock installs, and a disclosure paragraph exists for the pull request body.
+  Pin narrows nothing (below); 0.5.9 is the lock's version and all nine boundary clips are
+  byte-identical across 0.4.8 / 0.5.1 / 0.5.9; the disclosure paragraph is quoted below.
+- DONE: The tree reads like the maintainer's: no internal scaffolding vocabulary in the test comments, the new config fields sit at the end of the dataclass, and the docs section sits inside the backend list without a candidate qualifier and with the ten-minute artifact stated.
+  `2662e0f`: the AC-2 comment keeps only its behavioural sentence; both `nemotron_mlx_asr_*`
+  fields now follow `session_idle_timeout` (verified by `fields(WhisperLiveKitConfig)[-2:]`);
+  `## Nemotron through MLX` sits between Canary and `## Environment constraints`, which is last
+  again, and the section now states the 0.03 s EOF delay and the twenty Thai `า` at character 1543.
+
+### A sixth case, same rule (report requested disagreement-by-evidence)
+
+Finding 1 states the rule correctly but names only the tokenless chunk. A *final* chunk whose
+only token is the closing space pops that token before returning: `_collapse_space_runs` has
+already set the flag True from a space the caller never sees, so the next utterance drops its
+leading space and the lines **glue** (`WeWe.`), which the pre-fix line got right by accident. A
+probe on the branch's own fixture printed `joined= 'WeWe.'`. `fb26656` carries the flag across
+any final chunk that returns nothing — tokenless or fully popped — and
+`test_space_only_final_chunk_does_not_glue_the_next_utterance` pins it; falsified by deleting
+just the carry (1 failed / 8 passed, `assert 'WeWe.' == 'We We.'`). No utterance-boundary gate
+was reintroduced: both changes widen where the flag's state comes from.
+
+### Lock measurement (Finding 3)
+
+`uv sync --frozen --dry-run`, same machine and uv, `origin/main` `1b2986d` vs this tip, all
+under `UV_NO_CONFIG=1`. Branch and main resolve the same package *count* in every fork; only
+versions move.
+
+| install | packages | movement main -> branch |
+|---|---|---|
+| default | 75 -> 75 | `fsspec` 2026.6.0 -> 2025.12.0, `packaging` 26.2 -> 24.2 |
+| `mlx-llm-mt`, `voxtral-mlx`, `qwen3-streaming` | equal | the same two |
+| `funasr` | 101 -> 101 | the same two, + `hydra-core` 1.3.8 -> 1.3.2 |
+| `qwen3-vllm` | 106 -> 106 | the same two, + `setuptools` 81.0.0 -> 80.10.2 |
+| `diarization-diart` on 3.12 | 128 -> 128 | the same two, + `lightning` 2.6.6 -> 2.4.0 |
+| `diarization-sortformer`, `qwen3-vllm-metal` | equal | none |
+
+The review's four moves reproduce exactly; `hydra-core` under `funasr` is a fifth the review did
+not list. `diarization-diart` moves `lightning` only on Python 3.12 — on 3.13 the extra resolves
+without diart at all (`diart==0.9.2; python_version < '3.13'`), which is why a 3.13-only sweep
+would have missed it.
+
+**Pin experiment.** `/tmp/lockcmp/pin051`: this branch's `pyproject.toml` with
+`mlx-audio==0.5.1` in place of `>=0.5.1,<0.6`, lock regenerated from `git show
+origin/main:uv.lock` under `UV_NO_CONFIG=1`. Movement is **identical** to the unpinned branch —
+fsspec, packaging (default, mlx-llm-mt); + setuptools (qwen3-vllm); + lightning (diart 3.12) — so
+the pin narrows the drift by zero packages. Reason: the pinned lock differs from the branch lock
+in exactly one package, `mlx-audio` 0.5.9 -> 0.5.1 (both 380 entries), i.e. the two versions
+resolve to the same dependency set and the moves come from re-forking, not from mlx-audio's cone.
+Control: regenerating the *unpinned* branch `pyproject.toml` from `origin/main`'s lock reproduces
+the committed `uv.lock` byte-for-byte, so the experiment's base is the shipped resolution.
+
+**The additive part**, for the record: `--extra nemotron-mlx-asr` on the branch adds exactly
+seven packages to the branch's default install — `mlx-audio` 0.5.9, `mlx` 0.31.2, `mlx-metal`
+0.31.2, `miniaudio` 1.73, `safetensors` 0.8.0, `sounddevice` 0.5.6, `transformers` 5.15.0.
+
+**Boundary scenarios on the lock's version.** `wlk bench --backend nemotron-mlx-asr --manifest
+/tmp/boundary9.json --languages en,zh --repeats 1` over nine cached fleurs clips — the six former
+double-space sites (`en_1793/1825/1932/1975/1985`, `zh_1850`) plus the three AC-7 clips
+(`en_1682/1700/1711`) — run against `mlx-audio` 0.4.8, 0.5.1 (the measured version) and 0.5.9
+(the lock's), each overlaid with `uv pip install --no-deps --target`. Hypotheses are
+**byte-identical** across all three; zero occurrences of `'  '`; WER/CER unchanged
+(39.39/0.00/8.82/9.09/11.54/7.55/54.55/3.57 and CER 47.22). The final tip re-ran on 0.5.9
+byte-identically to `b01fbb6`, so the version-invariance carries to the shipped bytes.
+
+### Disclosure paragraph for the pull request body
+
+> **Lockfile delta.** Adding an extra re-forks the resolution, so `uv.lock` is not additive:
+> alongside the new packages a few packages that already resolve on `main` land on different
+> versions. Measured with `uv sync --frozen --dry-run` on the same machine and uv, `origin/main`
+> against this branch: the default install moves `fsspec` 2026.6.0 -> 2025.12.0 and `packaging`
+> 26.2 -> 24.2 (`mlx-llm-mt`, `voxtral-mlx` and `qwen3-streaming` move the same two);
+> `--extra funasr` adds `hydra-core` 1.3.8 -> 1.3.2; `--extra qwen3-vllm` adds `setuptools`
+> 81.0.0 -> 80.10.2; `--extra diarization-diart` on Python 3.12 adds `lightning` 2.6.6 -> 2.4.0.
+> No package is added or removed outside the new extra, which contributes seven packages
+> (`mlx-audio`, `mlx`, `mlx-metal`, `miniaudio`, `safetensors`, `sounddevice`, `transformers`).
+> `diarization-sortformer` and `qwen3-vllm-metal` are unchanged. The lock is reproducible:
+> regenerated from `origin/main`'s lock under `UV_NO_CONFIG=1` it is byte-identical, and
+> `uv lock --check` passes on Python 3.12 and 3.13. Pinning `mlx-audio==0.5.1`, the version the
+> benchmark numbers were measured on, does not narrow this movement — the same packages move by
+> the same versions, because 0.5.1 and 0.5.9 resolve to an identical dependency set. Boundary
+> behaviour was therefore re-checked on the 0.5.9 the lock installs: nine corpus clips covering
+> every double-space site and the three latency clips produce byte-identical hypotheses on
+> 0.4.8, 0.5.1 and 0.5.9, with no double space and unchanged WER/CER.
+
+### Commands run
+
+`PYTHONPATH=<worktree> .venv/bin/python -m pytest tests/test_asr_nemotron_mlx.py -q` ->
+9 passed under 0.4.8, 0.5.1 and 0.5.9 overlays (`test_token_starts_*` and the six boundary tests
+are the falsifiable set; each new test names the mutation that breaks it above). `ruff check` on
+both changed files, clean. `UV_NO_CONFIG=1 uv lock --check --python 3.12|3.13` -> "Resolved 407
+packages", rc 0. `tests/test_backends.py` 35 passed / 1 skipped and
+`tests/test_sortformer_max_speakers.py tests/test_session_limits.py` 37 passed, run because the
+config fields moved. No full suite, per the budget. `benchmarks/evaluations/m5-*/REVIEW.md` was
+read, not re-run.
+
+### Notes
+
+`df` on this machine is 4.5 GiB free, already under `ops-rules.md` rule 6's 5 GiB floor before
+this round started. No model was downloaded and no environment was built: the three
+`mlx-audio` versions are `--no-deps --target` overlays of one 2.1 MB wheel each over the existing
+`.venv`, and the nine clips were already cached. Nothing under `~/.cache` was deleted; the
+`_work`-style judgement of what is re-downloadable is left to the first officer.
+Inherited, not re-measured: the m5 quality and latency figures, the live runs, and the
+startup table.
+
+### Summary
+
+All five findings are fixed on three commits. The blocker is closed with a falsifiable test, and
+a probe found the same rule violated in a second way — a popped closing space glued two lines —
+which `fb26656` fixes and pins. The pin experiment answers Finding 3(a) with a clear no: the
+drift is re-forking, not mlx-audio's cone, and the boundary clips prove 0.5.9 behaves identically
+to the measured 0.5.1, so the disclosure can say so plainly.
