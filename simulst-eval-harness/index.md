@@ -1,7 +1,7 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: ideation
-worktree: .
+status: implementation
+worktree: .worktrees/integration-3
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
     version: 1
