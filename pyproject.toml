@@ -86,6 +86,9 @@ qwen3-streaming = [
     "qwen3-asr-causal[streaming]>=0.1.0",
 ]
 listen = ["sounddevice>=0.4.6"]
+# The terminal caption view (whisperlivekit/tui.py). The pipeline and the web UI
+# do not need it — rich is only the TUI renderer's drawing dependency.
+tui = ["rich>=14.3.3"]
 cpu = ["torch>=2.6.0", "torchaudio>=2.0.0"]
 cu129 = [
     "torch>=2.6.0",
