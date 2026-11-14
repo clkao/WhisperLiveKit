@@ -1141,3 +1141,74 @@ its mechanism wording is looser than the measurements support.
 Recommendation: REJECTED, narrowly, on AC-7 alone: F1 is either a one-call fix or an AC-7
 narrowing, both captain-owned. Read as scoped to its `Verified by:` clause, AC-7 passes and
 this report supports PASSED with F1 filed as follow-up. F2 and F3 need no action.
+
+## Stage Report: implementation (cycle 5 — wide AC-7 evidence, dispatch nemotron-mlx-asr-backend-implementation)
+
+Every number below was produced on the branch's committed bytes, from the worktree
+`.worktrees/nemotron-standalone`: `PYTHONPATH=<worktree> /Users/clkao/git/asr/WhisperLiveKit/.venv/bin/wlk
+bench --backend nemotron-mlx-asr --manifest /tmp/wide-fleurs-60.json --languages en,zh
+--repeats 1 --transcriptions --json /tmp/wide-general.json`, with the imported module
+confirmed to resolve to `<worktree>/whisperlivekit/asr_nemotron_mlx.py`. The manifest keeps
+`benchmarks/corpora/fleurs-90.json`'s rows verbatim (name, reference, `audio_sha256`)
+filtered to the 30 en + 30 zh recordings cached under `~/.cache/whisperlivekit/benchmark_data/fleurs_v1/`;
+the runner hash-verified 60/60. A number measured on the prototype tree in `/tmp` is not
+cited as branch evidence anywhere below — that conflation is what the residual exposed.
+
+- DONE: The utterance-start fix is evidenced on the committed bytes of the branch rather than on a prototype tree: a wide end-to-end run over the 60 cached en and zh clips shows zero occurrences of a double space, with WER and CER unchanged from the pre-fix figures, and the report names which clips still showed one before the fix.
+  `1fe5973`: 60 ok / 0 failed, `hypothesis.count('  ')` = 0 in all 60 clips, weighted WER
+  19.2661% and weighted CER 22.5385% (avg WER 19.0594%) — identical to the pre-fix run and
+  to the m5 figures. Hypotheses are byte-identical to the prototype run 60/60 and
+  word-identical to `19462f4`. Pre-fix (`/tmp/wide-prefix.json`): 6 occurrences in 6 clips —
+  `fleurs_en_1793`, `fleurs_en_1825`, `fleurs_en_1932`, `fleurs_en_1975`,
+  `fleurs_en_1985`, `fleurs_zh_1850`. `19462f4` closed 3 of them (1793, 1825, 1975) and
+  left 3 (1932, 1985, 1850) because its collapse was gated on the utterance start; the
+  instrumented per-call token dump showed the survivors are `'.', ' ', ' The'` inside one
+  non-final batch and `' '` ending a batch with `' 1E。'` opening the next. `1fe5973`
+  replaces the gate with a last-emitted-text-ends-in-space rule that fires wherever the run
+  occurs, and closes all six.
+- DONE: The implementation stage report records the wider evidence, states plainly that the earlier three-clip AC-7 evidence was too narrow to catch this seam, separates what was re-verified in this round from what is inherited, and is committed and pushed to the state branch.
+  The three-clip AC-7 evidence was too narrow to catch this seam: `fleurs_en_1682/1700/1711`
+  carry no mid-utterance space run, so they read 0 occurrences both before and after the
+  fix (39.39 / 0.00 / 8.82 reproduced at `1fe5973`) and could never expose the intra-batch
+  or cross-batch shape — only the 60-clip sweep did. AC-7's wording is narrower than the
+  symptom it was written to capture: the user-visible defect is a double space after a
+  sentence-final period mid-utterance, not only at an utterance boundary. Broadening the
+  criterion is captain-owned; the fix does not depend on that decision.
+
+### Falsifiability
+
+Adapter suite 7 passed at `1fe5973` (5 inherited + 2 new), `ruff check` clean on both files.
+Throwaway plugin `/tmp/falsify_nemotron/falsify_space.py` (outside the worktree) replaces
+`_collapse_space_runs` with identity and nothing else: exactly 3 tests fail and 4 pass, so
+the mutation is narrow. `test_intra_utterance_space_run_collapses_before_the_next_word`
+asserts one batch yields `['We', '.', ' ', 'The']` — removing the rule gives `' The'`.
+`test_space_run_across_decode_batches_collapses` asserts the second batch returns `'The'`
+after a batch ending in `' '` — removing the rule gives `'  The'`. The inherited
+`test_utterance_start_collapses_repeated_space_tokens` also fails under that mutation, which
+is what shows it still describes real behaviour after the rule was generalised.
+
+### Re-verified here vs inherited
+
+Re-verified on this tip: both wide runs, the six pre-fix sites' current state, AC-7's three
+named clips and WERs, the two new tests and the mutation run, `ruff`, and the mechanism
+behind the residual via the per-call dump. Inherited, not re-measured this round: the
+pre-fix occurrence counts (the predecessor's `/tmp/wide-prefix.json`, not rebuilt from
+`dfe842d^` here), AC-8's docs figures, AC-3/AC-6's lock and import checks, and AC-1/AC-4's
+live runs — `1fe5973` changes whitespace handling only, one line of state plus one method.
+
+### Notes
+
+Informational only, not chased: a full-suite run by the predecessor reported 3 failed / 346
+passed / 43 errors, the 43 being the known sandbox-environment errors, with the baseline on
+`origin/main` worse.
+Residual: every hypothesis starts with one space (60/60) — pre-existing, present in the
+pre-fix and prototype runs alike, and not part of AC-7.
+
+### Summary
+
+`19462f4`, the tip this round began with, did not meet the wide criterion: 3 of the 60
+clips still carried a double space, and only a run on the branch bytes — not the prototype
+tree — showed it. Root cause was the utterance-start gate; the fix now collapses the run
+wherever the decoder emits it, the six pre-fix sites are clean, WER/CER are unchanged, and
+two falsified tests pin both residual shapes. The generalisation was FO-authorised after the
+finding was reported; no candidate bytes moved before that authorisation.
