@@ -115,7 +115,7 @@ started: 2026-08-27T08:42:04Z
 completed:
 verdict:
 worktree: .worktrees/nemotron-standalone
-pr: "#426"
+pr: pr-merge:426
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
