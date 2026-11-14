@@ -93,6 +93,17 @@ listen = ["sounddevice>=0.4.6"]
 # The terminal caption view (whisperlivekit/tui.py). The pipeline and the web UI
 # do not need it — rich is only the TUI renderer's drawing dependency.
 tui = ["rich>=14.3.3"]
+# The native caption overlay (whisperlivekit/overlay.py, scripts/lc_terminal.py
+# --overlay): a borderless always-on-top NSWindow via PyObjC. Cocoa pulls
+# pyobjc-core; nothing else is needed (AppKit + Foundation only).
+overlay = [
+    'pyobjc-framework-Cocoa>=11.0; sys_platform == "darwin"',
+]
+# OpenCC Chinese conversion for the display path (--opencc s2twp: Simplified ->
+# Taiwan Traditional). Pure Python, no native build.
+opencc = [
+    'opencc-python-reimplemented>=0.1.7',
+]
 cpu = ["torch>=2.6.0", "torchaudio>=2.0.0"]
 cu129 = [
     "torch>=2.6.0",
