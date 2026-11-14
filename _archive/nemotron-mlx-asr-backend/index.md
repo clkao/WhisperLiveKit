@@ -3,7 +3,7 @@ title: "nemotron-mlx ASR backend (transducer; AlignAtt time-based frontier)"
 source: PR3 research — _work/nemotron_transducer_alignatt_research.md
 score: 0.8
 id: n5g2sjy16zzy9rhdk8d1zn1p
-status: validation
+status: done
 gates:
     version: 1
     records:
@@ -110,12 +110,13 @@ gates:
                 reason: 'Captain approved delivery. Validated tree 42f7433, 9 commits: the reported double-space symptom is closed with mutation-falsified tests, the maintainer-style findings are in the tree, the lock delta is measured and disclosed, and the branch is independent of #425.'
               application:
                 target-stage: done
-                state: pending
+                state: consumed
 started: 2026-08-27T08:42:04Z
-completed:
-verdict:
+completed: 2026-11-14T18:18:03Z
+verdict: PASSED
 worktree: .worktrees/nemotron-standalone
 pr: pr-merge:426
+archived: 2026-11-14T18:18:03Z
 ---
 
 # nemotron-mlx ASR backend + AccessibleBoundary adapter (time-based frontier)
