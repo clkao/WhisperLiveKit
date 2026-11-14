@@ -1,6 +1,6 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: implementation
+status: ideation
 worktree: .
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
@@ -244,3 +244,36 @@ The harness is an emitter + runner + the existing `alignatt-eval` scorer, all in
 ### Summary
 
 Implemented the SimulST eval harness as 5 scripts (1249 lines) on feat/apple-silicon-backends (commit f673273). The emitter drives mlx-qwen3-asr streaming over devset audio, timestamps per-word emission with chunk-boundary audio-processed-time as `delays` (SimulEval semantics, not acoustic positions), normalizes wallclock to CA-compatible `elapsed`, and writes hypothesis.jsonl + manifest.json in the alignatt-eval schema. A sandbox-specific eval wrapper patches omnisteval's multiprocessing Pool to serial execution (sandbox blocks semaphores). AC-1 verified: single-audio smoke on ccpXHNfaoy.wav (asr-only, --skip-comet) round-trips through alignatt-eval producing non-null BLEU=23.35, CHRF=68.49, LongYAAL CA=3262, LongYAAL CU=3645. The harness is ready for AC-2 (full devset) and AC-4 (flagship) once the external dependencies (XCOMET-XL access, nemotron-mlx) are available.
+
+### Feedback Cycles
+
+#### Cycle 1 — scope correction before the build (2026-11-14)
+
+The entity returns to `ideation` from `implementation`. The build plan is sound. Six
+items were stale or undecided, so a build against this text would have aimed at the
+wrong base and an unmeasurable target.
+
+1. **Name the base.** The text targets "the integration branch". `wlk/integration-3`
+   now exists, cut from `origin/main` @ `1b2986d`, and carries `nemotron-mlx-asr`,
+   `mlx-qwen3-asr`, the simul time frontier and the caption display work. State which
+   base the runner runs on.
+2. **Close the resolved dependencies.** `nemotron-mlx` is merged, so AC-4's blocker is
+   gone. The en→zh heads are upstream at
+   `whisperlivekit/calibrations/translation_heads_mlx-community_Hy-MT2-1_8B-8bit_en-zh.json`,
+   so the "mirror or serial fallback" contingency no longer applies. Rewrite
+   "Open dependencies".
+3. **The devset audio is present.** `Alignatt4LLM/data/devset` holds 21 wav files. The
+   text says the audio must be sourced. Correct that, and record the segment count
+   observed on disk before promising 919.
+4. **Decide the COMET access.** `Unabel/XCOMET-XL` is gated and needs the captain's HF
+   access. Pick one: captain access, the ungated `Unabel/wmt22-comet-da`, or
+   `--skip-comet` for the first pass with BLEU/CHRF and LongYAAL only. A build cannot
+   decide this.
+5. **State an acceptance number.** AC-1 to AC-4 require non-null scores. Non-null is
+   not a target. State the value each run must reach, or state plainly that the first
+   build establishes a baseline and supports no claim.
+6. **Draw the boundary with `scripts/simul_fixture.py`.** This harness scores the whole
+   cascade (ASR, aligner, commit policy, MT) on emitted output. It does not isolate the
+   commit policy. `simul_fixture.py` does, by replaying the engine's exact inputs. Name
+   both tools, and say that the fixture port belongs to the simul PR entity `km`, not
+   here.
