@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-5:revision-1",
+  "question": "Does the evidence authorize delivery of this branch to pull request 426?",
+  "artifacts": [
+    {
+      "id": "artifact:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-5:revision-1:item-1",
+      "uri": "git-root://state/0ac0059465eef1d298c66875fff846a4c112176a/nemotron-mlx-asr-backend/index.md",
+      "rev": "sha256:9b133097885ecd58655e7495489369bab1944ed61dc09b7336839ae9e18148c9",
+      "mediaType": "text/markdown",
+      "summary": "The validator recommends PASSED. The reported symptom is closed on the committed bytes. A line that ends in a space, a finish that emits no token, and a space-prefixed next line now join with one space. Both new tests were falsified by mutation: one fails when the carry is removed, the other fails when only the popped-space path is broken. A glued line was found and fixed as well. The suite passes on mlx-audio 0.4.8, 0.5.1, and 0.5.9. The maintainer-style findings are in the tree: no internal vocabulary in the test comments, the new config fields at the end of the dataclass, and the docs section inside the backend list with no candidate qualifier and the stream artifact stated. The lock disclosure reproduces. Pinning the measured mlx-audio version narrows the drift by zero packages, because the movement comes from re-forking the resolution. The branch now has 9 commits after a squash. The tree hash is unchanged at 42f7433, so the validation describes the bytes even though its report names the earlier tip."
+    }
+  ]
+}

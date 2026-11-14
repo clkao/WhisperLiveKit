@@ -95,6 +95,11 @@ gates:
                 by: agent:first-officer
                 at: "2026-11-14T01:30:09.764828Z"
                 reason: a maintainer-perspective review reproduced the reported double-space symptom on a tokenless final chunk; the fix has a hole and four style findings that must land before the gate
+            - id: gate-attempt:n5g2sjy16zzy9rhdk8d1zn1p-validation-5
+              briefing:
+                id: briefing:n5g2sjy16zzy9rhdk8d1zn1p:validation:attempt-5:revision-1
+                digest: sha256:a81760ca21b6b7fe903bf104d4505145d57d8f0a7fa59fc5081587c04d289123
+                room-ref: '@review/validation/briefing-5'
 started: 2026-08-27T08:42:04Z
 completed:
 verdict:
