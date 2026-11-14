@@ -20,6 +20,7 @@ from whisperlivekit.asr_mlx_qwen3 import (
     _append_only_delta,
 )
 from whisperlivekit.audio_processor import SENTINEL, AudioProcessor
+from whisperlivekit.caption_events import EventTap
 from whisperlivekit.core import online_factory
 from whisperlivekit.metrics_collector import SessionMetrics
 from whisperlivekit.timed_objects import Silence, State
@@ -345,6 +346,7 @@ def _audio_processor(transcription) -> AudioProcessor:
     processor.is_stopping = False
     processor._any_asr_output = False
     processor._silent_backend_warned = False
+    processor.event_tap = EventTap()  # no-op sink; emission must not fail
     processor._last_asr_prov = ''
     processor.processing_error = None
     processor._prune_state_tokens = lambda: None
