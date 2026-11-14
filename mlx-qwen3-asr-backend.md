@@ -105,6 +105,11 @@ gates:
                 at: "2026-11-13T19:50:57.858316Z"
                 decision: revise
                 reason: 'Captain directive 2026-11-13 (verbatim): ''choose 2, dispatch through the workflow and bring back reproduced validation result''. Option 2 = bump mlx-qwen3-asr 0.3.5 -> 0.4.4 and re-measure. Concrete asks, from the maintainer''s #425 review (2026-11-13T19:22Z) and the 0.4.x changelog: (1) adopt 0.4.x, whose finish-path window re-decode replaces the 0.3.5 enable_tail_refine pass that appends a re-transcription of the last window and duplicates text at every pause; cover it with a test through AudioProcessor on audio containing pauses. (2) No exception on a short tail at a pause (0.3.5 raises ''Audio too short for log-mel extraction'' from a 160-sample tail; 0.4.x must be shown not to). (3) Handle open upstream issue #31 (stable_text can be non-prefix and non-monotone) instead of aborting with RuntimeError(''revised an already committed prefix''). (4) Reproduce FLEURS zh/en/fr quality under the #444 protocol (30 clips per language, three paced passes) against Whisper small MLX and Qwen Metal; identical weights rule out the model as the cause. Context: the reviewed adapter is the maintainer''s own 34a2b5e rewrite (native finish_streaming at every pause), which deleted our asr_commit/asr_wrapper layer and its stable-prefix fallback; all three review findings are measured against that rewrite.'
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-validation-5
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-5:revision-1
+                digest: sha256:2d9d22e6d1642d046e6a9b9d6db60d6e69489bb082233cfa4be3bb0921384f04
+                room-ref: '@review/validation/briefing-5'
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer

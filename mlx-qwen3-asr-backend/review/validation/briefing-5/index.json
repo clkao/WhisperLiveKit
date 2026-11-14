@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-5:revision-1",
+  "question": "Approve PR #425 at head 91d2b01 as validated, or return it for more work?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-5:revision-1:item-1",
+      "uri": "git-root://state/edf492774d97268228e1ae13ba2743feb797bb47/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:16b33b4a09c7fa9ce866d6e3867b4bee2b3c5991a5841e6458890187f56e3c74",
+      "mediaType": "text/markdown",
+      "summary": "Validation over head 91d2b01, which carries three commits after the cycle-6 report: the CI fix that removed the caption_events import, the casefold fix to the committed-prefix comparison, and the merge of main after #426 landed. FLEURS 30 clips per language, one paced pass, model pinned: en 13.89%, fr 13.92%, zh 11.15% CER; qwen-metal 21.36/24.68/11.85; qwen-native 27.65/44.68/28.46. Clean-room suites 73 passed 1 skipped with the guard active; uv lock --check 408 packages; ruff clean; CI all nine checks green. The maintainer re-ran the branch himself and reproduced en 13.89% and fr 14.97%, found the ten-minute crash and the repetitions gone, reported one remaining duplication at segment starts, and said he is happy to merge once that is fixed."
+    }
+  ]
+}
