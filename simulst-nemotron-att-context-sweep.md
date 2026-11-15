@@ -1,6 +1,6 @@
 ---
 title: "Nemotron att_context sweep against the NeMo IWSLT 2026 anchor: is the WER gap configuration or model?"
-status: backlog
+status: ideation
 score: 0.7
 source: follow-up to the tier-2 two-direction benchmark; the ASR term dominates the chrF gap
 id: 1514n3b7z79ms5gp1b2f8sjf
@@ -28,7 +28,7 @@ gates:
                     source: CL, direct instruction, 2026-11-15
               application:
                 target-stage: ideation
-                state: pending
+                state: consumed
 ---
 
 Direction B in the tier-2 suite scores chrF 12.481 with nemotron and 26.348 with qwen3-asr on the
