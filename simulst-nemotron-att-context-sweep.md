@@ -456,3 +456,32 @@ speed on our own 30-clip manifest. So:
 **Falsifier for the sweep's premise as a whole:** if all Family 1 arms fall inside one CI *and* the
 cascade curve is also flat, then the window does not set quality, the curve has no knee, and the
 honest report is a negative result — not a re-tuned sweep.
+
+## Stage Report: ideation
+
+- DONE: The benchmark-defect hunt is done first and with numbers: the same 30 cached FLEURS-en clips rescored under mean-of-rows versus corpus aggregation, under the harness normalizer versus a Whisper-style English normalizer, and under one offline run, stating which difference moves WER and by how much.
+  Aggregation 0.43 pp (13.4658 % avg vs 13.8925 % weighted, D4); normalizer 4.56 pp (13.89 → 9.33 %, D5); **offline single-shot 6.29 pp (13.89 → 7.60 %, D11)** — the commit window, not the scorer, is the largest lever.
+- SKIPPED: An independent official reference on the exe.dev VM with the upstream Qwen3-ASR implementation.
+  Superseded twice by CL: first "cheapest local path, `qwen_asr` only if <200 MB", then "MLX only, no `qwen-asr`, no VM". `qwen-asr==0.0.6` is 0.14 MB but pins `transformers==4.57.6` against the venv's 5.15.0 and its README demands a fresh 3.12 env, so it was dropped uninstalled. `asr-xcomet` is still paused; no VM work was done beyond a read-only `ssh` that reported "paused". The published 4.39 % stands as the anchor with that caveat, and D11 supplies the local offline reference it was missing.
+- DONE: The formatted design states the full sweep to reach a comparable number: the arms, an acceptance number per arm, the estimated time and disk, the order, and what result would falsify the conclusion that the harness is sound.
+  Section 3: 10 arms/gates (P0–P2, C0a/C0b MT-only bounds, C1–C5), each with a per-arm latency bar and a quality number, times calibrated on the tier-2 measured costs (20 min unpaced / 111 min paced per 919-segment arm), ~90 MB total disk, a cut-line, and six falsifiers.
+- DONE: Protocol parity established against the maintainer's #444 reports before any comparison was quoted.
+  Same `corpus_sha256` on all five reports; his stored `weighted_wer` reproduced to the digit by our normalizer (21.36 / 27.65 / 11.66 %); his 3 passes bit-identical 30/30 so a 90-row figure equals 30 rows; ours 13.89 % (1 pass) = 13.89 % (3 pass) = **0.650×** his 21.36 % Metal reference. The suspected 2× harness discrepancy does not exist.
+- DONE: Report each probe in WER points (FO probes 1–6).
+  1 offline 6.29 pp (13.89 → 7.60 %); 2 chunk ladder not quotable — 1.0/2.0/8.0 s arms ran (199/208/241 s) but the driver persists only at the end and the last arm was cut (see residual), so the ladder is designed as C1 instead; 3 detokenization 0.00 pp, 0/30 glued seams, 4/30 adjacent duplicates (3 in clip 1850); 4 audio path 0.00 pp (bitwise equal, max |diff| 0.0, peaks 0.29–0.82); 5 language tag already `lan="en"` in every stored row, 0 pp available; 6 scoring 4.56 pp normalizer / 0.43 pp aggregation.
+- DONE: Say whether our adapter can be driven buffer-then-finalize and which code path forces partial commits.
+  It cannot today (D14): `process_iter` (`asr_mlx_qwen3.py:138`) commits `state.stable_text` every inference tick, and `_commit` (`:115`) freezes that prefix so `finish()`'s full-window re-decode can only append (D12). `mlx_qwen3_asr_second_pass` is a dead knob (D13).
+
+### Summary
+
+The harness is sound on scorer identity, pass count, aggregation, detokenization, audio path and language tag, and unsound on three things: the English normalizer (4.56 pp, of which one clip's `802.11a` enumeration is 2.49 pp), the 30-clip sample (95 % CI [8.87, 20.52]; the universe is 331 sentence IDs, not 647 recordings), and above all the chunk-incremental commit policy (6.29 pp against a genuine offline decode). So no `att_context` sweep should run yet: at 1.12 s of left-context difference the knob is an order of magnitude smaller than the commit-window defect. The design therefore gates the sweep behind a pinned scorer, a 919-segment anchor-matched eval set, and an S0 arm that holds the commit policy constant — with six named falsifiers, including the one that would put the harness back in doubt (S0's two arms landing inside one CI).
+
+Residual: the streaming chunk ladder (probe 2) is incomplete — the 1.0 s, 2.0 s and 8.0 s arms each completed their decode loops (199 / 208 / 241 s wall) but the driver persists results only at the end and the last arm was still running at the budget cut, so no ladder number is quotable; D11's offline arm comes from the dedicated `transcribe` run instead, which is why probe 2 is designed as arm C1 of the curve rather than reported as measured. No file under `whisperlivekit/**` was modified; the analysis drivers live in `/tmp/dh/` and read only on-disk reports.
+
+### Addendum: three scope changes after the first report draft
+
+All three are incorporated into sections 3 and the ACs, not re-measured: (i) quality and latency must be measured **together per configuration**, so section 3 is a latency–quality curve with a per-arm latency bar instead of a WER table; (ii) the pairing must also hold **inside the ASR stage**, so 3.2/3.3 give the ASR-only and cascade decompositions from the same configurations, using the no-`--target-language` path the harness already supports; (iii) **Family 3, the text-MT upper bound**, added as the cheapest arm (C0a/C0b, 10 min, cached weights, no audio, no ASR) with its limitation stated — it removes streaming and ASR error together, so it bounds rather than attributes.
+
+**Which decomposition the evidence supports:** the ASR window. D11 measures 6.29 pp (13.89 % → 7.60 %) inside the recognizer on identical audio, weights and scorer, with the MT absent — the loss is upstream of the translator. Nothing here measures the MT's commit policy, so the cascade leg and F3 exist to test whether it adds a second loss, not to claim one.
+
+Two findings the new sections depend on, because they decide the schedule: the latency axis **requires `--speed 1`** (`first_text_time_s`/`first_visible_time_s` are paced-only), so the curve is scheduled on FLEURS-30 with a single 919-scale point; and this Mac's data volume has **≈ 393 MiB free, below the 1.5 GiB floor**, with none of it written by this task (no file over 20 MB was created; the HF cache is a pre-existing 16 GB) — a scheduling blocker for the sweep, not a harness finding.
