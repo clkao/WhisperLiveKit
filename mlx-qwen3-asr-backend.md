@@ -566,3 +566,193 @@ The maintainer's quality objection does not reproduce on this tree. Local FLEURS
 ### Summary
 
 `process_iter` no longer commits, so the finalize decode's text is the utterance and a correction replaces provisional text instead of being glued onto it; the numeral case is fixed at the client seam (test fails on the base with `the number is eight802.11a`, passes with `the number is 802.11a`), and the machinery only that line served is deleted with its docs. Measured like-for-like on the same 30 cached FLEURS clips with the same normalizer: live **en 13.89 → 13.76 %, fr 14.39 → 13.10 %, zh 11.15 → 11.15 %** weighted (avg 13.47→13.31, 14.47→13.04, 10.46→10.46), no clip worse in any language, and offline **7.60 / 10.53 / 8.38 %** (en reproduces the audit's 7.60 % exactly). The gain is exactly the glued-revision class (fr 6/30 seams → 0/30); the remaining live-vs-offline gap is the chunk-window decode, which this change does not touch — `fleurs_en_1850` is still 91.67 % because the model itself spells out `802.11a` in the finalize decode. The cost is commit latency: first committed text p50 +2.2 s (en), +3.2 s (fr), +2.5 s (zh), with first *visible* text unchanged. Same change committed as df70358 in the tier-2 worktree; both branches unpushed, no comments posted.
+
+## Stage Report: implementation (cycle 8 — two measurement ladders)
+
+Measurement only; no source change in this round. Base: `pr425-fix` **9d60aa8**
+(the cycle-7 finalize-path correction) on `91d2b01`; worktree clean before and
+after (`git status --porcelain` empty, nothing staged, nothing pushed).
+
+### Method
+
+- Backend `--backend mlx-qwen3-asr`, model `Qwen/Qwen3-ASR-0.6B`, `mlx-qwen3-asr`
+  **0.4.4** shadowed on `PYTHONPATH=/tmp/wlk044` on the shared interpreter
+  `/Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python` 3.13.12, mlx 0.31.2,
+  Apple M4 / macOS 26.6.2. No torch arm, no `qwen-asr`, no VM, nothing installed,
+  nothing downloaded (weights and corpus were already cached).
+- Corpus `benchmarks/corpora/fleurs-90.json`, `google/fleurs@70bb2e8`, 30 clips per
+  language, `corpus_sha256 95586eb7…` — identical to the cycle-7 runs, so every row
+  below joins the same 13.76 / 13.10 / 11.15 live and 7.60 / 10.53 / 8.38 offline pair.
+- Scorer `whisperlivekit.metrics.normalize_text` (NFC, lowercase, punctuation to
+  space; zh removes whitespace and counts characters) through the library's own
+  `BenchmarkRunner` — the stock `wlk bench` path, not a copy. Every arm is
+  `--warmup --repeats 1 --speed 1` (paced at 1×), one MLX process at a time except
+  where noted below.
+- Segment durations are not in the benchmark report, so the arm driver
+  (`/tmp/wlkladder/run_ladder.py`) additionally wraps `TestHarness.finish()` in the
+  running interpreter and records the front-end lines (`start`/`end`, speech lines
+  only); the library on disk is untouched.
+- Driver validated: the `seg 5.0 / chunk 2.0` en arm reproduces the stored cycle-7
+  baseline exactly — weighted 13.76 / average 13.31, **0 better / 30 equal / 0 worse**
+  per clip, and fv 3.26/4.02, ft 5.74/9.76, fin 0.036/0.292, RTF 0.123 against the
+  stored 3.26/4.05, 5.74/9.77, 0.034/0.286, 0.124.
+
+Commands (one per arm; `$CFG` is a two-key JSON file, `$L` the language):
+
+```
+PYTHONPATH=/tmp/wlk044 .venv/bin/python /tmp/wlkladder/run_ladder.py \
+  --languages $L --manifest <pr worktree>/benchmarks/corpora/fleurs-90.json \
+  --config /tmp/wlkladder/$CFG --json runs/<tag>-$L.json \
+  --segdump runs/<tag>-$L-seg.jsonl --warmup --repeats 1 --speed 1
+```
+
+`$CFG` values: `cfg-chunk1.0.json {"mlx_qwen3_asr_chunk_sec": 1.0}`,
+`cfg-chunk0.5.json {"mlx_qwen3_asr_chunk_sec": 0.5}`,
+`cfg-chunk8.0.json {"mlx_qwen3_asr_chunk_sec": 8.0}`,
+`cfg-baseline.json {…chunk_sec 2.0, pause_segmentation_seconds 5.0}`,
+`cfg-seg1.0.json {"pause_segmentation_seconds": 1.0}`,
+`cfg-seg0.5.json {"pause_segmentation_seconds": 0.5}`,
+`cfg-seg0.json {"pause_segmentation_seconds": 0}`. Both knobs are `WhisperLiveKitConfig`
+fields, so `wlk bench --config` drives them; every arm's `effective_config` in the
+report JSON confirms the value took effect. 19 arms ran (one per completed cell);
+each is ~6.1 min of wall clock.
+
+### Ladder 1 — decode window (`--mlx-qwen3-asr-chunk-sec`)
+
+Weighted / average WER (en, fr) and CER (zh), with first-visible, first-committed and
+final (EOF/finalization) latency in seconds, p50/p95 over the 30 clips:
+
+| window | en WER wtd/avg | en first-vis | en first-comm | en final | en RTF |
+|---|---|---|---|---|---|
+| 0.5 | 14.81 / 14.03 | 1.64 / 2.65 | 5.73 / 9.66 | 0.021 / 0.222 | 0.299 |
+| 1.0 | 14.29 / 13.40 | 2.19 / 3.16 | 5.72 / 9.76 | 0.037 / 0.197 | 0.181 |
+| **2.0 (default)** | **13.76 / 13.31** | 3.26 / 4.05 | 5.74 / 9.77 | 0.034 / 0.286 | 0.124 |
+| 8.0 | 13.76 / 12.86 | 5.94 / 9.82 | 5.94 / 10.52 | 0.039 / 0.521 | 0.075 |
+| *offline* | *7.60 / 6.70* | — | — | — | — |
+
+| window | fr WER wtd/avg | fr first-vis | fr first-comm | fr final | fr RTF |
+|---|---|---|---|---|---|
+| 0.5 | 15.67 / 15.85 | 2.19 / 3.95 | 7.13 / 12.40 | 0.035 / 0.191 | 0.326 |
+| 1.0 | 14.15 / 14.06 | 2.70 / 4.51 | 7.12 / 12.38 | 0.038 / 0.233 | 0.207 |
+| **2.0 (default)** | **13.10 / 13.04** | 3.77 / 5.65 | 7.26 / 12.46 | 0.025 / 0.318 | 0.162 |
+| 8.0 | 14.04 / 13.78 | 7.44 / 11.63 | 7.44 / 13.22 | 0.051 / 0.806 | 0.106 |
+| *offline* | *10.53 / 9.99* | — | — | — | — |
+
+| window | zh CER wtd/avg | zh first-vis | zh first-comm | zh final | zh RTF |
+|---|---|---|---|---|---|
+| 0.5 | 11.46 / 10.82 | 1.85 / 4.16 | 6.28 / 12.76 | 0.030 / 0.083 | 0.317 |
+| 1.0 | 11.15 / 10.46 | 2.29 / 4.71 | 6.36 / 12.66 | 0.038 / 0.093 | 0.186 |
+| **2.0 (default)** | **11.15 / 10.46** | 3.33 / 5.83 | 6.38 / 13.11 | 0.035 / 0.222 | 0.137 |
+| 8.0 | 11.00 / 10.36 | 6.51 / 9.80 | 6.51 / 13.22 | 0.042 / 0.450 | 0.097 |
+| *offline* | *8.38 / 7.56* | — | — | — | — |
+
+Per-clip pairing against the 2.0 s default: en 1.0 **1 better / 25 equal / 4 worse**
+(+0.09 pp mean), 0.5 **2 / 22 / 6** (+0.71 pp), 8.0 **2 / 25 / 3** (−0.46 pp); fr 1.0
+**3 / 20 / 7** (+1.02 pp), 0.5 **3 / 14 / 13** (+2.81 pp), 8.0 **3 / 22 / 5**
+(+0.75 pp); zh 1.0 **0 / 30 / 0** (0.00), 0.5 **1 / 27 / 2** (+0.36), 8.0
+**2 / 28 / 0** (−0.10).
+
+**Monotone, with the knee at 2.0 s.** Narrowing the window degrades quality
+monotonically in all three languages (en 13.76 → 14.29 → 14.81, fr 13.10 → 14.15 →
+15.67, zh 11.15 → 11.15 → 11.46) and buys first-visible latency (en 3.26 → 2.19 →
+1.64 s p50). Widening past the default buys **no** quality: en returns exactly the
+default 13.76 weighted (25 of 30 hypotheses byte-identical to the default arm), fr
+is 0.94 pp **worse**, zh 0.15 pp better, and first-visible latency doubles (en 5.94 s,
+fr 7.44 s p50) with the EOF p95 rising to 0.52 s / 0.81 s. Every setting stays 3.5–6.2 pp
+away from the offline arm on the same clips and weights. **The window is not the knob
+that sets the live-vs-offline residual**; it sets first-visible latency and compute
+(RTF 0.075 → 0.30 across 8.0 → 0.5).
+
+### Ladder 2 — segment length (`--pause-segmentation-seconds`)
+
+Same clips, chunk kept at the 2.0 s default. "Segments" are the committed speech lines
+the client receives (`FrontData.lines`, speech only); durations are line `end − start`
+in the pipeline's stream clock.
+
+| pause-seg | en WER wtd/avg | en segments (p50/p95 s) | en first-comm | en final | en RTF |
+|---|---|---|---|---|---|
+| **5.0 (default)** | **13.76 / 13.31** | 30 segs, 1.00/clip, 8.22 / 18.17 | 5.74 / 9.76 | 0.036 / 0.292 | 0.123 |
+| 1.0 | 13.76 / 13.31 | 31 segs, 1.03/clip, 8.16 / 17.75 | 5.75 / 9.79 | 0.039 / 0.292 | 0.123 |
+| 0.5 | 13.76 / 13.31 | 38 segs, 1.27/clip, 6.96 / 17.15 | 5.72 / 9.77 | 0.031 / 0.271 | 0.122 |
+| 0 (off) | 13.76 / 13.31 | 30 segs, 1.00/clip, 8.22 / 18.17 | 5.74 / 9.77 | 0.035 / 0.285 | 0.126 |
+
+| pause-seg | fr WER wtd/avg | fr segments (p50/p95 s) | fr first-comm | fr final | fr RTF |
+|---|---|---|---|---|---|
+| **5.0 (default)** | **13.10 / 13.04** | 30 segs, 1.00/clip, 8.57 / 16.02 | 7.24 / 12.48 | 0.032 / 0.286 | 0.155 |
+| 1.0 | 13.10 / 13.04 | 30 segs, 1.00/clip, 8.57 / 16.02 | 7.25 / 12.57 | 0.047 / 0.433 | 0.196 |
+| 0.5 | 13.10 / 13.04 | 32 segs, 1.07/clip, 7.56 / 15.93 | 7.44 / 12.69 | 0.042 / 0.369 | 0.196 |
+| 0 (off) | 13.10 / 13.04 | 30 segs, 1.00/clip, 8.57 / 16.02 | 7.23 / 12.60 | 0.051 / 0.524 | 0.187 |
+
+zh was not reached on this ladder (see "where the round stopped").
+
+**Flat, because the corpus is single-utterance.** The achieved distribution does move
+— p95 segment duration is 15.9–18.2 s throughout, but the count rises 30 → 31 → 38
+and the p50 falls 8.22 → 6.96 s at 0.5 — and quality does not move **at all**: en and
+fr are 0 better / 30 equal / 0 worse against the default at every setting. Where the
+hypotheses differ at all, the difference is punctuation only: at `seg 0.5` 6 of 30 en
+hypotheses differ from the default and all 6 are word-identical after
+`normalize_text`; at `seg 1.0` the one differing clip is word-identical too. Latency is
+flat as well (first-committed p50 within 0.36 s, finalization p50 within 8 ms). The
+trade livecaption described — a full re-decode per segment, so longer segments buy
+accuracy with latency — cannot operate on 10–20 s FLEURS clips that carry at most one
+VAD pause: at the 5.0 s default the achieved distribution is already 1.00 segments per
+clip, and lowering the threshold only fragments those single sentences without changing
+their words. A corpus of multi-sentence utterances would be needed to see the curve.
+
+### What the two ladders say about the residual
+
+Neither CLI knob sets it. The window's knee is 2.0 s and moving it in either direction
+cannot reach the offline arm (best residual 6.16 pp en / 3.50 pp fr / 2.62 pp zh);
+segment length has no purchase on this corpus at all. What the numbers do point at is
+the library's incremental re-decode, which is documented in the 0.4.4 source and not
+reachable from WLK's CLI:
+
+- `streaming.py` keeps the previously generated ids as a **text prefix** and rolls back
+  only `UNFIXED_TOKEN_NUM = 5` trailing tokens before each re-decode, and decodes the
+  first `UNFIXED_CHUNK_NUM = 2` chunks of each window with no text prefix at all.
+- So a token decision taken at ~2 s survives to EOF even though the finalize decode
+  re-reads the whole window audio — the finalize path is not a fresh full-clip decode.
+  That is why `chunk_sec 8.0` (about one decode per clip) reproduces the 2.0 s result
+  rather than the offline one, and why the window changes *words* while segment length
+  changes only *punctuation*.
+- Fingerprint in the running text: `fleurs_en_1735` live reads `… the United States
+  and. Up saw the university in Sweden …` where offline reads `… Uppsala University in
+  Sweden …`; `fleurs_en_1713` live `… understand the state. Of the fighting …` vs
+  offline `… the state of the fighting …`. Sentence-mark density runs 10.6–10.9 per 100
+  words live vs 6.1 offline (en), 5.1–5.4 vs 4.8 (fr), 277–280 vs 150 per whitespace
+  token (zh) — the seams are where the frozen prefix ends.
+- The other candidate the ladders cannot exclude is the audio path itself (VAD-gated
+  PCM, silence stripped, 0.1–0.3 s chunks) rather than the decode's prefix budget: both
+  differ from the offline arm. That is a bounded follow-up, below.
+
+Named and **skipped**, per instruction not to patch the library: `unfixed_token_num` /
+`unfixed_chunk_num` are `init_streaming()` arguments that `asr_mlx_qwen3.py` does not
+thread and `WhisperLiveKitConfig` does not expose, so the decisive arm (a wide revision
+budget at a fixed 2.0 s window) cannot be driven from the CLI today.
+
+### Where the round stopped, and protocol notes
+
+Completed: ladder 1 in **en, fr and zh** (0.5 / 1.0 / 2.0 / 8.0 each); ladder 2 in
+**en and fr** (5.0 / 1.0 / 0.5 / 0, all four instrumented). The fr `5.0` arm re-ran the
+default and again reproduced the stored baseline exactly (13.10 / 13.04, 0 better /
+30 equal / 0 worse), which is a second independent driver validation. Not run: ladder 2
+for **zh** — the 120-minute budget ended first. The last arms to land were
+`seg 0` fr and `chunk 8.0` zh at 21:27Z; the queue was stopped there.
+A second queue that could not be stopped through the sandbox's blocked process
+enumeration kept running past the stop point and may have re-written duplicate `fr` and
+`zh` arms with identical configs after 21:33Z; the numbers quoted here are anchored in
+`/tmp/wlkladder/runs/SUMMARY.txt` (snapshot taken 21:34Z) alongside the per-arm reports.
+Two arms overlapped unintentionally between 21:07Z and 21:27Z (a second queue could
+not be killed through the sandbox's blocked process enumeration): `chunk 1.0 zh` with
+`seg 1.0 fr`, `chunk 0.5 zh` with `seg 0.5 fr`, `chunk 8.0 zh` with `seg 0 fr`. Quality
+is unaffected (combined RTF stayed at or below 0.55, so paced feeding never fell
+behind — consistent with `chunk 1.0 zh` reproducing the stored 11.15 % CER with
+0 better / 30 equal / 0 worse, and `seg 0 fr` reproducing 13.10 % with 0 / 30 / 0);
+latency for those six arms is share-contaminated and should be read as indicative.
+Disk: 4.4–4.6 GiB free throughout (floor 1.5 GiB); artefacts are 16 report JSONs plus
+segment dumps, ~4 MB total, under `/tmp/wlkladder/runs/`.
+
+Artefacts: `/tmp/wlkladder/runs/<tag>-<lang>.json` (stock benchmark report),
+`<tag>-<lang>-seg.jsonl` (per-sample front-end lines), `<tag>-<lang>.log` (report
+table + arm wall clock), `runs/status.txt` (start/end timestamps per arm);
+`/tmp/wlkladder/{run_ladder.py,analyze.py,table.py,seams.py,cfg-*.json,runall.sh,tail.sh}`.
