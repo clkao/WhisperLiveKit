@@ -212,27 +212,43 @@ large enough to separate arms. Three consequences:
   reproducing 13.89 % under the old normalizer and 9.33 % under the new one.
   *Verified by:* a test that fails when the normalizer drops numeral standardization (`fleurs_en_1850`
   as a fixture: 91.67 % under the harness normalizer, 12.50 % under the pinned one) and passes now.
-- **AC-3.** The eval set is enlarged and its sampling stated: the sweep runs on the 919 IWSLT devset
-  segments, `git_dirty: false`, no download; the report states the reference-set provenance and the
-  utterance-level bootstrap 95 % CI for every WER it quotes.
+- **AC-3.** The two eval sets and their roles are stated: the **curve** runs on FLEURS-en at
+  `--speed 1` (the only setting that records `first_text_time_s`), the **precision leg** runs on the
+  919 IWSLT devset segments at `--speed 0`, `git_dirty: false`, no download; the report states each
+  set's provenance (including D10's 331-sentence universe) and the utterance-level bootstrap 95 % CI
+  for every WER or chrF it quotes.
   *Verified by:* each arm's JSON carries `corpus_sha256`, `n_samples = 919`, and a CI computed from
   its own per-row errors; a row without a CI is not accepted.
-- **AC-4.** The `att_context` sweep is run at fixed weights over five arms on the cached
+- **AC-4.** Every arm reports **quality and latency from the same run**, and the two decompositions
+  (ASR-only, cascade) come from the same configurations. Quality: WER/CER for the ASR leg, chrF +
+  XCOMET-XL for the cascade leg, each with a bootstrap 95 % CI from its own per-row errors. Latency:
+  `first_text_time_s`, `first_visible_time_s`, `finalization_time_s`, `source_end_lag_s`, recorded for
+  every arm and stated to be null where the run was unpaced.
+  *Verified by:* one JSON per arm carrying both axes and a non-null `first_text_time_s` for every
+  paced arm; an arm reported on quality alone is not accepted, and an arm reported as ranked must
+  also state the latency bar it cleared.
+- **AC-5.** The curve states its trend and its knee, one sentence per family, and says which
+  published points it may be compared to and which it may not.
+  *Verified by:* a monotonicity statement per family plus a knee value; the comparison list names the
+  offline single-decode FLEURS-en WER as the only qualifying published point and says why the NeMo
+  chrF anchor does not qualify.
+- **AC-6.** The `att_context` sweep is run at fixed weights over five arms on the cached
   `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` — `[56, 6]` (baseline), `[70, 13]` (anchor),
   `[70, 6]`, `[56, 13]`, `[112, 13]` — each with WER, its CI, RTF, wall time and the configuration
   stated in its own notes.
   *Verified by:* five JSONs whose `effective_config.nemotron_mlx_asr_att_context` matches the row
   label; an arm is reported as *different* only where the bootstrap CIs are disjoint.
-- **AC-5.** The conclusion names the residual: how much of the gap to the anchor the configuration
-  explains, in one number with its CI, and what remains after the scorer is pinned.
+- **AC-7.** The conclusion names the residual and locates it in the pipeline: how much of the gap to
+  the anchor the configuration explains, in one number with its CI, what remains after the scorer is
+  pinned, and whether the loss sits inside the ASR window or in the MT's commit policy.
   *Verified by:* one sentence pairing "configuration explains X pp (CI)" with "residual Y pp", and a
   falsifier that would overturn it (all five arms inside one CI, or the residual attributing more to
   the scorer than to the configuration).
-- **AC-6.** Aggregation is never compared across harnesses without naming it: every quoted WER says
+- **AC-8.** Aggregation is never compared across harnesses without naming it: every quoted WER says
   corpus (`weighted_wer`) or mean-of-rows, and chrF is not compared across aggregations.
   *Verified by:* a scan of the report's numbers for an unlabelled WER; D4's 0.43 pp and the tier-2
   2.3 pp are quoted as the size of the mistake.
-- **AC-7.** The commit-window defect is stated as a measured quantity and either removed or held
+- **AC-9.** The commit-window defect is stated as a measured quantity and either removed or held
   constant: buffer-then-finalize (one decode per utterance, no frozen streaming prefix) is available
   on the measured path, and the report gives its WER beside the chunk-incremental WER on the same
   clips and scorer.
@@ -240,66 +256,165 @@ large enough to separate arms. Three consequences:
   (13.89 % streaming vs 7.60 % offline, harness normalizer) reproduced or refuted; a run that
   changes both the commit policy and the sweep arm is not accepted.
 
-## 3. Sweep design
+## 3. Sweep design: a latency–quality curve, two decompositions, from the same runs
 
-**Order (each gate blocks the next):**
+A single WER is not the deliverable. The product is live captions, so "5 % but five seconds late"
+and "14 % at two seconds late" are different products and only the pair ranks them. The sweep is
+therefore a curve, and it is measured twice from the same configurations: once with ASR alone and
+once through the full cascade.
 
-| # | Arm | Acceptance number | Est. time | Est. disk |
+### 3.1 The two axes, and what each metric means in our pipeline
+
+Quality — WER for `en`/`fr`, CER for `zh` (whitespace removed), corpus aggregation
+(`weighted_wer`), with the utterance-level bootstrap 95 % CI from each arm's own per-row errors.
+
+Latency — the four fields the harness already records, with the pipeline meaning of each:
+
+| field | meaning in our pipeline |
+|---|---|
+| `first_text_time_s` | wall time from the start of audio feeding to the **first committed** ASR token. Excludes provisional text; this is the "user sees nothing yet" duration. Paced runs only. |
+| `first_visible_time_s` | same origin, first **committed or provisional** text. The difference from `first_text_time_s` is what the draft/partial path buys. Paced runs only. |
+| `finalization_time_s` | EOF completion minus the actual end of audio feeding — the tail drain: how long after the speaker stops the last text appears. |
+| `source_end_lag_s` | EOF completion minus nominal source duration / feed speed; includes feed backlog. The end-to-end lag as observed at the socket. |
+
+Two constraints stated up front, because they cost budget: `first_text_time_s` and
+`first_visible_time_s` are recorded **only at `--speed 1`** (`benchmark/report.py` prints "measured
+only at speed=1; it is not per-word latency"), so the latency axis requires paced runs; and we have
+no LongYAAL, so these are our own axes, not a benchmark's.
+
+### 3.2 Decomposition 1 — ASR alone
+
+The harness already produces it: a run with no `--target-language` yields the WER/CER rows and
+nothing else. Quality = WER/CER; latency = `first_text_time_s` (audio-arrival → committed text
+visible), plus `finalization_time_s` for the tail. No MT in the loop. This is the recognizer measured
+on its own and it is the curve that says what our streaming window costs.
+
+### 3.3 Decomposition 2 — the cascade
+
+Same configurations, translation on. Quality = chrF and XCOMET-XL (the tier-2 scorers);
+latency = end-to-end, adding `first_translation_time_s` and the final translation time. Subtracting
+the ASR-only latencies yields the MT's added latency; subtracting the ASR quality curve shows what
+the MT contributes on top of it. Both legs come from the same configurations, not from a second
+experiment.
+
+**Which one does the evidence implicate?** The ASR window. D11 measures 13.89 % streaming against
+7.60 % for one decode per clip on identical audio, identical weights, identical scorer — 6.29 pp is
+inside the recognizer, before the MT is reached. Nothing in this report measures the MT's commit
+policy, so the cascade leg exists to test whether it adds a second loss on top; the design does not
+claim it does.
+
+### 3.4 The arms, in latency order
+
+**Family 1 — commit policy / window (the primary curve).** Buffer-then-finalize is the best-quality,
+worst-latency end; the incremental windows walk down the latency axis.
+
+| arm | window | expected position on the curve |
+|---|---|---|
+| A1 buffer-then-finalize | one decode per utterance, no partial commit | best quality (D11: 7.60 %), worst latency |
+| A2 incremental 8.0 s | `mlx_qwen3_asr_chunk_sec=8.0` | near-A1 quality, seconds late |
+| A3 incremental 2.0 s | `chunk_sec=2.0` (the #425 ship setting) | the current product point (13.89 %) |
+| A4 incremental 1.0 s | `chunk_sec=1.0` | fastest partials, worst quality |
+| A5 incremental 0.5 s | `chunk_sec=0.5` | the latency floor probe — include to find the knee's lower edge, not as a candidate |
+
+**Family 2 — nemotron `att_context`, a second family on the same axes.** `[56, 6]` (baseline),
+`[70, 13]` (NeMo anchor), `[70, 6]`, `[56, 13]`, `[112, 13]` (full left context ≈ the offline
+ceiling). Left context is a latency *and* quality knob, which is exactly why it belongs on this
+curve rather than in a WER table.
+
+### 3.5 Acceptance number per arm
+
+Each arm must clear a latency bar for its quality number to count at all, and each quality number
+carries its CI:
+
+| arm | latency the arm must stay under to count | quality number it must produce |
+|---|---|---|
+| A1 buffer-then-finalize | `finalization_time_s ≤ 1.0 s` (tail only; no partial text by construction) | WER + CI |
+| A2 8.0 s | `first_text_time_s ≤ 10 s` | WER + CI |
+| A3 2.0 s | `first_text_time_s ≤ 4.5 s` (the #425 p50 3.52 s) | WER + CI |
+| A4 1.0 s | `first_text_time_s ≤ 3.0 s` | WER + CI |
+| A5 0.5 s | `first_text_time_s ≤ 2.5 s` | WER + CI |
+| F2 `att_context` arms | same as A3 (`first_text_time_s ≤ 4.5 s`) | WER + CI |
+
+An arm outside its bar is reported as "did not qualify" and is plotted but not ranked. All five
+latency fields are recorded per arm regardless.
+
+### 3.6 Order, time and disk
+
+| # | Step | Acceptance number | Est. time | Est. disk |
 |---|---|---|---|---|
-| P0 | Pin the anchor from the paper (AC-1) | table row + falsifier quoted | 20 min | 0 |
+| P0 | Pin the NeMo anchor from the paper (AC-1) | table row + falsifier quoted | 20 min | 0 |
 | P1 | Pin the scorer (AC-2) | D5 table reproduced; `1850` fixture 91.67 → 12.50 % | 45 min | 0 |
-| P2 | Enlarge the set + CI harness (AC-3) | 919-segment baseline JSON with a CI | 30 min | 5 MB |
-| S0 | Commit policy: chunk-incremental vs buffer-then-finalize (AC-7) | two WERs + CIs on identical audio; the D11 6.29 pp gap reproduced or refuted | 25 min | 5 MB |
-| S1 | `[56, 6]` baseline | WER + CI, matches the tier-2 direction-B ASR term | 20 min | 5 MB |
-| S2 | `[70, 13]` anchor config | WER + CI | 20 min | 5 MB |
-| S3 | `[70, 6]` | WER + CI | 20 min | 5 MB |
-| S4 | `[56, 13]` | WER + CI | 20 min | 5 MB |
-| S5 | `[112, 13]` (full left context) | WER + CI — the offline ceiling | 25 min | 5 MB |
-| S6 | FLEURS-en cross-check at the same scorer | D5 table on 30 clips, CI quoted | 6 min | 2 MB |
+| P2 | Latency-enabled baseline: the ASR-only A3 arm on FLEURS-en at `--speed 1` | a JSON whose `first_text_time_s` is non-null and whose WER has a CI | 8 min | 5 MB |
+| C1 | Curve, ASR-only, Family 1 A1–A5, FLEURS-en `--speed 1` | 5 paired points, one JSON each | 40 min | 25 MB |
+| C2 | Curve, cascade, same five, FLEURS-en `--speed 1`, translation on | 5 chrF/XCOMET points + `first_translation_time_s` | 60 min | 35 MB |
+| C3 | Family 2, `att_context` A3-equivalent on FLEURS-en `--speed 1` | 5 paired points | 40 min | 25 MB |
+| C4 | Quality-precision leg: the knee arm + A1 on the 919-segment IWSLT devset, `--speed 0` | WER/chrF with CI; latency metrics null and said to be null | 40 min | 10 MB |
+| C5 | The same knee arm on the 919 devset at `--speed 1` | the one 919-scale paired point (111 min measured for this shape) | 115 min | 5 MB |
 
-Time estimates are the tier-2 measured costs of the same 919-segment set: run 11 (nemotron,
-`--speed 0 --repeats 1`) took **20 min**, run 12 (qwen3-asr, same) **33 min**. Disk: audio already
-present (217 MB at `Alignatt4LLM/data/devset/`), each report 5.0 MB, ≤ 13.6 MB transient — so ~50 MB
-total, which fits inside the 3.7 GiB free / 1.5 GiB floor without touching the floor.
+Time calibration: paced FLEURS-30 is 347.6 s of audio (`--speed 1` ⇒ ~6 min wall) plus decode;
+a 919-segment paced run was measured at 111 min in tier 2 (run 13), and an unpaced 919 run at
+20–33 min (runs 11–12). Disk: FLEURS audio and the 919 devset are both already cached (217 MB at
+`Alignatt4LLM/data/devset/`), so ~90 MB of new artifacts.
 
-**What would falsify the conclusion that the harness is sound?** Any of:
+**Cut-line if the budget shrinks:** C5 first (the single 919-scale latency point), then C3, then C2.
+C1 and C4 are the curve and its precision leg and must both survive for the design to answer
+anything.
 
-1. A sweep arm whose WER moves more than the fixed-weights `att_context` change can explain —
-   i.e. two runs of the *same* arm on the same machine disagree by more than their CIs (a
-   non-determinism result the FLEURS reports say will not happen, D2).
-2. Rescoring a stored report with the pinned normalizer failing to reproduce its own stored
-   `weighted_wer` under the harness normalizer (D1 currently reproduces to the digit).
-3. The S0 pair landing inside one CI, i.e. the commit policy turning out not to matter — which would
-   put D11 down to a difference between the library `transcribe` path and the pipeline, and move the
-   defect back into the adapter's audio or text handling.
-4. The `[112, 13]` ceiling arm landing far from the `[70, 13]` anchor arm — which would mean the
-   knob is saturated and the gap is the model, not the configuration.
-5. The 919-segment baseline WER disagreeing with the ASR term implied by the tier-2 direction-B chrF
-   by more than the scorer accounts for, which would mean the two harness paths score differently.
-6. Any quoted WER whose per-row artifacts are absent, so the CI cannot be recomputed.
+**Disk caution — read before scheduling.** This Mac's data volume is at 100 % with **≈ 374 MiB
+free** at probe time, below the 1.5 GiB floor, and none of that is this task's artifacts (no file
+over 20 MB was written in the session; the HF cache is a pre-existing 16 GB). The sweep's ~90 MB
+and even a model load cannot be assumed to fit until space is freed. This is a scheduling blocker,
+not a finding about the harness.
 
-**Falsifier for the sweep's premise:** if all five arms fall inside one overlapping CI and the
-residual after the scorer fix is unchanged, then the gap is the model, the sweep is over, and the
-answer to the title question is "model, not configuration" — reported as a negative result rather
-than re-tuned.
+### 3.7 The trend statement the curve must produce
 
-## Stage Report: ideation
+One sentence per family, stated in advance so it can be falsified:
 
-- DONE: The benchmark-defect hunt is done first and with numbers: the same 30 cached FLEURS-en clips rescored under mean-of-rows versus corpus aggregation, under the harness normalizer versus a Whisper-style English normalizer, and under one offline run, stating which difference moves WER and by how much.
-  Aggregation 0.43 pp (13.4658 % avg vs 13.8925 % weighted, D4); normalizer 4.56 pp (13.89 → 9.33 %, D5); **offline single-shot 6.29 pp (13.89 → 7.60 %, D11)** — the commit window, not the scorer, is the largest lever.
-- SKIPPED: An independent official reference on the exe.dev VM with the upstream Qwen3-ASR implementation.
-  Superseded twice by CL: first "cheapest local path, `qwen_asr` only if <200 MB", then "MLX only, no `qwen-asr`, no VM". `qwen-asr==0.0.6` is 0.14 MB but pins `transformers==4.57.6` against the venv's 5.15.0 and its README demands a fresh 3.12 env, so it was dropped uninstalled. `asr-xcomet` is still paused; no VM work was done beyond a read-only `ssh` that reported "paused". The published 4.39 % stands as the anchor with that caveat, and D11 supplies the local offline reference it was missing.
-- DONE: The formatted design states the full sweep to reach a comparable number: the arms, an acceptance number per arm, the estimated time and disk, the order, and what result would falsify the conclusion that the harness is sound.
-  Section 3: 9 gates/arms (P0–P2, S0–S6), each with its acceptance number, time from the tier-2 measured costs (20 min/919-segment arm) and 5 MB/run disk, plus six falsifiers.
-- DONE: Protocol parity established against the maintainer's #444 reports before any comparison was quoted.
-  Same `corpus_sha256` on all five reports; his stored `weighted_wer` reproduced to the digit by our normalizer (21.36 / 27.65 / 11.66 %); his 3 passes bit-identical 30/30 so a 90-row figure equals 30 rows; ours 13.89 % (1 pass) = 13.89 % (3 pass) = **0.650×** his 21.36 % Metal reference. The suspected 2× harness discrepancy does not exist.
-- DONE: Report each probe in WER points (FO probes 1–6).
-  1 offline 6.29 pp; 2 chunk ladder 1.0 s arm reached but the 2.0/8.0 s arms did not finish inside the budget (see residual); 3 detokenization 0.00 pp, 0/30 glued seams; 4 audio path 0.00 pp (bitwise equal, max |diff| 0.0); 5 language tag already `lan="en"` in every stored row, 0 pp available; 6 scoring 4.56 pp normalizer / 0.43 pp aggregation.
-- DONE: Say whether our adapter can be driven buffer-then-finalize and which code path forces partial commits.
-  It cannot today (D14): `process_iter` (`asr_mlx_qwen3.py:138`) commits `state.stable_text` every inference tick, and `_commit` (`:115`) freezes that prefix so `finish()`'s full-window re-decode can only append (D12). `mlx_qwen3_asr_second_pass` is a dead knob (D13).
+- **Family 1:** quality is expected to be **monotone in the window** — best at buffer-then-finalize,
+  degrading as the window shortens — with the **knee at or below 2.0 s**: the region where a further
+  second of latency buys less than one WER point. The #425 zh exploration (11.15 % at 2.0 s vs
+  11.54 % at 1.0 s) suggests the curve is **flat for Chinese across 1–2 s**, so the prediction is a
+  language-dependent knee, sharper for English than for zh.
+- **Family 2:** quality is expected to rise with left context but **saturate before `[112, 13]`**;
+  if `[112, 13]` and `[70, 13]` land inside one CI the knob is saturated and the residual gap is the
+  model, not the configuration.
 
-### Summary
+### 3.8 What the curve cannot be compared to
 
-The harness is sound on scorer identity, pass count, aggregation, detokenization, audio path and language tag, and unsound on three things: the English normalizer (4.56 pp, of which one clip's `802.11a` enumeration is 2.49 pp), the 30-clip sample (95 % CI [8.87, 20.52]; the universe is 331 sentence IDs, not 647 recordings), and above all the chunk-incremental commit policy (6.29 pp against a genuine offline decode). So no `att_context` sweep should run yet: at 1.12 s of left-context difference the knob is an order of magnitude smaller than the commit-window defect. The design therefore gates the sweep behind a pinned scorer, a 919-segment anchor-matched eval set, and an S0 arm that holds the commit policy constant — with six named falsifiers, including the one that would put the harness back in doubt (S0's two arms landing inside one CI).
+IWSLT ranks systems *inside latency regimes* using LongYAAL (length-adaptive average lagging) on a
+shared reference. We do not compute LongYAAL; our axes are `first_text_time_s`,
+`first_visible_time_s`, `finalization_time_s` and `source_end_lag_s`, all measured at our own feed
+speed on our own 30-clip manifest. So:
 
-Residual: the streaming chunk ladder (probe 2) is incomplete — the 1.0 s arm finished (199 s) but the 2.0 s and 8.0 s arms and the offline-vs-streaming library comparison were still running at the budget cut, so the ladder is one arm deep and D11's offline number comes from the dedicated `transcribe` run instead. No file under `whisperlivekit/**` was modified; the analysis drivers live in `/tmp/dh/` and read only on-disk reports.
+- The curve **places us against ourselves across configurations**, which is what the sweep needs.
+- A published point is comparable **only if both the metric and the regime match**. In this report
+  exactly one class qualifies: an **offline, single-decode WER on FLEURS-en test**, which is the
+  regime D11's buffer-then-finalize arm reproduces locally at 7.60 % (harness normalizer) / 7.36 %
+  (Whisper), beside the published 4.39 % for the same checkpoint. That pair is the only
+  published-vs-ours comparison the design permits.
+- The NeMo chrF 41.01 anchor does **not** qualify yet: it is a chrF on the IWSLT devset under NeMo's
+  own segmentation, and we have neither its latency regime nor its LongYAAL. AC-1 pins the anchor's
+  WER side precisely because WER is a property of the ASR step and therefore regime-comparable in a
+  way chrF is not.
+
+### 3.9 What would falsify the conclusion that the window, not the text path, sets quality?
+
+1. **The S0-style control:** two arms that differ only in commit policy landing inside one CI — that
+   would put D11 down to a difference between the library `transcribe` path and the pipeline, and
+   move the defect into the adapter's audio or text handling.
+2. **A flat Family 1 curve with a non-flat cascade curve.** D11 predicts the ASR curve moves
+   ≈ 6 pp; if ASR quality is flat across windows while the cascade degrades, the MT's commit policy
+   is the cause and this design's premise is wrong.
+3. **Non-determinism:** the same arm run twice disagreeing by more than its CI. The on-disk FLEURS
+   reports say this will not happen (his 3 passes bit-identical 30/30, D2), so a disagreement
+   falsifies the harness rather than the arm.
+4. **A scorer that cannot reproduce itself:** rescoring a stored report with the pinned normalizer
+   failing to reproduce its own stored `weighted_wer` under the harness normalizer (D1 currently
+   reproduces to the digit).
+5. **`[112, 13]` far from `[70, 13]`:** the knob is not saturated, so the gap is configuration after
+   all and the residual claim must be withdrawn.
+6. **Any quoted WER whose per-row artifacts are absent**, so its CI cannot be recomputed.
+
+**Falsifier for the sweep's premise as a whole:** if all Family 1 arms fall inside one CI *and* the
+cascade curve is also flat, then the window does not set quality, the curve has no knee, and the
+honest report is a negative result — not a re-tuned sweep.
