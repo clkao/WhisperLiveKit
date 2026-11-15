@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-3:revision-1",
+  "question": "Accept the corrected summary and notes as the tier-2 record?",
+  "artifacts": [
+    {
+      "id": "artifact:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/e5ff8e2b259cf4b9382ba2aa829d8b98c7c741e7/simulst-tier2-two-direction-benchmark.md",
+      "rev": "sha256:e0472fdb6ae1b16f8e4344e95018fa05cb3782f5f0baa80f5c4934de7ac91e63",
+      "mediaType": "text/markdown",
+      "summary": "Third review of the same text correction. F7 closed: the modulo-8000 derivation is gone, the tail is named as the code names it, and the 160/112 counts are the error strings' own, with the segment-end arithmetic supporting row 213 and the pause case covering row 901. F8 closed: the finalize-decode sentence is scoped to 0.3.5 and the guard is marked as the 0.4.4-era line. Validator recommends APPROVE; two optional polish items."
+    }
+  ]
+}
