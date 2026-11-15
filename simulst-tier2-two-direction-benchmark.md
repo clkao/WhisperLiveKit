@@ -428,3 +428,38 @@ which is the main checkout on `wlk/integration-2`, so the first attempt at run 1
 wrong branch's library and said so only in `system_info.git_commit`. The recorder now refuses to
 start unless the imported `whisperlivekit` is inside the checkout that holds the script, and
 records the resolved package path in each run's notes.
+
+## Stage Report: implementation (cycle 2, the runs round)
+
+- DONE: Runs 2 through 14 execute in the suite's table order on wlk/integration-3, with the long rows 11 to 14 last, and every run's command, report, trace and notes are recorded under benchmarks/evaluations/ with its direction label.
+  13 of 14 rows are recorded in `benchmarks/evaluations/simulst-tier2-two-direction/` (runs 2-12, 7, 8, 14) — each with `report-<run>.json`, `trace-<run>.csv`, `notes-<run>.json` carrying the exact command and `"direction"`, plus `run<N>-chrf.json`; runs 11-12 and 14 came last as instructed; code commits `96ea6d7`..`b15eb71` on `simulst-tier2-two-direction-benchmark`.
+- SKIPPED: Run 13, the paced 919-segment en->zh anchor at `--speed 1`.
+  It is the ideation's declared first cut-line row and needs 111 min against the ~85 min left after run 14; the two measured 919-segment rows overran their estimates by 38% (run 11, 1660.92 s) and 10% (run 12, 2180.26 s), so it would have overrun the round. Nothing else depends on it; direction B keeps its paced numbers from runs 9-10.
+- DONE: Every direction-A row's trace carries the translation and its English sibling reference, and chrF is computed from the trace with sacrebleu sentence_chrf, named as that variant wherever the number appears.
+  `translation` and `reference_en` are non-empty on 100% of rows in traces 1-6 (3/3, 3/3, 90/90, 90/90, 90/90, 90/90); `scripts/score_trace.py` writes chrF from the trace with the variant string `sentence_chrf (sacrebleu: sentence-level chrF, char_order=6, word_order=2, beta=2, case-sensitive, punctuation kept, whitespace not scored)` into every `run<N>-chrf.json`, and `summary.md` names that variant above both tables; hand-recomputed per-segment chrF on segments 5/100/400 reproduces the scorer's values.
+- DONE: The VM scores rows 7, 8 and 14 with the request and response files recorded, the VM is paused after each invocation, and free disk on this Mac never crosses 1.5 GiB.
+  `xcomet/{7,8,14}-{request,response}.json` — 30 triples -> 0.6432 (run 3), 30 -> 0.6649 (run 5), 919 -> 0.4378 (run 11), response id counts 30/30/919; resume+pause around each (06:03->06:08, 06:23->06:27, 07:27->08:44, all `exit 0`); the lowest free-space reading before any run was 2 366 108 KiB (2.26 GiB).
+
+### Summary
+
+The suite is executed and recorded except its declared first cut-line row: 12 harness rows and
+three VM scorer invocations, all on `wlk/integration-3`, all with `git_dirty: false` and
+`HF_HUB_OFFLINE=1`, every report paired with a trace that carries the text the base's report
+cannot hold. Direction A (FLEURS zh->en): drafting cuts mean time-to-first-translation on both
+backends (qwen 6.519->4.906 s, nemotron 7.554->2.794 s) on byte-identical ASR, with chrF flat to
+slightly up (43.128->43.915 qwen) and XCOMET 0.6432->0.6649 on the same 30 triples. Direction B
+(IWSLT en->zh): 919/919 segments for nemotron and 917/919 for qwen (two sub-100 ms segments are
+too short for qwen's log-mel framing), join self-check 0.9477 at shift 0 against 0.097-0.158
+shifted, and XCOMET 0.4378 over nemotron's 919 triples — while nemotron's lower WER (0.2268 vs
+0.2938) comes with half the chrF (12.481 vs 26.348), so the two measures disagree in this
+direction and both are reported.
+
+Two findings the round produced that the ideation did not expect. `--repeats 3` measures no text
+spread on this base at all — 0/30 samples differ in translation or hypothesis between passes on
+all four repeated rows, only latency moves (0.043-0.097 s per-sample spread) — so the tier-1
+"MT is not repeat-deterministic" concern does not reproduce here, at the cost of two extra passes
+per row. And the traced runner had no `--repeats` at all (`BenchmarkRunner` has it, but the
+traced recorder drives `TestHarness` directly), so rows 3-6 could not run their declared
+parameter until it was added (commit `9eb205a`, with a `repeat` column in the trace and a guard
+against replaying the direction-B emitter's one-shot generator). Run 13 remains the one hole, by
+the declared cut-line.
