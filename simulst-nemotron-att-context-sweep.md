@@ -244,11 +244,17 @@ large enough to separate arms. Three consequences:
   *Verified by:* one sentence pairing "configuration explains X pp (CI)" with "residual Y pp", and a
   falsifier that would overturn it (all five arms inside one CI, or the residual attributing more to
   the scorer than to the configuration).
-- **AC-8.** Aggregation is never compared across harnesses without naming it: every quoted WER says
+- **AC-8.** The MT-only upper bound is measured and used as an accounting, not an attribution: our
+  translator scored on reference source text for both directions, beside the cascade chrF, with the
+  sentence saying whether the translator or the ASR path is the limit.
+  *Verified by:* two chrF + XCOMET-XL numbers on reference text (`ref/en.txt`→`ref/zh.txt` and the
+  FLEURS zh→en references) quoted beside the cascade rows, plus the stated limitation that F3 removes
+  streaming and ASR error together and therefore bounds rather than attributes.
+- **AC-9.** Aggregation is never compared across harnesses without naming it: every quoted WER says
   corpus (`weighted_wer`) or mean-of-rows, and chrF is not compared across aggregations.
   *Verified by:* a scan of the report's numbers for an unlabelled WER; D4's 0.43 pp and the tier-2
   2.3 pp are quoted as the size of the mistake.
-- **AC-9.** The commit-window defect is stated as a measured quantity and either removed or held
+- **AC-10.** The commit-window defect is stated as a measured quantity and either removed or held
   constant: buffer-then-finalize (one decode per utterance, no frozen streaming prefix) is available
   on the measured path, and the report gives its WER beside the chunk-incremental WER on the same
   clips and scorer.
@@ -321,6 +327,17 @@ worst-latency end; the incremental windows walk down the latency axis.
 ceiling). Left context is a latency *and* quality knob, which is exactly why it belongs on this
 curve rather than in a WER table.
 
+**Family 3 — the text-MT upper bound (cheapest arm, run it first).** Feed the *reference source
+text* straight into our MT with no ASR in the loop and score the output against the same target
+references: `ref/en.txt` for direction B (en→zh), and the cached FLEURS `cmn_hans_cn` references
+against the FLEURS `en_us` references for direction A (zh→en). This is the standard cascade ceiling —
+what our translator would score given perfect transcripts — and it is the only way to split "combo"
+into halves, because **no published number exists for our pairings** (qwen3-asr × Hy-MT2-1.8B and
+nemotron × Hy-MT2 are ours alone, and the Hy-MT2-1.8B card publishes no per-direction scores at all).
+Text-only, cached weights, minutes. It has no meaningful latency axis: MT-only latency is a property
+of the translator, not of a streaming configuration, so this arm is plotted as a horizontal quality
+line, not a point on the curve.
+
 ### 3.5 Acceptance number per arm
 
 Each arm must clear a latency bar for its quality number to count at all, and each quality number
@@ -334,6 +351,7 @@ carries its CI:
 | A4 1.0 s | `first_text_time_s ≤ 3.0 s` | WER + CI |
 | A5 0.5 s | `first_text_time_s ≤ 2.5 s` | WER + CI |
 | F2 `att_context` arms | same as A3 (`first_text_time_s ≤ 4.5 s`) | WER + CI |
+| F3 MT-only bound | no latency bar — horizontal quality line by construction | chrF + XCOMET-XL over the same references as the cascade leg |
 
 An arm outside its bar is reported as "did not qualify" and is plotted but not ranked. All five
 latency fields are recorded per arm regardless.
@@ -345,6 +363,8 @@ latency fields are recorded per arm regardless.
 | P0 | Pin the NeMo anchor from the paper (AC-1) | table row + falsifier quoted | 20 min | 0 |
 | P1 | Pin the scorer (AC-2) | D5 table reproduced; `1850` fixture 91.67 → 12.50 % | 45 min | 0 |
 | P2 | Latency-enabled baseline: the ASR-only A3 arm on FLEURS-en at `--speed 1` | a JSON whose `first_text_time_s` is non-null and whose WER has a CI | 8 min | 5 MB |
+| C0a | MT-only bound, direction B: `ref/en.txt` → Hy-MT2-1.8B → vs `ref/zh.txt` | chrF + XCOMET-XL, no ASR in the loop | 5 min | 1 MB |
+| C0b | MT-only bound, direction A: FLEURS zh references → Hy-MT2-1.8B → vs FLEURS en references | chrF + XCOMET-XL | 5 min | 1 MB |
 | C1 | Curve, ASR-only, Family 1 A1–A5, FLEURS-en `--speed 1` | 5 paired points, one JSON each | 40 min | 25 MB |
 | C2 | Curve, cascade, same five, FLEURS-en `--speed 1`, translation on | 5 chrF/XCOMET points + `first_translation_time_s` | 60 min | 35 MB |
 | C3 | Family 2, `att_context` A3-equivalent on FLEURS-en `--speed 1` | 5 paired points | 40 min | 25 MB |
@@ -356,7 +376,8 @@ a 919-segment paced run was measured at 111 min in tier 2 (run 13), and an unpac
 20–33 min (runs 11–12). Disk: FLEURS audio and the 919 devset are both already cached (217 MB at
 `Alignatt4LLM/data/devset/`), so ~90 MB of new artifacts.
 
-**Cut-line if the budget shrinks:** C5 first (the single 919-scale latency point), then C3, then C2.
+**Cut-line if the budget shrinks:** C0a/C0b are never cut — ten minutes buys the arithmetic below;
+then C5 first (the single 919-scale latency point), then C3, then C2.
 C1 and C4 are the curve and its precision leg and must both survive for the design to answer
 anything.
 
@@ -365,6 +386,23 @@ free** at probe time, below the 1.5 GiB floor, and none of that is this task's a
 over 20 MB was written in the session; the HF cache is a pre-existing 16 GB). The sweep's ~90 MB
 and even a model load cannot be assumed to fit until space is freed. This is a scheduling blocker,
 not a finding about the harness.
+
+### 3.6b The accounting the three families make possible
+
+With the ASR-only curve (3.2), the cascade (3.3) and the MT-only bound (F3), the cascade number stops
+being a single opaque figure:
+
+- **MT-only chrF close to the cascade chrF** ⇒ the translator is the limit, and no amount of window
+  tuning recovers the gap.
+- **MT-only chrF well above the cascade chrF** ⇒ the ASR path costs the difference, and the ASR-only
+  curve says which window buys it back, at what latency.
+
+What F3 **cannot** show, stated so it is not over-read: it removes the streaming *and* the ASR errors
+together, so it is a **bound, not an attribution**. A low MT-only number can be caused either by the
+translator or by our prompt/segmentation convention on reference text; a high one says only that the
+translator is not the binding constraint. Attribution of any residual inside the ASR half still needs
+the per-clip pairing (D-series rescoring) or a separate ASR-error-injection run, which this design
+does not include.
 
 ### 3.7 The trend statement the curve must produce
 
