@@ -46,6 +46,14 @@ gates:
               application:
                 target-stage: implementation
                 state: consumed
+        - id: gate:8zdhkj86eqshqypzzme2v6ss:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-validation-1
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-1:revision-1
+                digest: sha256:0bc10f20cbe6841c269989a035421ffce035ff45adcb18decea89e0a6b06b240
+                room-ref: '@review/validation/briefing-1'
 started: 2026-08-27T19:46:38Z
 ---
 
