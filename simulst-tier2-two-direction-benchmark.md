@@ -396,3 +396,35 @@ stated run order with run 1 first, and the direction-B segment emitter specified
 counts and falsifiers. No file in `whisperlivekit/` changes; the emitter is one `scripts/`
 file plus one test file. Open point for CL: the drafting rows pin
 `mlx_llm_mt_simul_commit: "mass"` while the code default is `"paper"`.
+
+## Stage Report: implementation
+
+- DONE: The suite table names the run base in every row, and the base is wlk/integration-3, so the qwen3 rows name a backend that base actually offers; the amendment is stated once in prose above the table with the reason origin/main cannot run those rows.
+  `### The suite` — one sentence above the table names `wlk/integration-3` and why (`mlx-qwen3-asr` and the bundled zh-en calibration heads are on that branch, not on `origin/main`), a `Run base` column was added to the header, and `wlk/integration-3` is in all 14 rows including the three VM rows (source of their triples); state commit `ed7868b`, frontmatter and status untouched.
+- DONE: The segment-level emitter builds: it reads audio-segments.yaml and ref/en.txt, ref/zh.txt, cuts each segment, and carries each segment's source, reference and segment index through to the report so a segment is traceable to its line in ref/zh.txt, with a model-free test that fails when a reference is misaligned.
+  `scripts/run_iwslt_devset.py` + `scripts/traced_bench.py`, code commit `ebb1ff5`: each cut is `wav[offset : offset+duration]` at `round(duration × 16000)` frames, named `iwslt_<wavstem>_<index:03d>`, one wav's cuts live at a time, and the trace CSV carries index, wav, offset, duration, source, reference_en, reference_zh, hypothesis, translation, status, error and both translation latencies. `tests/test_iwslt_emitter.py` (7 tests) fails when the zh reference is joined one line off and when a cut truncates instead of rounding — both shown by mutating the script and watching the test fail, then reverting.
+- DONE: Run 1 of the suite is executed first on the declared base and its report is recorded, and the build reports the exact command, the wall time and the disk it used.
+  `benchmarks/evaluations/simulst-tier2-two-direction/`, code commit `7be295e`: 3/3 FLEURS zh rows `status == ok` with `cer` and `first_translation_time_s` in the report and translation text for 3/3 in `trace-run1.csv`; the report records `git_commit c2b506d`, `git_dirty false`. Exact command, wall time 33.16 s against the 1-minute estimate, and disk −1.4 MiB against the 1.5 GiB floor are in `NOTES.md`.
+- SKIPPED: Runs 2–14, including the 919-segment direction-B work.
+  MetaFO's gate: run 1 is the gate on the rest of the suite. The direction-B emitter is exercised model-free (join self-check over all 919 segments, 30 real cuts from `OiqEWDVtWk.wav`, the trace writer) but has not been run through the harness; row 9 is its first real exercise.
+
+### Summary
+
+The suite now names its base in every row, the direction-B emitter and the direction-A recorder
+exist in `scripts/` with no library change, and run 1 passed on `wlk/integration-3`: 3/3 zh rows
+ok, translation text in the trace, 33.16 s wall, disk well above the floor, `git_dirty false`.
+
+One base fact shaped the build, with the first officer's approval: tier 1's recorder (the `chrf`,
+`translation` and `translation_reference` fields, `compute_chrf`) is on
+`wlk/simulst-eval-harness`, not on `wlk/integration-3`, so `SampleResult` here carries no `chrf`
+and no report can score itself. Each run therefore writes the canonical report **plus** a trace
+CSV, and chrF is applied to the trace at scoring time with sacrebleu's sentence-level chrF (word
+order v2, punctuation kept) against its `reference_en` column. That absence is stated in
+`notes-<run>.json`, in `NOTES.md` and here, so an empty `chrf` field is not read as a missing
+measurement. Run 1's own numbers are therefore `cer` plus `first_translation_time_s`, not chrF.
+
+A second guard came out of the run itself: a script run by path imports the installed package,
+which is the main checkout on `wlk/integration-2`, so the first attempt at run 1 measured the
+wrong branch's library and said so only in `system_info.git_commit`. The recorder now refuses to
+start unless the imported `whisperlivekit` is inside the checkout that holds the script, and
+records the resolved package path in each run's notes.
