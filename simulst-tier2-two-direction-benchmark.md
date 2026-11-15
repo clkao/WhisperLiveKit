@@ -15,6 +15,20 @@ gates:
                 id: briefing:1mvkhny3ke6wcza27p8x5v8j:backlog:attempt-1:revision-1
                 digest: sha256:441a6fdaa2edaef2b055f0792c7fba9ab7b5554d0bd02d8f12c50ba00ffcc600
                 room-ref: '@review/backlog/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1mvkhny3ke6wcza27p8x5v8j:backlog:1
+                briefing: briefing:1mvkhny3ke6wcza27p8x5v8j:backlog:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T04:52:58.688342Z"
+                decision: approve
+                reason: 'Seed is specific enough to design against: the two directions are split and labelled, the VM scorer path is named with its pins, and the segment-level emitter is identified as the build the task owns. Three ACs each carry a falsifier.'
+                conn:
+                    quote: 'Backlog gate of the tier-2 task: approved to ideation, as you recommend. Record the approval with my words as the grant.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 Tier 1 shipped the benchmark suite that scores a translation. This task produces the two measured
