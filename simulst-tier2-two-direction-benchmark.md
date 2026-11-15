@@ -75,6 +75,17 @@ gates:
                 id: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-2:revision-1
                 digest: sha256:35472fe03098a18a8f6dd26025597f452cded60f0c018a9624f57fe6fa999515
                 room-ref: '@review/validation/briefing-2'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1mvkhny3ke6wcza27p8x5v8j:validation:2
+                briefing: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-2:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T17:23:06.446273Z"
+                decision: revise
+                reason: 'Second validation: F2 clean and F1''s substance verifies, but the replacement adds F7 (a modulo-8000 tail derivation on a buffer drained at 32000 samples) and F8 (a 0.3.5 finalize path stated beside a 0.4.4-era guard). No measured number changes; two sentences to rewrite.'
+                conn:
+                    quote: 'Q1: the second revise round of gate 1m is approved, as you recommend. Use one worker for the two sentences, with a maximum of 15 minutes and text only. Then use one worker for the validation, with a maximum of 30 minutes.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
 started: 2026-11-15T04:53:06Z
 worktree: .worktrees/spacedock-ensign-simulst-tier2-two-direction-benchmark
 ---
