@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1mvkhny3ke6wcza27p8x5v8j:ideation:attempt-1:revision-1",
+  "question": "Does CL approve this suite of 14 runs as the tier-2 plan?",
+  "artifacts": [
+    {
+      "id": "artifact:1mvkhny3ke6wcza27p8x5v8j:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/c103edd9fab2784d20423652aac39c2f05a52e9c/simulst-tier2-two-direction-benchmark.md",
+      "rev": "sha256:5682032ba614e7dcdca79767dbfeb30f805ee890da06103ed7bbf506ffd481b3",
+      "mediaType": "text/markdown",
+      "summary": "One suite table, 14 rows, nine columns, every parameter read out of the code. qwen3-ASR and nemotron x Hy-MT2-1.8B-8bit, drafts off and on, product direction on FLEURS and comparison direction on the IWSLT devset. All models cached, no download. Run 1 is a 1-minute zh-to-en smoke. Mac total about 4h15m, VM about 25 min. First-officer finding: the qwen rows name a backend that exists only on wlk/integration-3, not on the worktree base."
+    }
+  ]
+}

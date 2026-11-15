@@ -29,6 +29,14 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+        - id: gate:1mvkhny3ke6wcza27p8x5v8j:ideation
+          stage: ideation
+          attempts:
+            - id: gate-attempt:1mvkhny3ke6wcza27p8x5v8j-ideation-1
+              briefing:
+                id: briefing:1mvkhny3ke6wcza27p8x5v8j:ideation:attempt-1:revision-1
+                digest: sha256:fc612d3adf1914252cc3ac6cac47281f4feeddd825d3ba2ab7c5de84e30d8c4c
+                room-ref: '@review/ideation/briefing-1'
 started: 2026-11-15T04:53:06Z
 ---
 
