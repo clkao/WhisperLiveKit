@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-1:revision-1",
+  "question": "Do the tier-2 measurements ship, with the two contradicting sentences corrected as a follow-up, or does a fourth worker fix them first?",
+  "artifacts": [
+    {
+      "id": "artifact:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/a75360abe5c94595f3c02a3cc4955774cc5e4582/simulst-tier2-two-direction-benchmark.md",
+      "rev": "sha256:82feb0f4a4da240f0d7d5a70ab0ae78f779f739d2e92fa02931f1b5a80036d96",
+      "mediaType": "text/markdown",
+      "summary": "Every published number reproduces from its own artifacts: chrF within 0.0005 on all ten scored runs, cer/wer and latency means exactly, XCOMET system scores as the mean of their own per-segment files, all row and segment counts, and the two directions cleanly separated. Two sentences in summary.md and NOTES.md assert what the traces contradict; no acceptance falsifier fires."
+    }
+  ]
+}

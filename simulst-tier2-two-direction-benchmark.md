@@ -51,6 +51,14 @@ gates:
               application:
                 target-stage: implementation
                 state: consumed
+        - id: gate:1mvkhny3ke6wcza27p8x5v8j:validation
+          stage: validation
+          attempts:
+            - id: gate-attempt:1mvkhny3ke6wcza27p8x5v8j-validation-1
+              briefing:
+                id: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-1:revision-1
+                digest: sha256:08e3d0c7e8d2e4b102fc7382187af336e13bcbca3bcb7f7f0dc379a1f9f18fe6
+                room-ref: '@review/validation/briefing-1'
 started: 2026-11-15T04:53:06Z
 worktree: .worktrees/spacedock-ensign-simulst-tier2-two-direction-benchmark
 ---
