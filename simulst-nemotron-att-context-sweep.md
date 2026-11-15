@@ -29,6 +29,7 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+started: 2026-11-15T16:25:44Z
 ---
 
 Direction B in the tier-2 suite scores chrF 12.481 with nemotron and 26.348 with qwen3-asr on the
