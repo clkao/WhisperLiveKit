@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-2:revision-1",
+  "question": "Accept the corrected summary and notes, or send the two replacement sentences back?",
+  "artifacts": [
+    {
+      "id": "artifact:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/fa0e2052d46440e527aefa68228148ac8b5968a5/simulst-tier2-two-direction-benchmark.md",
+      "rev": "sha256:2f499cacd5a0520b474d2f4d7ca54f3eccb9662b59a57e4be4ed00f385a71f7b",
+      "mediaType": "text/markdown",
+      "summary": "Text-only correction of F1 and F2. F2 is clean: the chrF heading and the noise-band claim are gone, deltas reproduce as +0.79 and -1.17, per-pass spread 0.0000. F1's durations, sample counts and guard split all verify, but the replacement adds a modulo-8000 tail derivation the code contradicts and states a 0.3.5 finalize path beside a 0.4.4-era guard. Two sentences need rewriting; no measurement changes."
+    }
+  ]
+}

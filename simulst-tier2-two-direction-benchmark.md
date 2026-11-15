@@ -70,6 +70,11 @@ gates:
                 conn:
                     quote: 'Validation gate of tier 2: the decision of CL is revise. Correct the two material findings, F1 and F2, in the summary and the notes. The corrected sentences must agree with the result files. This is a text change only: start no model run. Then do a new validation, and show the gate again with your recommendation.'
                     source: MetaFO brief relaying CL's decisions, 2026-11-15
+            - id: gate-attempt:1mvkhny3ke6wcza27p8x5v8j-validation-2
+              briefing:
+                id: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-2:revision-1
+                digest: sha256:35472fe03098a18a8f6dd26025597f452cded60f0c018a9624f57fe6fa999515
+                room-ref: '@review/validation/briefing-2'
 started: 2026-11-15T04:53:06Z
 worktree: .worktrees/spacedock-ensign-simulst-tier2-two-direction-benchmark
 ---
