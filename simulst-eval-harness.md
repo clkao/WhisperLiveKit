@@ -150,17 +150,36 @@ scores WER/CER, and zero of 23 checked-in reports carry a non-null
 `first_translation_time_s` — so a harness is a capability other people run, not
 a number we consume.
 
-## Acceptance criteria (tiered; numbers in the cycle-2 report)
+## Acceptance criteria (tiered; tier 1 rescoped in cycle 4)
 
-- **Tier 1 — local harness (AC-1..AC-3), the shippable #477 PR.** Translation is
-  engaged, joined and scored on `benchmarks/corpora/fleurs-90.json` through the
-  `sentence_id` join that needs no download; the latency fields carry real
-  numbers instead of placeholders.
+- **Tier 1 — local harness (AC-1..AC-3), the shippable #477 PR.** Met by a real
+  cascade run on `benchmarks/corpora/fleurs-90.json` whose references come from
+  the `sentence_id` join, with no download.
+  - **AC-1 (translation engaged, joined, scored).** A run with
+    `--target-language zh --translation-backend mlx-llm-mt` gives every scored
+    row a `target_language` of `zh`, a non-empty `translation_reference` taken
+    from the same `sentence_id` in the manifest, and a non-null `chrf` wherever
+    the row carries both a translation and a reference. *Falsified by:* a row
+    whose reference differs from the manifest join, or a null `chrf` on a row
+    that has both sides.
+  - **AC-2 (latency per run).** The same run carries a non-null
+    `first_translation_time_s` and a non-null `final_translation_time_s` on
+    every `status == "ok"` row, with `final >= first` wherever both exist;
+    `provisional_lead_s` is non-null on a drafting run and null on a
+    non-drafting one. *Falsified by:* a null field on an `ok` row, `final <
+    first`, or a non-null lead on a non-drafting run.
+  - Measured, not a floor: mean chrF **7.01** over three English FLEURS samples
+    without drafting and 7.13 over the same three with drafting, in
+    `benchmarks/evaluations/translation-fleurs-en-zh/`. Three samples carry no
+    quality claim, and tier 1 makes none.
 - **Tier 2 — the standard pair (AC-4..AC-6), `scripts/` only.** XCOMET(-XL) +
   LongYAAL CA/CU through `alignatt-eval` on the IWSLT devset: one wav
   round-trips, the 919-segment anchor runs, the flagship swaps a flag. Kept out
   of the #477 PR because it needs Alignatt4LLM, a COMET checkpoint and
-  non-shipped audio.
+  non-shipped audio. Moved here from tier 1 in cycle 4: the corpus mean-chrF
+  minimum (20.0) and the ±0.01 reproduction of the cycle-1 probe's 8.10 / 37.15
+  / 33.39. A quality floor measures the cascade rather than the harness, and
+  those probe numbers came from the IWSLT path the cycle-2 rescope replaced.
 - **Boundary with `km` (`wlk-simul-time-frontier-pr`).** Tier 1's *realizable
   commit fraction* is km's number: km owns the port of
   `bench_commit_fraction.py` (the calibrated-attention coverage script) and this
@@ -696,3 +715,18 @@ to recall, so the assertion passes for any beta. Both return to implementation i
 
 **Limits for this round:** two workers, at most 45 minutes each, no download, stop below 1.5 GiB free
 disk. Push, pull request, merge and any issue comment stay with CL and are not done here.
+
+## Stage Report: implementation (cycle 3)
+
+- DONE: Finding 1 — the drafting-run reproduction in `NOTES.md` runs as written, with `--config` taking a file path, and the run it documents is recorded.
+  `NOTES.md` states that `--config` is a path (`cli.py` reads it with `Path(parsed.config).read_text()`), creates the file with `printf '{"mlx_llm_mt_simultaneous": true}\n' > /tmp/simulst_simultaneous_config.json`, and gives both commands against the same manifest, differing only in `--config`. Executed: the inline form still fails with `FileNotFoundError: '{"mlx_llm_mt_simultaneous": true}'`, and the corrected command exits 0 — one model-loading run at the full budget (three English FLEURS samples, `--speed 1`, `HF_HUB_OFFLINE=1`, 34 s wall) with 3/3 rows ok: chrF 5.303753 / 10.483989 / 5.601148 (mean 7.13), first translation 3.21 / 2.44 / 2.35 s, final 4.40 / 8.45 / 7.38 s, `provisional_lead_s` 1.19 / 6.02 / 5.03 s. That run replaces the one-sample drafting report, so both checked-in reports now cover the same three samples; `report-simultaneous.json` records `git_commit 0ffb22d` and `git_dirty false` (it was written to `/tmp` and copied in). Commit `40e4b7e`.
+- DONE: Finding 3 — the chrF unit case now pins the beta exponent, and the falsifier is demonstrated in a scratch copy.
+  `tests/test_benchmark.py` keeps the 38.8889 case and adds `compute_chrf("ab", "abc") == pytest.approx(87.5, abs=1e-4)`: a two-character reference is wholly contained in "abc", so recall is 1 while precision averages to 7/12 over its two orders — precision differs from recall, which the old pair could not provide. Demonstrated, not argued: with `/tmp/falsify_beta/whisperlivekit/metrics.py` mutated from `beta_squared = beta * beta` to `beta_squared = beta`, the test fails with `assert 80.76923076923076 == 87.5 ± 1.0e-04`; unmutated, `pytest tests/test_benchmark.py` = 7 passed. Commit `0ffb22d`.
+- DONE: The body's AC-1 and AC-2 state the rescoped tier-1 criteria, and the clauses that left tier 1 are recorded as moved to tier 2.
+  `## Acceptance criteria (tiered; tier 1 rescoped in cycle 4)` now states AC-1 (translation engaged, reference joined on `sentence_id`, non-null `chrf` wherever both sides exist) and AC-2 (non-null `first_translation_time_s` and `final_translation_time_s` on every `ok` row with `final >= first`, `provisional_lead_s` non-null only on a drafting run), each with its falsifier, then the measured mean chrF **7.01** over three samples (7.13 for the drafting run) as a measurement rather than a floor. The corpus mean-chrF minimum (20.0) and the ±0.01 reproduction of the cycle-1 probe's 8.10 / 37.15 / 33.39 are recorded as moved from tier 1 to tier 2, with the reason. Frontmatter and status untouched.
+- SKIPPED: Finding 4 — repeat non-determinism on MT text.
+  Deferred to tier 2 by the first officer; not attempted. The new drafting run shows it again (identical WER, two chrF values equal to six decimals, `fleurs_en_1993` 5.23 -> 5.60), and `NOTES.md` records it as chunk-timing dependence rather than a drafting effect.
+
+### Summary
+
+Both findings the validation gate returned are fixed and executed rather than reworded. `NOTES.md` documents `--config` as a file path with the file-creation step, and the corrected drafting command ran at the full budget of three samples and was checked in as `report-simultaneous.json` (3/3 ok, mean chrF 7.13, `provisional_lead_s` 1.19 / 6.02 / 5.03 s, `git_dirty false`). The chrF unit case now asserts an asymmetric pair that yields 80.77 instead of 87.5 once the beta exponent is removed, demonstrated in a scratch copy. The body's AC-1/AC-2 carry the rescoped tier-1 criteria with mean chrF 7.01 kept as a measurement, and the corpus floor plus probe reproduction are recorded as tier 2's. No download, no tier-2 work, one model-loading run of three samples, targeted test file only, branch `wlk/simulst-eval-harness` at `40e4b7e` on base `1c404c8`/`496b5f6`, disk unchanged at 2.4 GiB free.
