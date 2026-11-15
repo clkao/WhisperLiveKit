@@ -565,3 +565,23 @@ Recomputed with stdlib only from the checked-in artifacts: `report-run11/12.json
 ### Summary
 
 F2 is fixed cleanly and the correction stayed inside two markdown files, and F1's substance now verifies: the segments are 2.010 s and 11.507 s, the counts 160 and 112 are the error text's own, run 12's `total_audio_s` gap is exactly those two durations, and the `finish()`-guards-`_window_samples()` / `process_iter()`-guards-nothing split is accurate at HEAD. But the F1 replacement introduces one derivation the code contradicts — the modulo-8000 "0.5 s feed" attribution for a buffer that is fed VAD-gated audio and drained at a 32000-sample chunk — and one version conflation, stating a 0.3.5 finalize-decode path beside a 0.4.4-era guard. Validation recommends **REJECTED for those two sentences, not a rerun**: no AC falsifier fires, no measured number changes, and the fix is a rewrite of summary.md:88-90 and NOTES.md:146-148 to cite the error text's counts and name the version. Entity frontmatter and status untouched; no code, artifact or document edited by this stage.
+
+## Stage Report: implementation (cycle 4, the F7/F8 sentence rewrite)
+
+- DONE: F7 is fixed in both files: the floor-crossing tail is named as a leftover fragment of the decode buffer whose length follows where the pause or the segment end landed, the 160 and 112 counts are taken verbatim from the error strings in `report-run12.json`, and the modulo-8000 derivation is gone.
+  summary.md:88-92 and NOTES.md:146-148 now read "a leftover fragment of the decode buffer whose length follows where the pause or the segment end landed; the two error strings in `report-run12.json` name its size verbatim — **160 samples** produced 1 STFT frame and **112 samples** produced 0". Verified against `report-run12.json`: `"Audio too short for log-mel extraction after Whisper frame trim: 160 samples produced 1 STFT frame(s)."` (row 213, `duration_s` 2.009999999999998) and `...: 112 samples produced 0 STFT frame(s)."` (row 901, `duration_s` 11.50699999999999). `grep -rn "modulo 8000\|32160\|184112"` over `benchmarks/evaluations/`: no hits. The "leftover fragment" wording is the code's own — `asr_mlx_qwen3.py:34-35`, "A pause can arrive with only a fragment of audio left over".
+- DONE: F8 is fixed: the finalize-decode sentence names mlx-qwen3-asr 0.3.5, the version `report-run12.json` records, and the `_MIN_DECODE_SAMPLES = 400` floor beside it is marked as the 0.4.4-era line it is, so no sentence mixes the two versions.
+  summary.md:91-96: "Run 12 ran **mlx-qwen3-asr 0.3.5**, where the finalize decode hands that fragment to `compute_features`. The `_MIN_DECODE_SAMPLES = 400` floor in `whisperlivekit/asr_mlx_qwen3.py` is the 0.4.4-era line, checked in `finish()` against the accumulated window ...". NOTES.md restates the same split in reverse order. 0.3.5 is `report-run12.json` `system_info.backend_versions["mlx-qwen3-asr"]` (also on run 11); the 0.4.4 attribution is `asr_mlx_qwen3.py:31-33` ("Measured on mlx-qwen3-asr 0.4.4") and `pyproject.toml:71` (`mlx-qwen3-asr>=0.4.4,<0.5`).
+- DONE: The fix is text only and adds no claim without a file or source line: the diff touches summary.md and NOTES.md only, every number in it re-read from the artifacts before it was kept, and no other sentence was edited.
+  `git show --stat 3b9fb03` — 2 files changed, 17 insertions(+), 13 deletions(-), both under `benchmarks/evaluations/simulst-tier2-two-direction/`; frame "The two failed segments in run 12 are decode-window failures, not short segments", 2.010 s / 11.507 s, 160 / 112, 917/919, 6270.374 / 6283.891 / 13.517 s all unchanged and re-verified (`total_audio_s` 6283.8910000000005 and 6270.374 in the two reports).
+- SKIPPED: Any model run, download, install, VM call, code change, test change, report/trace regeneration, or edit to frontmatter and status.
+  CL's scope for this round: two sentences, text only, 15 minutes. No `report-*.json`, `trace-*.csv`, `notes-*.json`, `scripts/` or `whisperlivekit/` file changed; the VM stayed paused and the HF cache untouched; disk 3.7 GiB free against the 1.5 GiB floor.
+
+### Summary
+
+F7 and F8 are both closed by one rewrite of the same two-paragraph pair in `summary.md` and `NOTES.md`,
+committed as `3b9fb03` on `simulst-tier2-two-direction-benchmark`: the run-12 tail is now described as the
+leftover decode-buffer fragment the code calls it, with 160 and 112 quoted from the error strings rather
+than derived, and the finalize-decode path is scoped to mlx-qwen3-asr 0.3.5 with the in-repo
+`_MIN_DECODE_SAMPLES` guard marked as the 0.4.4-era line. No measured number changed and no other
+sentence was touched.
