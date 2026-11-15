@@ -65,6 +65,11 @@ gates:
                 conn:
                     quote: 'Gate result: revise, as you recommend. The implementation corrects findings 1 and 3. Then a new validation runs.'
                     source: MetaFO brief relaying CL's decisions, 2026-11-14
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-validation-2
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-2:revision-1
+                digest: sha256:47969f87880293c2edbbc2b147b584b9cd2a710782cf599db31d24f1cba73af2
+                room-ref: '@review/validation/briefing-2'
 started: 2026-08-27T19:46:38Z
 ---
 

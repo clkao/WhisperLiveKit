@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-2:revision-1",
+  "question": "Does the tier-1 #477 benchmark harness go to delivery?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/b1e85119ca02685d540b4894341ed4edf8e30153/simulst-eval-harness.md",
+      "rev": "sha256:b1d67ac847b39b7cf96efd9fef420c0fd4144719fe8e7a9570da1eb4d7ab7342",
+      "mediaType": "text/markdown",
+      "summary": "Second validation after the revise round. Both returned findings are fixed with their falsifiers reproducing here. The rescoped AC-1/AC-2 match code and both checked-in reports. chrF arithmetic is sacrebleu-identical; the whole divergence is the suite's punctuation-stripping normalization (-0.28 to -2.64 points, not comparable with published chrF), which the README does not yet say."
+    }
+  ]
+}
