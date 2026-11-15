@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1514n3b7z79ms5gp1b2f8sjf:ideation:attempt-1:revision-1",
+  "question": "Does the defect hunt's verdict and the latency-quality sweep design go to implementation?",
+  "artifacts": [
+    {
+      "id": "artifact:1514n3b7z79ms5gp1b2f8sjf:ideation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/5432b1fa3cc2b45e93857c4e46846aa5b15307c5/simulst-nemotron-att-context-sweep.md",
+      "rev": "sha256:54476a27e67cd3e0c73b28de7cc6ecd206c03fb8f8d90f85900b94749881cfc0",
+      "mediaType": "text/markdown",
+      "summary": "Contract mismatch found: our harness scores live-no-rewrite output, so 13.89 belongs beside the published 12.6 row (1.29 pp over), not 4.39. An independent offline arm reproduced 7.60 against the card's 7.6 to the digit, so audio, weights and text path are sound. Two defects: the commit freeze makes the finalization decode unable to replace streaming text, and mlx_qwen3_asr_second_pass is a declared knob with no consumer."
+    }
+  ]
+}
