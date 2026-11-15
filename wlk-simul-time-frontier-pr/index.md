@@ -137,3 +137,19 @@ body are stale, and the headline numbers are not transferable.
    Qwen3-ForcedAligner, and `asr_qwen.py` uses it for speaker splits. The same technique
    supplies real word times for the unstable tail, replacing the proportional `frac`
    approximation. Evaluate it before shipping the approximation as the design.
+
+#### Cycle 1 correction — status (2026-11-15)
+
+Cycle 1 opens with "The entity returns to `ideation` from `backlog`". That describes the intended
+next step, not the recorded status. The status field remains `backlog`, and it stays there until an
+ideation gate can be prepared.
+
+Why it has not moved: `spacedock gate prepare` cannot prepare a gate for this entity in its current
+folder form, because retained attempts carry entity-root-relative `room-ref` values and the command
+resolves them one level too deep. Filed as regression spacedock-dev/spacedock#883, which records
+that #739 was closed for the same fault in August. `spacedock status --validate` warns that four
+entities in this workflow have rooms that do not resolve: `hunyuan-mlx-translation-backend`,
+`qwen-asr-tf5-compat-fork`, `simulst-eval-harness` and `terminal-cli-stats`. So the fault is
+workflow-wide, not specific to this entity.
+
+Read Cycle 1 as the design of record. Do not read it as a status change.
