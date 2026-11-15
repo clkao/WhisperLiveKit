@@ -15,6 +15,20 @@ gates:
                 id: briefing:1514n3b7z79ms5gp1b2f8sjf:backlog:attempt-1:revision-1
                 digest: sha256:2b5bddbaadb8e2792285f34e5ae19e5b3ff7bc0546fc786f34d002c84ec47ac9
                 room-ref: '@review/backlog/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1514n3b7z79ms5gp1b2f8sjf:backlog:1
+                briefing: briefing:1514n3b7z79ms5gp1b2f8sjf:backlog:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T16:25:35.93842Z"
+                decision: approve
+                reason: 'CL reoriented the task: isolate any benchmark defect before a full sweep. The seed''s aim holds; ideation now carries the defect hunt first, then the sweep design, so the gate decides a plan whose harness has been falsified rather than assumed.'
+                conn:
+                    quote: the goal is to isolate any benchmark defect before we do a full sweep to get to comparable. reorientate and plan out the sequence, then dispatch. make use of exe vm if necessary.
+                    source: CL, direct instruction, 2026-11-15
+              application:
+                target-stage: ideation
+                state: pending
 ---
 
 Direction B in the tier-2 suite scores chrF 12.481 with nemotron and 26.348 with qwen3-asr on the
