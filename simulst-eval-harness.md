@@ -54,6 +54,17 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-1:revision-1
                 digest: sha256:0bc10f20cbe6841c269989a035421ffce035ff45adcb18decea89e0a6b06b240
                 room-ref: '@review/validation/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:1
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T03:31:02.068126Z"
+                decision: revise
+                reason: 'Validator reproduced every tier-1 claim (join 4/4 rows, chrF to 6dp from a from-scratch implementation, both latency fields with final>=first, schema 3.2, 7 tests green with three demonstrated falsifiers). Two findings return to implementation: NOTES.md''s drafting-run reproduction passes inline JSON to --config, which takes a path and fails with FileNotFoundError; and chrF("abc","abd") has precision equal to recall so the assertion passes for any beta. Finding 2 is resolved by the captain''s rescope of AC-1/AC-2 to the #477 harness scope, recorded in Cycle 4. Finding 4 (repeat non-determinism on MT text) defers to tier 2.'
+                conn:
+                    quote: 'Gate result: revise, as you recommend. The implementation corrects findings 1 and 3. Then a new validation runs.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-14
 started: 2026-08-27T19:46:38Z
 ---
 
