@@ -91,6 +91,20 @@ gates:
                 id: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-3:revision-1
                 digest: sha256:156763b101aac629d7722270b53304c79ec33140ff97140e49283a3e0159c228
                 room-ref: '@review/validation/briefing-3'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1mvkhny3ke6wcza27p8x5v8j:validation:3
+                briefing: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-3:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T17:31:37.459519Z"
+                decision: approve
+                reason: 'Third review closed both rejected sentences: F7''s modulo derivation is gone and the 160/112 counts are the error strings'' own; F8 is scoped to mlx-qwen3-asr 0.3.5 with the guard marked as the 0.4.4-era line. Every number recomputes from the artifacts, the diff is two markdown files, and the validator recommends APPROVE with two optional polish items.'
+                conn:
+                    quote: 'Q1: the validation gate of tier 2 (1m) is approved, as the third review recommends. Record the approval with my words as the grant. Do not push, do not merge, and do not write a comment.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
+              application:
+                target-stage: done
+                state: pending
 started: 2026-11-15T04:53:06Z
 worktree: .worktrees/spacedock-ensign-simulst-tier2-two-direction-benchmark
 ---
