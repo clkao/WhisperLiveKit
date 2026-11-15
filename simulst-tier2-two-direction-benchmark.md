@@ -1,6 +1,6 @@
 ---
 title: "Tier 2: two labelled directions — product zh→en on FLEURS, comparison en→zh on the IWSLT devset, scored by XCOMET-XL"
-status: ideation
+status: implementation
 score: 0.8
 source: inherits the tier-2 scope of simulst-eval-harness (8z), whose tier 1 is approved for delivery
 id: 1mvkhny3ke6wcza27p8x5v8j
@@ -50,7 +50,7 @@ gates:
                     source: MetaFO brief relaying CL's decisions, 2026-11-15
               application:
                 target-stage: implementation
-                state: pending
+                state: consumed
 started: 2026-11-15T04:53:06Z
 ---
 
