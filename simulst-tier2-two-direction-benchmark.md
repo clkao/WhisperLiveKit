@@ -59,6 +59,17 @@ gates:
                 id: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-1:revision-1
                 digest: sha256:08e3d0c7e8d2e4b102fc7382187af336e13bcbca3bcb7f7f0dc379a1f9f18fe6
                 room-ref: '@review/validation/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1mvkhny3ke6wcza27p8x5v8j:validation:1
+                briefing: briefing:1mvkhny3ke6wcza27p8x5v8j:validation:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T17:00:26.807123Z"
+                decision: revise
+                reason: 'Validator reproduced every measured number but rejected two statements in summary.md and NOTES.md: F1 calls two failed segments ''sub-100 ms corpus facts'' when they are 2.010 s and 11.507 s and the short thing is a tail chunk below the decode floor; F2 heads a bullet ''chrF does not fall'' over a 1.17 point fall justified by a noise band the round measured as zero. CL ordered the text corrected to agree with the result files, then a new validation.'
+                conn:
+                    quote: 'Validation gate of tier 2: the decision of CL is revise. Correct the two material findings, F1 and F2, in the summary and the notes. The corrected sentences must agree with the result files. This is a text change only: start no model run. Then do a new validation, and show the gate again with your recommendation.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
 started: 2026-11-15T04:53:06Z
 worktree: .worktrees/spacedock-ensign-simulst-tier2-two-direction-benchmark
 ---
