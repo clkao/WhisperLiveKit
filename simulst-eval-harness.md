@@ -70,6 +70,20 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-2:revision-1
                 digest: sha256:47969f87880293c2edbbc2b147b584b9cd2a710782cf599db31d24f1cba73af2
                 room-ref: '@review/validation/briefing-2'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:2
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-2:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T03:42:45.965061Z"
+                decision: approve
+                reason: 'Second validation reproduced all three checklist items independently (3 done, 0 skipped, 0 failed): both returned findings fixed with falsifiers that bite, rescoped AC-1/AC-2 matching code and both checked-in reports, and chrF arithmetic sacrebleu-identical with the entire divergence traced to the suite''s punctuation-stripping normalization. Remaining items are one documentation sentence, a pre-existing --config help string, and the deferred tier-2 non-determinism risk.'
+                conn:
+                    quote: 'Validation gate of tier 1: approved, as you recommend. Record the approval with my words as the grant.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-14
+              application:
+                target-stage: done
+                state: pending
 started: 2026-08-27T19:46:38Z
 ---
 
