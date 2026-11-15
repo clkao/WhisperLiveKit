@@ -365,6 +365,34 @@ wrong base and an unmeasurable target.
    between that, the ungated `Unabel/wmt22-comet-da`, and `--skip-comet` for a first pass.
    State an acceptance number, not "non-null".
 
+#### Cycle 3 — implementation re-dispatched for the #477 scope (2026-11-14)
+
+The `## Stage Report: implementation` above records the cycle-1 build: five scripts at
+commit `f673273` on `feat/apple-silicon-backends`, measuring the IWSLT devset through
+`alignatt-eval`. Cycle 2 narrowed this entity to the measurement harness whose capstone is
+issue #477. The cycle-1 build therefore does not answer the current stage, and the branch it
+lives on is not this workflow's base.
+
+Decision (first officer, 2026-11-14): the implementation stage re-opens for a second build
+against `origin/main` @ `496b5f6`, the base the body declares. The cycle-1 report stays as
+history; it is not completion evidence for the #477 scope. The scheduler does not list this
+entity as dispatchable, because a stage report already exists for the stage. It is not a ready
+gate either. The dispatch is therefore issued directly against the current stage, which the
+entity status already equals.
+
+Scope for the build is tier 1 only, the shippable #477 PR: a `sentence_id` join supplies each
+row's translation reference, chrF scores the translation, `target_language`,
+`final_translation_time_s` and `provisional_lead_s` carry the direction and the latency, and the
+report schema moves 3.1 to 3.2. Tier 2 stays blocked: a COMET checkpoint needs about 2.2 GB and
+the volume has 2.5 GiB free.
+
+Prerequisites verified on 2026-11-14: FLEURS audio is cached (183 wav files, three languages),
+`mlx-llm-mt` with the Hy-MT2 profiles is already on that base, and `Hy-MT2-1.8B-8bit` is cached.
+A demonstration run of the cascade needs no download.
+
+Budget for this build: one worker, 90 minutes, one retry, at most two model-loading runs of
+three samples each, no download, and stop if free disk falls below 1.5 GiB.
+
 ## Stage Report: ideation (cycle 2)
 
 - DONE: Name the base explicitly: wlk/integration-3, cut from origin/main @ 496b5f6, plus issue #477 as the capstone.
