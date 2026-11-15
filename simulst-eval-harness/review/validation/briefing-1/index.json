@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-1:revision-1",
+  "question": "Accept the tier-1 #477 benchmark harness for delivery, or send it back to implementation?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/7c9205b2f92b09b5a5420627c057fa12e307443f/simulst-eval-harness.md",
+      "rev": "sha256:ffd090b632e72416fd2823c883b19a595f08d9fd9e1bc0d2f55b72dc6e59383b",
+      "mediaType": "text/markdown",
+      "summary": "Tier 1 reproduces independently: the sentence_id join, chrF, both translation latency fields, schema 3.2 and the ASR+MT config all verify; tests are green and falsifiable. Findings: a broken reproduction command in NOTES.md, stale numeric ACs the harness cannot meet, and a chrF unit case that does not pin beta."
+    }
+  ]
+}
