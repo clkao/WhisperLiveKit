@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1514n3b7z79ms5gp1b2f8sjf:backlog:attempt-1:revision-1",
+  "question": "Does the nemotron att_context sweep start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:1514n3b7z79ms5gp1b2f8sjf:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/7369b6fdee307403d2db1fa8eea0814d979caf10/simulst-nemotron-att-context-sweep.md",
+      "rev": "sha256:f799ad196c48eb1bd403155a042a3179aaa7dbcfa498dcbc3852c3555a7cb626",
+      "mediaType": "text/markdown",
+      "summary": "Fixes the weights and varies one decode knob: nemotron att_context [56,6] as our baseline, [70,13] as NeMo's, plus one intermediate, over the same 919 devset segments. No download, cached weights only. First job is to pin the NeMo anchor WER from their own table, because a first-officer read of a secondary summary may have misattributed it."
+    }
+  ]
+}

@@ -4,6 +4,17 @@ status: backlog
 score: 0.7
 source: follow-up to the tier-2 two-direction benchmark; the ASR term dominates the chrF gap
 id: 1514n3b7z79ms5gp1b2f8sjf
+gates:
+    version: 1
+    records:
+        - id: gate:1514n3b7z79ms5gp1b2f8sjf:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:1514n3b7z79ms5gp1b2f8sjf-backlog-1
+              briefing:
+                id: briefing:1514n3b7z79ms5gp1b2f8sjf:backlog:attempt-1:revision-1
+                digest: sha256:2b5bddbaadb8e2792285f34e5ae19e5b3ff7bc0546fc786f34d002c84ec47ac9
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 Direction B in the tier-2 suite scores chrF 12.481 with nemotron and 26.348 with qwen3-asr on the
