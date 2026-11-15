@@ -37,6 +37,20 @@ gates:
                 id: briefing:1mvkhny3ke6wcza27p8x5v8j:ideation:attempt-1:revision-1
                 digest: sha256:fc612d3adf1914252cc3ac6cac47281f4feeddd825d3ba2ab7c5de84e30d8c4c
                 room-ref: '@review/ideation/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1mvkhny3ke6wcza27p8x5v8j:ideation:1
+                briefing: briefing:1mvkhny3ke6wcza27p8x5v8j:ideation:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T05:03:28.767849Z"
+                decision: approve
+                reason: 'CL approved the 14-row suite with the first officer''s amendment. The suite names qwen3-ASR and nemotron x Hy-MT2-1.8B-8bit with drafts off and on across both directions, every parameter read from the code, all models cached with no download, run 1 marked first as a one-minute smoke. The amendment adds the run base to each row: wlk/integration-3, which carries the qwen3 MLX adapter that origin/main lacks.'
+                conn:
+                    quote: 'Ideation gate of the tier-2 task: CL approved the suite of 14 runs, with your amendment. Record the approval of CL.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
+              application:
+                target-stage: implementation
+                state: pending
 started: 2026-11-15T04:53:06Z
 ---
 
