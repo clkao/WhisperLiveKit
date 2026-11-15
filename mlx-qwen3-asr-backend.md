@@ -1,7 +1,7 @@
 ---
 id: p0f67wa79kd56yh3bs0cca2e
 title: mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
-status: validation
+status: implementation
 source: WhisperLiveKit Apple-Silicon backend work
 started: 2026-08-25T15:52:13Z
 completed:
@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-mlx-qwen3-asr-pr
 issue:
-pr: "#425"
+pr:
 gates:
     version: 1
     records:
@@ -120,7 +120,7 @@ gates:
                 reason: 'Validation approved on head 91d2b01: maintainer reproduced the numbers and reported the crash and repetitions gone; CI green; one open item is his confirmation of the segment-start duplication fix.'
               application:
                 target-stage: done
-                state: pending
+                state: superseded
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
