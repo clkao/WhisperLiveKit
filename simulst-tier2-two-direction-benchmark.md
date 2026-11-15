@@ -117,26 +117,28 @@ figure beside an en→zh one.
 
 ### The suite
 
-One row per run. Nine columns: order, direction, source and samples, ASR model, MT
+The run base is `wlk/integration-3` for every row, because `mlx-qwen3-asr` and the bundled zh-en calibration heads exist on that branch and not on `origin/main`.
+
+One row per run. Ten columns: order, run base, direction, source and samples, ASR model, MT
 model, parameters, measures, estimated time, necessary disk. Measure codes are
 expanded under the table.
 
-| # | Dir | Source and samples | ASR model (exact id) | MT model (exact id) | Parameters (exact flag/value) | Measures | Est. time | Necessary disk |
-|---|---|---|---|---|---|---|---|---|
-| 1 | **A product zh→en** | FLEURS `fleurs-90.json` zh rows, 3 samples (`fleurs_zh_1700/1921/1993`, 27.5 s audio), subset manifest keeping their en siblings | `mlx-community/Qwen3-ASR-0.6B-8bit` via `--backend mlx-qwen3-asr` | `mlx-community/Hy-MT2-1.8B-8bit` via `--mt-model hy-mt2-1.8b-8bit` | `--speed 1 --repeats 1`, drafts **OFF** (`mlx_llm_mt_simultaneous: false`), `--target-language en` | Q L R S | 1 min | 0.1 MB |
-| 2 | **A product zh→en** | same 3 samples | same | same | `--speed 1 --repeats 1`, drafts **ON** (`mlx_llm_mt_simultaneous: true`, `mlx_llm_mt_simul_commit: "mass"`, `mlx_llm_mt_simul_frontier: "time"`, `mlx_llm_mt_simul_mass_threshold: 0.5`) | Q L R S | 1 min | 0.1 MB |
-| 3 | **A product zh→en** | FLEURS zh rows, **30 samples** (364.4 s audio), full `benchmarks/corpora/fleurs-90.json`, `--languages zh` | `mlx-community/Qwen3-ASR-0.6B-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 1 --repeats 3`, drafts **OFF** | Q L R S | 19 min | 0.6 MB |
-| 4 | **A product zh→en** | same 30 | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` via `--backend nemotron-mlx-asr` | same | `--speed 1 --repeats 3`, drafts **OFF** | Q L R S | 19 min | 0.6 MB |
-| 5 | **A product zh→en** | same 30 | `mlx-community/Qwen3-ASR-0.6B-8bit` | same | `--speed 1 --repeats 3`, drafts **ON** (mass / time / 0.5) | Q L R S | 20 min | 0.6 MB |
-| 6 | **A product zh→en** | same 30 | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` | same | `--speed 1 --repeats 3`, drafts **ON** (mass / time / 0.5) | Q L R S | 20 min | 0.6 MB |
-| 7 | **A product zh→en** | 30 triples from run 3 (`src` = zh reference, `mt` = run 3 `translation`, `ref` = en sibling) | — (text only) | — | VM `asr-xcomet.exe.xyz`, batch_size 1, gpus 0 | X | 4 min VM | 0.3 MB |
-| 8 | **A product zh→en** | 30 triples from run 5 | — | — | same VM, second invocation | X | 4 min VM | 0.3 MB |
-| 9 | **B comparison en→zh** | IWSLT devset `OiqEWDVtWk.wav` = segments **0..29** (261.5 s audio, one whole file) | `mlx-community/Qwen3-ASR-0.6B-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 1 --repeats 1`, drafts **OFF**, `--target-language zh`, emitter `scripts/run_iwslt_devset.py --wav OiqEWDVtWk.wav` | Q L R S | 5 min | 0.2 MB + ≤13.6 MB transient cuts |
-| 10 | **B comparison en→zh** | same 30 segments | same | same | `--speed 1 --repeats 1`, drafts **ON** (mass / time / 0.5) | Q L R S | 5.5 min | 0.2 MB + ≤13.6 MB transient |
-| 11 | **B comparison en→zh** | IWSLT devset, **all 919 segments** (6283.9 s audio, 21 wavs) | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 0 --repeats 1`, drafts **OFF** | Q R S | 20 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
-| 12 | **B comparison en→zh** | same 919 | `mlx-community/Qwen3-ASR-0.6B-8bit` | same | `--speed 0 --repeats 1`, drafts **OFF** | Q R S | 33 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
-| 13 | **B comparison en→zh** | same 919 | winner of runs 11–12 | same | `--speed 1 --repeats 1`, drafts **OFF** (paced anchor) | Q L R S | 111 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
-| 14 | **B comparison en→zh** | 919 triples from run 11 or 12 (`src` = en reference, `mt` = zh `translation`, `ref` = zh reference) | — | — | VM, third invocation | X | 17 min VM | 1.5 MB |
+| # | Run base | Dir | Source and samples | ASR model (exact id) | MT model (exact id) | Parameters (exact flag/value) | Measures | Est. time | Necessary disk |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `wlk/integration-3` | **A product zh→en** | FLEURS `fleurs-90.json` zh rows, 3 samples (`fleurs_zh_1700/1921/1993`, 27.5 s audio), subset manifest keeping their en siblings | `mlx-community/Qwen3-ASR-0.6B-8bit` via `--backend mlx-qwen3-asr` | `mlx-community/Hy-MT2-1.8B-8bit` via `--mt-model hy-mt2-1.8b-8bit` | `--speed 1 --repeats 1`, drafts **OFF** (`mlx_llm_mt_simultaneous: false`), `--target-language en` | Q L R S | 1 min | 0.1 MB |
+| 2 | `wlk/integration-3` | **A product zh→en** | same 3 samples | same | same | `--speed 1 --repeats 1`, drafts **ON** (`mlx_llm_mt_simultaneous: true`, `mlx_llm_mt_simul_commit: "mass"`, `mlx_llm_mt_simul_frontier: "time"`, `mlx_llm_mt_simul_mass_threshold: 0.5`) | Q L R S | 1 min | 0.1 MB |
+| 3 | `wlk/integration-3` | **A product zh→en** | FLEURS zh rows, **30 samples** (364.4 s audio), full `benchmarks/corpora/fleurs-90.json`, `--languages zh` | `mlx-community/Qwen3-ASR-0.6B-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 1 --repeats 3`, drafts **OFF** | Q L R S | 19 min | 0.6 MB |
+| 4 | `wlk/integration-3` | **A product zh→en** | same 30 | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` via `--backend nemotron-mlx-asr` | same | `--speed 1 --repeats 3`, drafts **OFF** | Q L R S | 19 min | 0.6 MB |
+| 5 | `wlk/integration-3` | **A product zh→en** | same 30 | `mlx-community/Qwen3-ASR-0.6B-8bit` | same | `--speed 1 --repeats 3`, drafts **ON** (mass / time / 0.5) | Q L R S | 20 min | 0.6 MB |
+| 6 | `wlk/integration-3` | **A product zh→en** | same 30 | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` | same | `--speed 1 --repeats 3`, drafts **ON** (mass / time / 0.5) | Q L R S | 20 min | 0.6 MB |
+| 7 | `wlk/integration-3` | **A product zh→en** | 30 triples from run 3 (`src` = zh reference, `mt` = run 3 `translation`, `ref` = en sibling) | — (text only) | — | VM `asr-xcomet.exe.xyz`, batch_size 1, gpus 0 | X | 4 min VM | 0.3 MB |
+| 8 | `wlk/integration-3` | **A product zh→en** | 30 triples from run 5 | — | — | same VM, second invocation | X | 4 min VM | 0.3 MB |
+| 9 | `wlk/integration-3` | **B comparison en→zh** | IWSLT devset `OiqEWDVtWk.wav` = segments **0..29** (261.5 s audio, one whole file) | `mlx-community/Qwen3-ASR-0.6B-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 1 --repeats 1`, drafts **OFF**, `--target-language zh`, emitter `scripts/run_iwslt_devset.py --wav OiqEWDVtWk.wav` | Q L R S | 5 min | 0.2 MB + ≤13.6 MB transient cuts |
+| 10 | `wlk/integration-3` | **B comparison en→zh** | same 30 segments | same | same | `--speed 1 --repeats 1`, drafts **ON** (mass / time / 0.5) | Q L R S | 5.5 min | 0.2 MB + ≤13.6 MB transient |
+| 11 | `wlk/integration-3` | **B comparison en→zh** | IWSLT devset, **all 919 segments** (6283.9 s audio, 21 wavs) | `mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit` | `mlx-community/Hy-MT2-1.8B-8bit` | `--speed 0 --repeats 1`, drafts **OFF** | Q R S | 20 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
+| 12 | `wlk/integration-3` | **B comparison en→zh** | same 919 | `mlx-community/Qwen3-ASR-0.6B-8bit` | same | `--speed 0 --repeats 1`, drafts **OFF** | Q R S | 33 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
+| 13 | `wlk/integration-3` | **B comparison en→zh** | same 919 | winner of runs 11–12 | same | `--speed 1 --repeats 1`, drafts **OFF** (paced anchor) | Q L R S | 111 min | 5.0 MB (0.7 MB gz) + ≤13.6 MB transient |
+| 14 | `wlk/integration-3` | **B comparison en→zh** | 919 triples from run 11 or 12 (`src` = en reference, `mt` = zh `translation`, `ref` = zh reference) | — | — | VM, third invocation | X | 17 min VM | 1.5 MB |
 
 Measure codes: **Q** = `cer` (run 1–6, zh source) or `wer` (run 9–14, en source) plus
 `chrf`, `translation`, `translation_reference`; **L** = `first_translation_time_s`,
