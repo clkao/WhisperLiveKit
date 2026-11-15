@@ -29,6 +29,7 @@ gates:
               application:
                 target-stage: ideation
                 state: consumed
+started: 2026-11-15T04:53:06Z
 ---
 
 Tier 1 shipped the benchmark suite that scores a translation. This task produces the two measured
