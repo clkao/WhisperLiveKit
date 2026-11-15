@@ -610,3 +610,16 @@ partial and says so: 3 non-simul and 2 simul samples, single runs, corpus-wide
 numbers absent because the 30-sample run was aborted on the disk constraint. The
 one open input is the COMET access choice, presented as three options with
 consequences and left to the captain.
+
+## Stage Report: implementation (cycle 2)
+
+- DONE: The benchmark suite scores the translation: each translated row carries a chrF value, and its reference comes from a sentence_id join on benchmarks/corpora/fleurs-90.json with no new corpus and no new download.
+  `load_manifest` groups the manifest rows by `sentence_id` and attaches every sibling reference; a row scores `chrf` only when both the translation and the joined reference are non-empty. `compute_chrf` is a 0..100 character n-gram F-beta (n=1..6, beta=2) over the WER-normalized, whitespace-stripped pair. No corpus file added: the three-sample subset stayed in `/tmp`, and its five-line derivation is in `NOTES.md`.
+- DONE: Each row carries the translation direction and its latency: target_language, final_translation_time_s and provisional_lead_s, with the report schema moved 3.1 to 3.2 and the ASR plus MT configuration recorded in the report.
+  `SampleResult` gained `target_language`, `translation`, `translation_reference`, `chrf`, `final_translation_time_s`, `provisional_lead_s`; `benchmark_version` reads "3.2"; `config.translation` (`describe_translation_config`) states target language, backend, model and drafting beside each row's existing `effective_config`. Final is the last committed line that first showed a translation; lead is final minus first, null unless the backend drafted.
+- DONE: A model-free unit test covers chrF, and one checked-in report comes from a real cascade run (ASR then MT) on cached models, on a branch cut from origin/main @ 496b5f6.
+  `tests/test_benchmark.py`: 7 passed. chrF arithmetic includes the exact 38.8889 for "abc"/"abd"; the join test covers a missing sibling and a row with no `sentence_id`; the fake-harness test proves chrF and both latency fields reach the row, and deleting the per-line timestamp makes it fail. Reports: `benchmarks/evaluations/translation-fleurs-en-zh/{report.json,report-simultaneous.json}` from nemotron-mlx-asr then mlx-llm-mt hy-mt2-1.8b-8bit, all cached, `HF_HUB_OFFLINE=1`, branch `wlk/simulst-eval-harness` at base 496b5f6.
+
+### Summary
+
+Tier 1 shipped in two commits (0721830 code and README, ab7cf62 reports, 1c404c8 docstrings): `--target-language/--translation-backend/--mt-model` on `wlk bench`, the `sentence_id` reference join, chrF, the two derived translation latencies, schema 3.2, and the ASR-plus-MT configuration in both the report config and the row. Two model-loading runs were spent, three samples and one sample, both real cascades: mean chrF 7.01 over three English FLEURS rows without drafting, and 12.30 on one row with drafting, where `provisional_lead_s` measured 5.67 s (first translation 2.43 s, final 8.10 s in a 9.72 s sample) — the field is null on the non-drafting run by design, and both reports say so. The scored output is poor for this cascade (the row data shows MT diverging on a word-perfect transcript), which is the harness reporting what the pipeline emitted, not a quality claim; nothing was downloaded, tier 2 was not touched, and the demonstration reports state what three samples cannot establish.
