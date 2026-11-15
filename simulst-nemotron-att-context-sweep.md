@@ -598,3 +598,20 @@ All three are incorporated into sections 3 and the ACs, not re-measured: (i) qua
 A fourth was incorporated last and is the most consequential: CL supplied the **published ASR anchor set from the causal tower for `mlx_qwen3_asr`** (`qfuxa/qwen3-asr-0.6b-streaming`), which pairs each contract with its WER — offline 7.6, windowed-settled 8.4, **windowed live-no-rewrite 12.6**, causal-settled 17.2, causal-live 17.6 — plus per-committed-word latency p50/p95 (4.1/7.9 s at hold-6, 2.2/7.9 s at hold-2). Three things follow, now in section 3.0: our harness scores the **live-no-rewrite** contract (D12's frozen prefix), so our 13.89 % belongs beside **12.6** and only 1.29 pp above it, whereas against the settled 8.4 or the offline 4.39 the same number reads as a 5.49 / 9.50 pp defect. And our offline arm lands on **7.60 %** against their offline row **7.6** — a to-the-digit corroboration from an independent run that our audio path, weights and text path are sound and the whole discrepancy is contract plus commit policy. The latency axis is therefore now **p50/p95 per-committed-word commit lag** (derivable from `--event-log`'s `CaptionEvent(t, audio_t, …)` as `t − audio_t` per commit, interpolated within the chunk; exact for nemotron's token timestamps, needing `Qwen3-ForcedAligner-0.6B` for qwen3-asr), with RTF dropped from the axis entirely. `event_log` is null in every stored run, so a runner change is part of step P3.
 
 Two findings the new sections depend on, because they decide the schedule: the latency axis **requires `--speed 1`** (`first_text_time_s`/`first_visible_time_s` are paced-only), so the curve is scheduled on FLEURS-30 with a single 919-scale point; and this Mac's data volume has **≈ 393 MiB free, below the 1.5 GiB floor**, with none of it written by this task (no file over 20 MB was created; the HF cache is a pre-existing 16 GB) — a scheduling blocker for the sweep, not a harness finding.
+
+#### Cycle 1 — scope narrowed by CL, and what that leaves open (2026-11-15)
+
+The defect hunt finished with a cleaner answer than the seed asked for: our harness scores the
+live-no-rewrite contract, so the FLEURS-en 13.89 % belongs beside the published 12.6 row rather than
+the 4.39 offline row, and an independent offline arm reproduced that card's 7.6 % to the digit. The
+remaining gap is two defects in our own path: the commit freeze that stops the finalization decode
+from replacing streaming text, and `mlx_qwen3_asr_second_pass`, a declared knob with no consumer.
+
+CL approved **only the correction of those two defects.** The sweep is not approved: not the arms, not
+the window ladder, not the att_context ladder, not the causal-tower arm, and not the text-MT upper
+bound. Nothing in the ideation design is authorised by this decision beyond what the two defect fixes
+need, and no work starts until the correction plan itself is approved.
+
+Consequence for the record: the ideation design stays as written and stays unapproved as a whole. If
+the two defect corrections land first, the sweep design must be re-presented afterwards against
+whatever the path looks like then, rather than being treated as pre-approved in part.
