@@ -630,3 +630,140 @@ need, and no work starts until the correction plan itself is approved.
 Consequence for the record: the ideation design stays as written and stays unapproved as a whole. If
 the two defect corrections land first, the sweep design must be re-presented afterwards against
 whatever the path looks like then, rather than being treated as pre-approved in part.
+
+## Audit — what `wlk/integration-3` actually does (read-only, 2026-11-15)
+
+Base audited: **`065a97b` on `wlk/integration-3`**, this worktree's branch tip. No file under
+`whisperlivekit/**` was modified and no candidate commit was made. The earlier defect hunt read a
+different checkout — `9d366f9` is **not** an ancestor of this base (`git merge-base --is-ancestor`
+→ NO) — so its findings were re-derived here rather than inherited.
+
+### Neither earlier finding reproduces; one is re-expressed
+
+| earlier finding | on this base |
+|---|---|
+| **D12** the `RuntimeError("mlx-qwen3-asr revised an already committed prefix")` that grounded "commit freeze" | String **absent** at HEAD (`git grep … HEAD` → nothing). It existed on this base's own ancestry: introduced by `34a2b5e` (`asr_mlx_qwen3.py:114` and `:162`, 2026-08-30) and **removed** by `d538a8e` (2026-11-13, "adapted to mlx-qwen3-asr 0.4.4"), which replaced both raises with `_append_only_delta`. The freeze is unchanged *in effect*; its failure mode changed from an exception to a silent append. |
+| **D13** `mlx_qwen3_asr_second_pass` declared at `config.py:89` with no consumer | Field **absent** from `config.py`. It lived at exactly `config.py:89` in `fc8469d` ("two-pass re-decode at utterance finalization"), which is **not** an ancestor. This base declares `mlx_qwen3_asr_finalization_mode` instead. |
+
+### Q1 — the commit policy, mapped from code
+
+Two-tier, per inference tick:
+
+- **`_stable_candidate` (`asr_mlx_qwen3.py:237-247`)** takes `state.stable_text.strip()` when the
+  library supplies one; otherwise `_agreed_prefix(_previous_window_text, state.text, _HOLD_BACK_UNITS)`.
+  It then records `_previous_window_text = state.text` for the next tick. The native
+  `stable_text` stays empty for the first `unfixed_chunk_num` chunks and is a whole-window value at
+  finalization, so the fallback carries ordinary mid-utterance streaming.
+- **`_agreed_prefix` (`:126-143`)** is LocalAgreement-1 with a hold-back: units are `\S+\s*`
+  (word + trailing space) or one CJK character; `agreed` is the case-insensitive common **unit**
+  prefix of previous vs current window text; the return is
+  `"".join(units[:max(0, agreed - hold_back_units)]).strip()` — a prefix of the *current* window,
+  never of the previous one. It can shrink when the window slides or the model revises.
+- **`_HOLD_BACK_UNITS = 5` (`:41`)**, documented as mirroring the library's `UNFIXED_TOKEN_NUM`
+  (pinned 0.4.4 `streaming.py:67`). Effect: **a commit needs ≥ 6 agreed units.**
+- **`_append_only_delta` (`:84-111`)**, called from `_commit` (`:250`) against
+  `_committed_source` — the text the *last commit* came from, not `_committed`, the text clients
+  hold. Three branches: candidate extends the source → tail appended; candidate shorter → returns
+  `(source, "")`, nothing emitted, nothing retracted; candidate longer but rewritten → the source
+  is *replaced* by the candidate and only the post-divergence tail is emitted as a delta.
+
+Exercised (`/tmp/attr/smoke_commit_policy.py`, imports the real functions, no model needed):
+identical 6-unit windows commit `'the'`; a 13-unit agreement commits `'the number is eight'`; a
+window diverging at unit 2 commits nothing; 8 agreeing CJK chars commit `'今天天'`.
+
+**What it means for text already handed to a consumer: it is frozen and can only grow.** WLK's
+whole wire path is append-only: `state.tokens.extend` (`audio_processor.py:820`, `:670`) — the only
+removal is `_prune_state_tokens` (`:526-543`, a 300 s retention window, history bounding, not
+revision); `Segment.from_tokens` joins tokens (`timed_objects.py:181-189`); `FrontData.lines` is a
+full snapshot rebuilt from them (`timed_objects.py:235`); diff mode appends `new_lines` and drops
+only from the front (`diff_protocol.py:16-22`); the event log's `transcription_final` carries the
+delta alone (`audio_processor.py:661`, `:846`). **No path on this base can replace emitted text.**
+
+### Q2 — D14's question, answered on this base
+
+Traced path: `finish()` (`:275`) → `finish_streaming` (`:293`) → `final_text = self._state.text`
+(`:294`) → `_commit(final_text)` (`:295`) → `_append_only_delta(self._committed_source, …)` (`:250`)
+→ one `ASRToken` (`:251-256`) → `audio_processor.py:670` `state.tokens.extend` → `tokens_alignment.py:466`
+`Segment.from_tokens` → `FrontData.to_dict` (`timed_objects.py:235`).
+
+So the final decode's text arrives as a **delta against the last adopted streaming candidate**, and
+all three `_append_only_delta` branches are reachable. Exercised end-to-end at the adapter:
+
+| streamed (client holds) | finalize decode says | emitted token | client ends at |
+|---|---|---|---|
+| `the number is eight` | `the number is 802.11a` | `802.11a` | `the number is eight802.11a` |
+| `we shipped four boxes to the` | `we shipped four boxes` | *(none)* | `we shipped four boxes to the` |
+| `we shipped four boxes to the` | `we shipped forty boxes to the depot yesterday` | `rty boxes to the depot yesterday` | `we shipped four boxes to therty boxes to the depot yesterday` |
+
+**Answer: no — the finalize decode cannot replace provisional text already emitted.** Row 1 is
+precisely the D5/D11 numeral damage: the streamed spelling `eight` survives into the client text and
+the corrected `802.11a` is glued on, which is why a full-window finalize decode cannot pull the
+streamed WER toward the offline number. Row 3 is the failure mode that replaced the old exception:
+the revision is absorbed as a duplicated append instead of aborting.
+
+**The exact line that would have to change is `whisperlivekit/asr_mlx_qwen3.py:273`** —
+`return self._commit(self._stable_candidate()), self._audio_end`, the per-tick commit inside
+`process_iter`. `finish()` (`:295`) needs no change: with `_committed_source == ""`,
+`_append_only_delta` takes the first branch and emits the **whole** final text as one token —
+exercised, the client ends at `the number is 802.11a`. `get_buffer()` (`:311-318`) already exposes a
+fully revisable tail (`state.text` minus `_committed_source`), so a buffer-then-finalize arm is a
+one-call-site suppression, not a new path. **Recorded as the answer to "which line", not performed:
+this round is read-only.**
+
+### Q3 — declared qwen3-asr knobs vs consumers
+
+Mechanically checked: `mlx_qwen3_asr_*` yields exactly five config fields, the `mlx_qwen3_group`
+declares exactly five CLI args 1:1, and each field has exactly one attribute read in
+`whisperlivekit/**`.
+
+| knob | declared | CLI | WLK consumer | library consumer | behaviour |
+|---|---|---|---|---|---|
+| `mlx_qwen3_asr_model` | `config.py:82` | `parse_args.py:573-580` | `asr_mlx_qwen3.py:153` → `:161 load_model`, `:191 model=` | yes | real |
+| `mlx_qwen3_asr_context` | `config.py:83` | `:581-588` | `:155` → `:191 context=` | yes (system prompt) | real |
+| `mlx_qwen3_asr_chunk_sec` | `config.py:84` | `:589-595` | `:156` → `:192 chunk_size_sec=` | yes | real |
+| `mlx_qwen3_asr_max_context_sec` | `config.py:85` | `:596-602` | `:157` → `:193 max_context_sec=` | yes | real |
+| `mlx_qwen3_asr_finalization_mode` | `config.py:86` | `:603-611` | `:158` → `:194 finalization_mode=` | **validated then stored, never read** | **none** |
+
+`finalization_mode` is the one knob with no behavioural consumer, and it is not silent about it: the
+pinned 0.4.4 `init_streaming` only validates the value (`streaming.py:235-239`) and stores it
+(`:279`), where its sole downstream field `enable_tail_refine` is written (`:265`, `:280`) and
+**never read** (its own docstring, `:132-134`, says both are "retained for API compatibility").
+`parse_args.py:610-611` says the same to the user. So it is a *declared no-op*, not a dead knob of
+D13's kind — but no run may claim a finalization-mode effect.
+
+Sibling false positive to record: `scripts/lc_terminal.py:835`/`:876` `--second-pass` is a
+**driver** flag, not a WLK config knob, and it has a consumer — it hard-errors
+("this ASR backend has no two-pass re-decode").
+
+**Driver reachability gap, load-bearing for the sweep:** `scripts/lc_terminal.py:155-161` forwards
+only `mlx_qwen3_asr_model` and `mlx_qwen3_asr_context`. `chunk_sec`, `max_context_sec` and
+`finalization_mode` are unreachable from the production driver, so D11's chunk-incremental ladder
+cannot be driven through `lc_terminal.py` as it stands.
+
+### Reproducer
+
+Six lines, repo + stdlib only, no model, no download:
+`python3 -c` on this worktree with `whisperlivekit/asr_mlx_qwen3.py`'s `_append_only_delta`,
+`_agreed_prefix`, `MlxQwen3AsrOnlineProcessor.__new__` (set the `__init__` attributes by hand),
+then `_commit(final_text)` as `finish():295` does. Full driver kept at
+`/tmp/attr/smoke_commit_policy.py`; every number above came from running it.
+
+**Library-source caveat:** the 0.4.4 internals cited were read from an unpacked sdist at
+`/private/tmp/q3asr044/`, a machine-local artifact. The claims are re-derivable from
+`uv sync --extra mlx-qwen3-asr` (pinned at `uv.lock:7094-7095`) and grepping the installed package;
+the `finalization_mode` no-op is additionally stated in this repo's own `parse_args.py:610-611`.
+
+## Stage Report: implementation
+
+- DONE: The streaming commit policy on this base is mapped from code, not name: what `_stable_candidate`, `_agreed_prefix`, `_HOLD_BACK_UNITS` and `_append_only_delta` each do, and whether any path can replace text already emitted to a consumer.
+  Two-tier rule: native `stable_text`, else LocalAgreement-1 over word/CJK units minus a 5-unit hold-back (`asr_mlx_qwen3.py:237-247`, `:126-143`, `:41`), then `_append_only_delta` (`:84-111`) against `_committed_source`. All three branches exercised. **No path replaces emitted text** — `state.tokens.extend` (`audio_processor.py:820`, `:670`) is extend-only apart from a 300 s retention prune (`:526-543`), and diff mode appends (`diff_protocol.py:16-22`).
+- DONE: The question D14 posed is answered for this base with a traced code path from `finish()` to the consumer, naming whether the finalize decode's text can replace provisional text and, if not, the exact file:line that would have to change.
+  Traced `finish():275` → `:294 final_text` → `:295 _commit` → `:250 _append_only_delta` → `:251-256` token → `audio_processor.py:670` → `tokens_alignment.py:466` → `FrontData.to_dict`. **It cannot replace**: exercised, streamed `the number is eight` + final `the number is 802.11a` yields client `the number is eight802.11a` (the D5/D11 numeral damage), a shorter final emits nothing, a rewritten longer final duplicates a span. Blocking line: **`asr_mlx_qwen3.py:273`**; `:295` needs no change (with `_committed_source == ""` the whole final text emits as one token — exercised). Not performed: read-only round.
+- DONE: Every declared qwen3-asr knob on this base is inventoried with its consumer, and any knob with no consumer is named with file:line evidence, so no run can claim behaviour this base does not implement.
+  Five fields, five CLI args 1:1, one attribute read each: `model` / `context` / `chunk_sec` / `max_context_sec` all reach `init_streaming` (`:190-195`) and are honoured. `finalization_mode` (`config.py:86` → `:158` → `:194`) is validated and stored by 0.4.4 and **never read**; its own help text (`parse_args.py:610-611`) declares the no-op. `--second-pass` (`lc_terminal.py:835`, `:876`) is a driver flag that hard-errors, not a dead WLK knob.
+- DONE: State plainly that the earlier two findings do not reproduce here.
+  D12's `RuntimeError` is absent at HEAD — introduced by `34a2b5e`, removed by ancestor `d538a8e`; the freeze survives with an append-shaped failure mode instead of an exception. D13's `mlx_qwen3_asr_second_pass` is absent — it sat at `config.py:89` in `fc8469d`, which is not an ancestor.
+
+### Summary
+
+This base is not the checkout the defect hunt analysed (`9d366f9` is not an ancestor), and neither earlier finding transfers. The commit freeze D12 described is still present but no longer raises: `_append_only_delta` repairs a revision into an append, so the finalize decode's corrections are glued onto the streaming text (`the number is eight802.11a`) instead of replacing it — the same 6.29 pp-class damage with a quieter symptom, and it is the numeral case that D5/D11 measured. `mlx_qwen3_asr_second_pass` does not exist here at all. The knob this base declares in its place, `finalization_mode`, is a documented no-op with no behavioural consumer anywhere. Everything was answered by exercising the real adapter functions against stub states; no model, no audio, no clip smoke was needed, and no file under `whisperlivekit/**` was touched. Residual: the 0.4.4 internals were read from a machine-local sdist (`/private/tmp/q3asr044/`), re-derivable from the pinned `uv.lock` entry; and the one-line fix implied by `:273` is deliberately not applied or committed.
