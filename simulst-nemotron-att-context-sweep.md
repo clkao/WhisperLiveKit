@@ -37,6 +37,20 @@ gates:
                 id: briefing:1514n3b7z79ms5gp1b2f8sjf:ideation:attempt-1:revision-1
                 digest: sha256:b05e03c9114283d80a48f04f9f784f97e26092a9b82c8833f7750a8bd2d7879b
                 room-ref: '@review/ideation/briefing-1'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:1514n3b7z79ms5gp1b2f8sjf:ideation:1
+                briefing: briefing:1514n3b7z79ms5gp1b2f8sjf:ideation:attempt-1:revision-1
+                by: agent:first-officer
+                at: "2026-11-15T17:25:52.173906Z"
+                decision: approve
+                reason: 'CL narrowed this task to the correction of the two defects the hunt isolated: the commit freeze that stops the finalization decode from replacing provisional streaming text, and mlx_qwen3_asr_second_pass, a declared knob with no consumer. The sweep design in this room is NOT authorised; the plan in _work/plan-two-defects.md is, and it stays inside that decision.'
+                conn:
+                    quote: 'Q2: the plan in _work/plan-two-defects.md is approved as you wrote it: the aim, the scope boundary, the stop line and the budget. CL approved the correction of the two defects, and your plan stays inside that decision. Start it after the revise round of item 1 is complete.'
+                    source: MetaFO brief relaying CL's decisions, 2026-11-15
+              application:
+                target-stage: implementation
+                state: pending
 started: 2026-11-15T16:25:44Z
 ---
 
