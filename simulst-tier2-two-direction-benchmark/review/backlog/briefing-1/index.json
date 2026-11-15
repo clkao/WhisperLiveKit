@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1mvkhny3ke6wcza27p8x5v8j:backlog:attempt-1:revision-1",
+  "question": "Does tier 2 start at design, with the two directions kept apart?",
+  "artifacts": [
+    {
+      "id": "artifact:1mvkhny3ke6wcza27p8x5v8j:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/bb836ec254a32b886662772e1b42c3e529631037/simulst-tier2-two-direction-benchmark.md",
+      "rev": "sha256:350f1c460e635ed4e3fac693fecbdef9dec8a99c2b5766bf78282e5c0bcb7a2f",
+      "mediaType": "text/markdown",
+      "summary": "Seed for tier 2: product direction Mandarin to English on FLEURS Chinese rows with the sentence_id join, comparison direction English to Chinese on the 919-segment IWSLT devset, XCOMET-XL scored on the paused asr-xcomet VM. Direction B needs a segment-level emitter, which is the real build. No download, zero cost, 1.5 GiB disk floor."
+    }
+  ]
+}

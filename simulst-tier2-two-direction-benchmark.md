@@ -4,6 +4,17 @@ status: backlog
 score: 0.8
 source: inherits the tier-2 scope of simulst-eval-harness (8z), whose tier 1 is approved for delivery
 id: 1mvkhny3ke6wcza27p8x5v8j
+gates:
+    version: 1
+    records:
+        - id: gate:1mvkhny3ke6wcza27p8x5v8j:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:1mvkhny3ke6wcza27p8x5v8j-backlog-1
+              briefing:
+                id: briefing:1mvkhny3ke6wcza27p8x5v8j:backlog:attempt-1:revision-1
+                digest: sha256:441a6fdaa2edaef2b055f0792c7fba9ab7b5554d0bd02d8f12c50ba00ffcc600
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 Tier 1 shipped the benchmark suite that scores a translation. This task produces the two measured
