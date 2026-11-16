@@ -1146,7 +1146,7 @@ fixed instrument, `build_manifest.py`, `part1_zh.sh`, `part2_grid.sh`, `analyze.
 `mlx-qwen3-asr` **0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
 `Qwen/Qwen3-ASR-0.6B`, `--warmup --repeats 1 --speed 1 --no-clean`, one MLX process
 per arm, **0 failed clips in all fourteen arms**. Disk 3.7 GiB free at the end (floor
-1.5); `fleurs_test_full` untouched. Wall clock 08:56–09:26 UTC: Part 1 1806 / 1805 s,
+1.5); `fleurs_test_full` untouched. Wall clock 07:01–09:18 UTC: Part 1 1806 / 1805 s,
 the twelve grid arms 369–389 s (en) and 388–407 s (zh).
 
 **The instrument is verified on my own arms, not assumed.** Every cycle-15 payload
@@ -1247,6 +1247,13 @@ cycle-10 arm for en H4+H1, and H4+H1's cycle-13 finalisation (0.86 / 1.45 s) was
 buggy instrument's two extra decodes. Today's H4+H2 finalisation is 0.61 / 1.37 s
 where the cycle-13 row said 2.47 / 8.24 s, and H4+H1 is 0.27 / 0.35 s where it said
 0.86 / 1.45 s — those two cycles' latency numbers should not be quoted beside today's.
+
+**One harness counter differs between languages.** All four zh persistent-window
+arms report `n_invalid_timestamps: 1` and every en arm reports 0; 0 clips failed
+anywhere (510 ok / 0 failed across the thirteen surviving reports, 660 counting the
+overwritten Part-1 control). So at most one Mandarin clip per H4 arm has a
+timeline the harness flags, which touches that arm's first-visible/first-committed
+percentiles and nothing in the CER column.
 
 **What the instrument fix actually moved.** Of twelve like-for-like cells, one moved:
 en all-three, 62 → 64 errors, and a per-clip diff isolates it to a single clip,
