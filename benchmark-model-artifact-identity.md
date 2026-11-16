@@ -4,6 +4,17 @@ status: backlog
 score: 0.5
 source: found while measuring qwen3-asr 0.6B vs 1.7B (implementation cycle 10)
 id: jg3ktjxtsqejkcgrnv6r9p94
+gates:
+    version: 1
+    records:
+        - id: gate:jg3ktjxtsqejkcgrnv6r9p94:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:jg3ktjxtsqejkcgrnv6r9p94-backlog-1
+              briefing:
+                id: briefing:jg3ktjxtsqejkcgrnv6r9p94:backlog:attempt-1:revision-1
+                digest: sha256:036e69b89f4d8eb25c0db496552873f07a9fbd14c8607399e978f3f904a7aa35
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 `describe_model_artifacts(config)` in `whisperlivekit/benchmark/metrics.py` returns `{}` for a Hub model
