@@ -878,3 +878,38 @@ this round identified but did not ship (it would be a second flag, and CL asked
 for one).
 
 Artefacts: `/tmp/wlkpersist/{analyze.py,cfg-*.json,runall.sh,run17b2.sh,run17b3.sh,runspeed0.sh,offline_decode.py}` + `runs/{persistent,baseline}-{en,fr,zh}.json`, `runs/offline.json`, `runs/17b-*-en.json`, `runs/06b-speed0-*-en.json`; `/tmp/wlkpad/{run_pad.py,pad_decode.py}` + `runs/pad100-persistent-en{,-report}.json`, `runs/pad-one-shot-0.6b-en.json`, `runs/17b-pad100-persistent-en{,-report}.json`, `audio/*.npy`, `runs/slices-en.jsonl`. Disk: 3.3 GiB free after deleting 1.1 GB of unneeded FLEURS tarballs from the HF cache mid-round; 2.6–3.1 GiB free through every arm; the round's own footprint is 752 MB (FLEURS full split) + 355 MB (LibriSpeech) + 2.3 GB (1.7B-8bit weights) + ~21 MB of `/tmp` artefacts. Free space read **1.6 GiB at the last arm's end** — above the 1.5 GiB floor but only just, and the fall from 3.0 GiB happened while this round ran no new download, so the next round should re-read it before starting.
+
+## Stage Report: implementation (cycle 11 — threaded revision budget, model_size honouring)
+
+Source change on `pr425-fix`: **30b1573** (revision budget) and **8d8baba**
+(`model_size`) on `06e725c`, each with tests and a `docs/backends.md` paragraph.
+Measurement scaffolding stays in `/tmp/wlkfix11`; nothing staged at the end,
+nothing pushed, no issue or PR comment, disk 2.0 GiB free throughout.
+
+- DONE: The revision budget is controllable: unfixed_token_num reaches the library through the config and the CLI, the persistent-window arm with a wide budget reproduces the measured 9.04 percent, and a test fails when the plumbing is removed.
+  Field `mlx_qwen3_asr_unfixed_token_num` (**config.py:73, default `None`**), flag `--mlx-qwen3-asr-unfixed-token-num` (**parse_args.py:613**), and `_new_state()` (**asr_mlx_qwen3.py:139**) which **omits the argument when unset** so the library default of 5 still applies. Measured, same 30 cached en clips, `--speed 0 --warmup --repeats 1`, 30/30 ok both arms, one MLX process per arm: `--model Qwen/Qwen3-ASR-0.6B --config cfg-persistent-wide.json` (`{"mlx_qwen3_asr_persistent_window": true, "mlx_qwen3_asr_unfixed_token_num": 100000}`) → **9.04 % weighted / 8.25 avg, 69 of 763 errors**; `--config cfg-persistent-default.json` (`{"mlx_qwen3_asr_persistent_window": true}`) → **12.19 % / 11.78, 93 of 763**. Both are bit-for-bit cycle 10, which injected the same budget onto `init_streaming` from outside the library, so the threaded flag now reaches what was previously only reachable by monkeypatch. `effective_config` in each report records `100000` vs `None`, i.e. the value provably reached the engine. Per clip, wide vs default: **4 better / 24 equal / 2 worse** — `1850` 87.50→0.00, `1776` 33.33→6.67, `1735` 16.33→12.24, `1913` 14.29→9.52; worse `1713` 3.70→14.81 and `1876` 0.00→6.25 (same two clips cycle 10's pad arm disturbed). Cost: **RTF 0.149 → 0.268** and finalization p95 **3.51 → 8.24 s** — a wide budget never freezes a prefix token, so the encoder's `_WindowPrefixCache` reuse is forfeited and each chunk re-decodes the window. Falsification, exercised: deleting the `budget` block from `_new_state()` → `test_revision_budget_reaches_the_stream_only_when_configured` fails `KeyError: 'unfixed_token_num'`; restored → `tests/test_mlx_qwen3.py tests/test_qwen3_backend_shims.py` **21 passed**.
+- DONE: model_size selects the weights: an arm given a different model id loads that model or fails loudly, a test fails when the mapping is removed, and the silent-equal-WER failure cannot recur.
+  `_resolve_model_id()` (**asr_mlx_qwen3.py:52-71**) now feeds `MlxQwen3ASR.model_id`: a repo id or local path is used as given, `MLX_QWEN3_ASR_MODEL_MAPPING` maps `0.6b/1.7b/qwen3-asr-*/tiny/small/medium/large`, the runner's generic `base` (and empty) means "not set", and an unrecognised non-path spec raises `ValueError` instead of falling back. Before/after on the same 2-clip slice and config, `--model mlx-community/Qwen3-ASR-1.7B-8bit`: pre-fix adapter (`git checkout 06e725c -- whisperlivekit/asr_mlx_qwen3.py`) **13.64 % weighted, RTF 0.108, clip WERs 18.18 / 0.00** — byte-identical to the 0.6B arm (13.64 %, 18.18 / 0.00), the silent fallback; post-fix **18.18 %, RTF 0.454, clip WERs 24.24 / 0.00**. Weights confirmed offline (`HF_HUB_OFFLINE=1`, cache only, no download): `mlx-community/Qwen3-ASR-1.7B-8bit` logs *"Loaded quantized model from …/models--mlx-community--Qwen3-ASR-1.7B-8bit/snapshots/a8379a2e…"* with **1101** weight tensors, `Qwen/Qwen3-ASR-0.6B` logs *"…models--Qwen--Qwen3-ASR-0.6B/snapshots/5eb14417…"* with **612**; the report's own `model_artifacts` is still `{}` for both (Hub ids, jg3's task), so the snapshot path, tensor count and differing WER/RTF are the artefact evidence I have. Falsification: reverting `self.model_id` to `config.mlx_qwen3_asr_model` → `test_model_size_selects_the_weights` and `test_unknown_model_size_fails_instead_of_running_the_default` fail (`assert loaded == []` / `['Qwen/Qwen3-ASR-0.6B'] == [...]`); restored → 21 passed.
+- DONE: Both changes sit on pr425-fix as commits with tests, the flag defaults keep today's numbers reproducible, and nothing is pushed or commented.
+  `8d8baba`, `30b1573` on `06e725c`, worktree clean, 0 staged files. **No default changed**: `mlx_qwen3_asr_unfixed_token_num` is `None` (library default 5 — the 12.19 % arm above is the proof it is unchanged) and `--mlx-qwen3-asr-persistent-window` stays off. The one behaviour change is narrow and intended: for `--backend mlx-qwen3-asr`, a `model_size` other than `base` used to be ignored and is now honoured or rejected. `unfixed_chunk_num` remains unthreaded (out of scope this cycle).
+
+### Summary
+
+The library's 5-token rollback budget and the benchmark harness's `model_size`
+are both reachable from WLK now, and both are measured rather than asserted. The
+persistent-window arm with the threaded wide budget reproduces cycle 10's
+monkeypatched 9.04 % (69/763) exactly, and the default-budget arm reproduces
+12.19 % (93/763), so the plumbing is what moves the number; the price is
+RTF 0.149 → 0.268 because a wide budget forfeits the encoder prefix cache.
+`--model` now selects the weights: the 1.7B arm that used to score byte-identically
+to the 0.6B default scores 18.18 % against 13.64 % and loads a distinct snapshot
+(1101 vs 612 tensors), and an unmappable spec raises instead of falling back.
+
+Artefacts: `/tmp/wlkfix11/{runall.sh,runjson.sh,cfg-*.json,fleurs-2en.json,model_identity.py}`,
+`runs/{persistent-default-en,persistent-wide-en,id-17b-beforefix-en}.json` + the arm
+logs. Protocol unchanged from cycles 7-10: `benchmarks/corpora/fleurs-90.json`
+(`corpus_sha256 95586eb7…`, `google/fleurs@70bb2e8`), scorer `whisperlivekit.metrics`
+through the stock `BenchmarkRunner`, `--warmup --repeats 1 --speed 0`,
+`mlx-qwen3-asr` **0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
+`Qwen/Qwen3-ASR-0.6B`, M4 / macOS 26.6.2. `id-17b-en`/`id-06b-en` use a 2-clip en
+slice of the same manifest (`fleurs-2en.json`) and carry no corpus claim.
