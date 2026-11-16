@@ -913,3 +913,49 @@ through the stock `BenchmarkRunner`, `--warmup --repeats 1 --speed 0`,
 `mlx-qwen3-asr` **0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
 `Qwen/Qwen3-ASR-0.6B`, M4 / macOS 26.6.2. `id-17b-en`/`id-06b-en` use a 2-clip en
 slice of the same manifest (`fleurs-2en.json`) and carry no corpus claim.
+
+## Stage Report: implementation (cycle 12 — Mandarin round: does the mechanism cost survive the direction change?)
+
+Measurement only, no source change: `git status --porcelain` empty before and
+after on `pr425-fix` HEAD `8d8baba`, nothing staged, nothing pushed, no issue or
+PR comment. Scaffolding in `/tmp/wlkmand`; disk 2.0 GiB free throughout (floor
+1.5 GiB). Everything the round needed already had a flag, so nothing was built:
+`--speed 1` for the timing fields, `--mlx-qwen3-asr-persistent-window`,
+`--mlx-qwen3-asr-unfixed-token-num`, `--model`. Protocol unchanged from cycles
+7-11 (stock `BenchmarkRunner` via `wlk bench`, `whisperlivekit.metrics` scorer,
+`mlx-qwen3-asr` 0.4.4 on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
+`Qwen/Qwen3-ASR-0.6B`), plus one new reference arm (`offline_zh.py`: one
+`transcribe()` of the whole raw clip). Anchors reproduce: live zh **11.15 %** and
+persistent zh **10.77 %** are bit-for-bit cycle 10.
+
+- DONE: The product direction has a number: FLEURS cmn_hans_cn with ground truth, four arms at a live feed (one-shot reference, live, persistent window, persistent plus wide revision budget), reporting CER and the finalisation distribution at p50/p95/p99.
+  `benchmarks/corpora/fleurs-90.json` zh slice (30 clips = first 30 of `fleurs_test_full/cmn_hans_cn`, 364.4 s), `--warmup --repeats 1 --speed 1`, 30/30 ok 0 failed in every arm, CER over 1300 reference characters. **one-shot reference 8.38 % / 7.56 avg / 109 err, RTF 0.054** · **live 11.15 / 10.46 / 145, RTF 0.108** · **persistent 10.77 / 10.08 / 140, RTF 0.110** · **persistent+wide 10.54 / 9.91 / 137, RTF 0.174**. Finalisation p50/p95/p99: live **0.03/0.11/0.18 s**, persistent **0.29/0.36/0.39 s**, wide **0.61/1.07/1.21 s**. First-visible p50/p95/p99: 3.27/5.76/**6.82**, 3.75/6.03/6.94, 3.75/6.02/6.93. First-committed p50/p95/p99: **6.30/12.61/16.19**, 11.61/20.36/22.56, 12.00/21.14/**23.45** — the tail lives in first-committed, not finalisation: the persistent window defers its single commit to EOF, so commit p99 tracks clip length while the EOF drain stays under 1.3 s. Commits per clip 30/30/30 (one window per clip). Per clip vs the reference: live 0 better/23 equal/7 worse, persistent 0/25/5, wide 1/25/4 — **the damage is concentrated, not spread**: `1850` 58.33 vs 0.00 off-line, `1776` 54.35 vs 52.17, `1682` 28.30 vs 18.87, `1713` 11.11 vs 0.00; 23 of 30 clips are unaffected by the whole pipeline. n=30 means p99 is the interpolated max, not a tail estimate.
+- DONE: The Taiwan recordings have a relative measurement: the same arms on the local zh-tw audio with the offline decode as the reference, reported as relative deltas with that limit stated plainly.
+  `_work/zh_long.wav` (31.55 s) + `_work/confusion.wav` (8.48 s) + `_work/mandarin.wav` (6.29 s) staged through a real corpus manifest (`local-zh.json`, copied into the benchmark cache with sha256 per file, `reference` empty so the runner does not score them); the same three streaming arms at `--speed 1`; reference = `offline_local.py`, one `transcribe()` per whole file. **THERE IS NO GROUND TRUTH — every Arm B number is damage relative to the best this model does on this audio, not accuracy.** CER over 210 reference characters: **live 5.71 % (12 err)** · **persistent 3.33 % (7)** · **persistent+wide 2.86 % (6)**; per clip zh_long **4→0→0** /129, confusion **7→6→6** /53, mandarin **1→1→0** /28. Same shape as Arm A, same direction: the pause reset is what costs (5 of 12 errors), the budget adds one character (华数 recovered). Timing: first-visible 2.69/2.74/2.74 p50, first-committed 4.30 → 8.84 → 9.11 p50 and 4.34 → **31.39** → 33.43 p99 (n=3, so the p99 column is the longest clip), finalisation 0.21/0.35/0.88 p50 and 0.33/0.46/2.34 p99, RTF 0.127/0.150/0.387.
+- DONE: The mechanism comparison is stated in one line each: whether the pause reset, the revision budget and the splice cost the same share of damage in Mandarin as in English, larger or smaller, with the numbers beside each.
+  Weighted pp, 0.6B, both directions on the same scorer. **Pause reset** (live → persistent): en **13.76 → 12.19, −1.57 pp** (25 % of the 6.16 pp live-vs-ceiling gap); zh **11.15 → 10.77, −0.38 pp** (14 % of a 2.77 pp gap) — **smaller in Mandarin, 4× smaller in pp**, and it still pays in the shipped direction (it is the largest of the three there, and 5 of Arm B's 12 errors). **Revision budget** (persistent → wide): en **12.19 → 9.04, −3.15 pp**; zh **10.77 → 10.54, −0.23 pp** — **it nearly vanishes, 14× smaller**; the wide budget still costs real time in zh (RTF 0.110 → 0.174, finalisation p99 0.39 → 1.21 s) so in the shipped direction it is a cost with almost no benefit. **Splice** (one-shot raw → one-shot of the VAC-delivered audio): en **7.60 → 9.04, +1.44 pp** (23 % of the gap); zh **8.38 → 10.54, +2.15 pp** (78 % of the gap) — **larger in Mandarin and now the dominant mechanism**, because in Chinese the same deletion turns into content damage: `1850` reads "802.11a、802.11b和802.11g" on the raw clip and "八零二点一一A、八零二点一一B和八零二点一一G" on the delivered audio (0.00 → 50.00 % CER), `1713` gains an invented repetition "前往前往戈马" and a corrupted proper noun "北极五省" for "北基伍省" that the raw decode gets right (0.00 → 8.89 %), and the live path then invents words at the re-decoded boundaries ("亿亿币", "一亿级", "但前晚" for "但前往"). The English "invents words" tail is one token (`Pagoama`); the Mandarin tail is phrase fragments. Full decomposition (cycle-9 instrument, zh, speed 1): gating **+2.15**, utterance segmentation **+0.46**, decode mode **+0.15** = 2.76 ≈ live − reference 2.77; en for comparison 1.44 / 4.72 / 0.00 = 6.16. Structure is identical, magnitudes are not: **in English the loss is segmentation-side (reset + budget = 4.72 pp, gating 1.44); in Mandarin it is gating-side (2.15 pp) and the segmentation side collapses to 0.61 pp.** `persistent+wide` lands on 10.54 % / 137 errors, exactly the delivered-audio one-shot, in both directions — the same closure English showed at 9.04.
+- SKIPPED: A Mandarin splice-repair arm (100 ms re-inserted silence at each VAC gap).
+  Not requested by this round's contract, which asks for four arms; the decomposition above already sizes the splice (2.15 pp) and names its text, so a repair arm is the obvious next measurement rather than a gap in this one. Not built: no flag for it exists.
+
+### Summary
+
+Everything we had measured was English/French/Mandarin read speech scored as
+WER in the English direction; this round ran the shipped direction (zh speech,
+CER) and the three mechanisms do not carry over at all evenly. With ground truth
+on 30 FLEURS Mandarin clips the pipeline costs **2.77 pp** (8.38 → 11.15 %) and
+the ceiling is only 8.38, so the whole gap is small; the pause reset buys back
+**−0.38 pp** (en −1.57) and the wide revision budget **−0.23 pp** (en −3.15,
+while still buying en's whole 3.15). The splice, negligible-looking in English,
+is **+2.15 pp here — 78 % of the entire Mandarin gap** — and it invents Chinese
+words rather than one English token. The project's own zh-tw recordings say the
+same thing at a smaller scale (12 → 7 → 6 errors of 210 characters, pause reset
+the whole effect, budget one character), with the standing caveat that their
+reference is an offline decode and so those are relative deltas only.
+
+Artefacts: `/tmp/wlkmand/{offline_zh.py,offline_local.py,mk_local_manifest.py,analyze.py,runA.sh,cfg-live.json,cfg-persistent.json,cfg-persistent-wide.json,local-zh.json,report.md,analysis.txt}`,
+`runs/{offline-zh,offline-local,live-zh,persistent-zh,persistent-wide-zh,local-live,local-persistent,local-persistent-wide,diag-live-zh}.json`
++ `diag-live-zh-report.json` and the arm logs. Instruments reused unchanged from
+cycles 9-11 (`/tmp/wlkdiag9/run_diag.py`, `/tmp/wlkdiag9/analyze_diag.py`).
+M4 / macOS 26.6.2. Wall clock: live 6m28s, persistent 6m35s, wide 6m46s, diag
+7m12s, offline 3.5 s, the three Arm B arms 81 s each — the round finished inside
+its 120-minute budget with every arm run.
