@@ -1048,3 +1048,88 @@ Artefacts: `/tmp/wlkablate/{run_arm.py,run_arms.sh,analyze.py,cfg-control.json,c
 `runs/slices.jsonl` + the eight arm logs. Instruments reused unchanged from cycle 10
 (`/tmp/wlkpad/run_pad.py`) and cycles 10–12 (anchor reports). M4 / macOS 26.6.2.
 Wall clock 75 min for eight arms; every arm landed inside the 120-minute budget.
+
+## Stage Report: implementation (cycle 14 — H1 alone at n = 150, en and fr)
+
+Measurement only, **no source change**: worktree clean at `8d8baba` before and after,
+0 staged files, nothing pushed, no issue or PR comment. **No flag was built** — H1 is
+still the cycle-10 out-of-tree splice instrument (`--pad-ms 100`). Scaffolding in
+`/tmp/wlk150` (`build_manifest.py`, `run_arm.py`, `run_arms.sh`, `analyze.py`, `runs/`),
+7.8 MB; disk 3.9 → 3.8 GiB free (floor 1.5). Four arms, one MLX process per arm,
+stock `BenchmarkRunner` + `whisperlivekit.metrics`, `Qwen/Qwen3-ASR-0.6B`,
+`mlx-qwen3-asr` **0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
+`--warmup --repeats 1 --speed 1`, **150/150 ok, 0 failed in every arm**;
+wall clocks 1559 / 1620 (en) and 1685 / 1636 s (fr), 108 min of arms total.
+
+- DONE: H1 alone is measured on a 150-clip sample drawn from the staged full FLEURS split, with a matched control on the same 150 clips, so a 0.79-point claim is tested on a sample that can support it.
+  **en −0.92 pp better** (9.96 % → 9.04 %, 335 → 304 errors of 3362), paired clip bootstrap 95 % CI **[−1.59, −0.30] pp**; **fr +0.16 pp worse** (12.87 % → 13.03 %, 488 → 494 of 3792), CI **[−0.50, +0.82] pp** — i.e. the English gain does not reproduce in French. Engagement read from each arm's own payload, not assumed: H1 inserted **402 pads / 40.2 s** of silence at en's **228 interior splice gaps** (+150 first-slice pads), **313 pads / 31.3 s** at fr's **163**; the control payloads show 0 pads and the *same* 228 / 163 gap counts, so both arms of a language spliced identically and only one of them padded. `effective_config` is `persistent_window false`, `unfixed_token_num null` in all four arms — nothing else moved.
+- DONE: Both arms report WER or CER with first-visible, first-committed and finalisation latency at p50 and p95, and the per-clip spread is shown so one pathological clip cannot carry the result.
+  Tables below. **Per clip, en: 27 better / 106 equal / 17 worse** (106 byte-identical), largest improvement `fleurs_en_1776_1038214857203833067` 33.33 → 6.67 (−26.67 pp), largest regression `fleurs_en_1713_12921155570472263117` 3.70 → 11.11 (+7.41 pp). **fr: 27 better / 95 equal / 28 worse**, largest improvement `fleurs_fr_1975_14361567643536061453` 16.67 → 0.00 (−16.67 pp), largest regression `fleurs_fr_1868_3812475084268854073` 9.09 → 27.27 (+18.18 pp). **The en gain is not carried by two or three clips this time**: the largest single clip removes 4 of the net 31 errors (13 %), the top three 10 (32 %), and without the top clip H1 is still −0.80 pp; the cycle-13 folk hero `fleurs_en_1850_15199695878621076767` (91.67 → 0.00 under H4+H1+H2) contributes 3 of 31 here (22 → 19 errors). In fr the movements cancel (27 clips remove 38 errors, 28 add 44; net +6).
+- DONE: The sample is described precisely: which clips, how chosen, and how the 150 compare with the 30 already measured, so the two rounds can be joined without re-running the old arms.
+  Rule, implemented in `build_manifest.py` and recorded inside each manifest's own `sampling` block: universe = the 647 `en` / 676 `fr` rows of `fleurs_test_full.manifest.json` in the manifest's own order (sorted by recording id); **stratum A** = that language's 30 `benchmarks/corpora/fleurs-90.json` clips — all 30 are inside the full split and the two cache copies are **SHA-256 identical**, asserted at build time, so the already-measured 30 stay inside the sample; **stratum B** = `random.Random(0).sample` of 120 from the remaining 617 / 646. `en` manifest `5a893ca6…` (150 of 647, 1521.9 s), `fr` `36039a71…` (150 of 676, 1591.1 s), both written in file order and fed to both arms unchanged. **The 30 are a subset of the 150 and the join is measured, not argued**: recomputed inside this run the 30-clip control is **13.76 % (105/763) en and 13.10 % (112/855) fr — bit-for-bit the cycle-13 and cycle-10 anchors**; the H1 half is where the join bites (below). English's 30 are much harder than the full split (13.76 vs 9.96 %, 120 random only 8.85 %) while French's are representative (13.10 vs 12.87 %, random only 12.80 %), so the two strata give −1.57 / −0.73 pp (en) and −0.23 / +0.27 pp (fr).
+
+### en and fr — FLEURS full-split samples, n = 150 clips each, `--speed 1`, WER (weighted; errors/units)
+
+| language | arm | WER | vs control | first-visible p50/p95 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|---|
+| en | control | 9.96 (335/3362) | — | 3.26 / 4.20 | 5.77 / 9.78 | 0.04 / 0.64 | 0.173 |
+| en | **H1** | **9.04** (304/3362) | **−0.92 pp better** | 3.63 / 4.69 | 6.52 / 11.24 | 0.21 / 1.57 | 0.368 |
+| fr | control | 12.87 (488/3792) | — | 3.95 / 5.81 | 6.85 / 11.96 | 0.05 / 1.47 | 0.284 |
+| fr | **H1** | **13.03** (494/3792) | **+0.16 pp worse** | 3.77 / 5.32 | 6.37 / 11.26 | 0.04 / 0.37 | 0.147 |
+
+**Latency is order-contaminated and must not be read as an H1 cost.** The arms ran
+sequentially (control then H1, as cycles 7–13), and the within-arm RTF drift shows what
+that does: en control 0.118 → 0.291 first third to last, fr control 0.404 → 0.144
+(fr-control started on the machine en-h1 had just heated and cooled through its own
+run). So fr's H1 "faster" row and en's H1 "slower" row are the same artefact with
+opposite sign; the only latency change attributable to H1 by mechanism is the inserted
+audio itself (0.27 s/clip en, 0.21 s/clip fr).
+
+### Is the 0.79-point English gain a general splice fix? (the extra line asked for)
+
+**No — French and English disagree in sign.** en −0.92 pp, fr +0.16 pp with a CI that
+straddles zero; the same mechanism, same instrument, same sample size, and in French the
+30-clip stratum points the other way from the 120 random clips (−0.23 vs +0.27 pp). At
+this sample size H1 is **an English effect, not a general splice repair** — consistent
+with cycle 10's finding that the pad repairs a 0.6B capacity artefact ("Pagoama") that
+the 1.7B does not produce at all.
+
+### The measurement caveat this round turned up (protocol, worth recording)
+
+`--no-clean` in the cycle-10/13 instrument was a **no-op**: `patch_all(clean=…)` accepted
+the argument and never assigned `STATE["clean"]`, so every "`--no-clean`" arm still ran a
+one-shot re-decode of the window inside `harness.finish()` — i.e. inside
+`finalization_time_s` — plus two whole-clip decodes between clips. Fixed in `/tmp/wlk150`
+(`STATE["clean"] = bool(clean)`; the arms' own payloads now record **0** clean-decode
+records). Consequence for the join: on the identical 30 en clips, with **byte-identical
+delivered audio** (same slice count, same slice lengths, same start offsets, verified per
+clip) and the same pad sites, my H1 arm scores **12.19 % (93/763)** where cycle 13's
+scored 12.98 % (99/763) — a **6-error / 0.79 pp swing on one arm against itself**. The
+mechanism is visible in the payloads: the streaming decode's trigger points follow
+wall-clock chunk arrival, so per-pass token counts differ (26 → 27 and 32 → 31 generated
+ids on 2 of the 30 clips) and the windows the 5-token budget freezes are not the same.
+So a single 30-clip run's per-switch delta (0.46–0.79 pp in cycle 13) sits *at* the
+run-to-run noise floor, which is exactly the reason this round exists; n = 150 shrinks
+the clip-sampling term (bootstrap CI above) but a same-arm replicate at n = 150 was not
+run inside the budget, so the −0.92 pp en figure is ~1.2× the measured n=30 self-swing
+and is **not yet separable from run-to-run variance**. French was added mid-round by CL
+(en → fr → zh); **Mandarin was not run**: after French only ~28 min of the 150-minute
+budget remained and a paced 150-clip pair is ~55 min, so per instruction I report two
+complete languages rather than one arm of a third.
+
+### Summary
+
+On 150 clips drawn from the staged full split, H1 (100 ms of silence at every splice the
+VAC made) is **−0.92 pp better in English** (9.96 → 9.04 %, CI [−1.59, −0.30], 27 better
+/ 106 equal / 17 worse, no clip carrying more than 13 % of the gain) and **+0.16 pp worse
+in French** (12.87 → 13.03 %, CI [−0.50, +0.82]) — so the English gain survives a sample
+5× larger and a concentration check it failed last round, and does not generalise to
+French, which makes H1 an English-corpus effect rather than a splice fix. The 30-clip set
+is a verified audio-identical subset of the 150, both controls reproduce their earlier
+anchors bit-for-bit, and the H1 half of the join did not: the instrument's `--no-clean`
+was a no-op and the same arm on the same 30 clips, same delivered slices, moved 0.79 pp
+between runs through wall-clock-dependent decode trigger points.
+
+Artefacts: `/tmp/wlk150/{build_manifest.py,run_arm.py,run_arms.sh,analyze.py}`,
+`fleurs-150-{en,fr}.json`, `runs/{en,fr}-{control,h1}{,-report}.json`,
+`runs/analysis.txt`, `runs/status.txt`, arm logs. M4 / macOS 26.6.2.
