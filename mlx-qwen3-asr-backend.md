@@ -1286,3 +1286,41 @@ Artefacts: `/tmp/wlk15/{run_arm.py,build_manifest.py,part1_zh.sh,part2_grid.sh,a
 `runs/zh-h1.json` (Part 1, n = 150),
 `runs/{en,zh}-{control,h2,h4,h4h2,h4h1,h4h1h2}{,-report}.json` + arm logs,
 `runs/status.txt`, `runs/slices.jsonl`. M4 / macOS 26.6.2.
+
+## Stage Report: implementation (cycle 16 — H4+H1 at n = 150, en and zh)
+
+Measurement only, **no source change**: worktree clean at `8d8baba` before and after, 0
+staged files, nothing pushed, no issue or PR comment. **No flag was built** — H4 is the
+branch flag through `--config`, H1 is the cycle-10 out-of-tree splice instrument
+(`--pad-ms 100`). Instrument = cycle 15's `run_arm.py`, byte-identical except its two path
+constants (`diff` verified), whose `--no-clean` really suppresses the re-decode
+(`STATE["clean"] = bool(clean)`, line 93). Scaffolding `/tmp/wlk155`; MLX only, cached
+model and corpora, `HF_HUB_OFFLINE=1`, `mlx-qwen3-asr` 0.4.4 on
+`PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`, `Qwen/Qwen3-ASR-0.6B`, `--warmup --repeats 1
+--speed 1 --no-clean`, one MLX process per arm, **150/150 ok, 0 failed in all three
+arms**; disk 4.1 → 4.4 GiB free (floor 1.5); wall clock 14:56–16:25 UTC (1844 / 1579 /
+1808 s). Full round report: `/tmp/wlk155/report-cycle16.md`.
+
+- DONE: The H4+H1 arm is measured at 150 clips in Mandarin and in English, reusing the existing 150-clip controls, with the difference, its bootstrap interval and the per-clip spread, so the two largest grid cells are tested at a sample size that can carry them.
+  en **−2.77 pp better** (9.96 → 7.20 %, 335 → 242 of 3362), paired bootstrap 95 % CI **[−4.08, −1.64]** pp, **49 better / 89 equal / 12 worse**, largest swing −54.17 pp (`fleurs_en_1850…` 91.67 → 37.50) and +11.11 pp (`fleurs_en_1713…`); top clip 14 % of the net −93 errors, without the top three still −1.96 pp. zh **−1.45 pp better** (11.08 → 9.63 %, 643 → 559 of 5805), CI **[−2.29, −0.78]** pp, **43 better / 97 equal / 10 worse**, largest −50.00 pp (`fleurs_zh_1850_388460991317794418` 50.00 → 0.00) and +10.53 pp; top clip 21 %, without it −1.14 pp. Manifests hash-equal to the reused runs (`5a893ca6…` en / `70bb5aa6…` zh), and the clip set is proven identical per clip: same 150 names in manifest order, reference identical 150/150, **delivered slice geometry identical 150/150**. The en control was reused (`/tmp/wlk150/runs/en-control`, 335/3362 reproduced exactly); the **zh control payload had been destroyed by cycle 15's stem collision**, so on first-officer authorisation it was re-measured as a third arm (`zh150-control`: 11.08 %, 643/5805 — the cycle-15 control **to the error count**, 0 of 643 moved).
+- DONE: Both languages report first-visible, first-committed and finalisation latency at p50 and p95, so the window's cost is stated beside the padding's gain on the same arm.
+  en control 3.26/4.20 · 5.77/9.78 · 0.04/0.64 → H4+H1 3.25/4.23 · **9.98/16.59** · 0.27/0.36; zh control 3.82/6.28 · 6.23/10.81 · 0.03/0.21 → H4+H1 4.05/6.73 · **11.45/20.26** · 0.29/0.38. The cost is the window committing at EOF, not the pad: **feed p50 identical inside each pair** (9.71/9.70 s, 11.13/11.13 s) and the derived first-committed-minus-feed moves from −3.20/−5.48 s (mid-clip commit) to +0.27/+0.29 s. First-visible unchanged (±0.25 s), finalisation sub-second both ways. RTF is not cross-comparable: the en control ran in cycle 14's session (within-arm drift 0.118 → 0.291).
+- DONE: The report states whether the 30-clip Mandarin result of better by 1.54 points survives at 150 clips, and whether the English 4.19 points survives, or is carried by a few clips as the earlier cells were.
+  **zh survives: −1.45 pp at 150, CI excluding zero, and not clip-carried** (43 better vs 10 worse; the 30 mandatory clips are representative in Mandarin, 11.15 vs 11.08 %, so the magnitude barely moves; both halves reproduce their anchors to the error count — 145/1300 and **125/1300 = cycle 15's 30-clip H4+H1 cell exactly**). **en survives in sign and significance but shrinks to −2.77 pp**: the 30-clip −4.19 was the mandatory stratum's number, and that stratum is much harder in English (control 13.76 vs 9.96 %); the 120 random clips give −2.35 pp, and the 30-clip halves again reproduce bit-for-bit (105/763 and **73/763 = cycle 15's cell**). Not clip-carried in either language. Engagement read from each payload: pads land at exactly heads + interior gaps, clip by clip, 0 mismatches (en 378/37.8 s at 228 gaps; zh 442/44.2 s at 292, identical to cycle 15's zh H1 arm); **0 clean-decode records and 0 whole-clip decodes in all three payloads**, `persistent_window true` in the H4+H1 arms and `false` in the control.
+
+### Summary
+
+H4+H1 is the best configuration measured in either direction, and at n = 150 both its cells
+hold their sign with bootstrap intervals that exclude zero: English **7.20 %** (−2.77 pp,
+CI [−4.08, −1.64]) and Mandarin **9.63 %** (−1.45 pp, CI [−2.29, −0.78]), with per-clip
+spreads of 49/12 and 43/10 and no clip carrying more than 21 % of the net gain — so
+neither is the clip-carried artefact the earlier 30-clip cells repeatedly were. The
+Mandarin 30-clip −1.54 pp is confirmed almost unchanged; the English −4.19 pp was an
+overstatement of a real effect, ~1.4 pp of it coming from the mandatory stratum being much
+harder than the full split for English. The price is unchanged and is the persistent
+window's commit-at-EOF, not the pad: first-committed p50 ×1.73 / ×1.84 with identical feed
+times, while first-visible and finalisation are flat. A cycle-15 stem collision had
+destroyed the Mandarin 150-clip control payload; it was re-measured under authorisation and
+returned the cycle-15 control to the error count, which doubles as the n = 150 same-arm
+replicate cycle 14 named as missing — **0 of 643 errors moved**. New naming convention
+`<language><sample-size>-<arm>` prevents a repeat.
