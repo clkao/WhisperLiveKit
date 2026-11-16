@@ -850,4 +850,31 @@ The decoder-state reset at a VAD pause is real but it is less than half of the l
 
 Measured: full-split download + validation (en/fr/zh) and LibriSpeech data; 0.6B en/fr/zh for live, persistent and whole-clip ceiling; 0.6B en for persistent+pad100 and for one-shot delivered at 0/100/300 ms; 1.7B en for ceiling, live, persistent and persistent+pad100; the 0.6B speed-0 anchors for live and persistent. Not measured: 1.7B fr/zh (en only, per the time instruction); 0.6B fr/zh padded arms; a 1.7B 300 ms arm; and the wide-revision-budget arm that would place the 12.19 % residual between "frozen prefix" and something else — the padded arm's 9.57 % narrows it (padding removed 2.62 pp of the 4.59 pp that one-shot decode of the same audio would have scored) but does not close the attribution.
 
+### The 12.19 % residual is the library's frozen text prefix (last arm, 0.6B en)
+
+One more arm landed inside the budget: the persistent window with the library's
+revision budget forced wide (`unfixed_token_num=100000`, injected on
+`mlx_qwen3_asr.streaming.init_streaming` from `/tmp/wlkpad/run_pad.py`, so no
+prefix ids are ever frozen), `--speed 0`, `--no-clean`, 30/30 ok:
+
+| 0.6B en, weighted | errors | avg |
+|---|---|---|
+| live (VAD wipe) | 13.76 % | 105/763 | 13.31 |
+| persistent window | 12.19 % | 93/763 | 11.78 |
+| **persistent + wide revision budget** | **9.04 %** | **69/763** | **8.25** |
+| one-shot decode of the same delivered audio | 9.04 % | 69/763 | 8.25 |
+| whole raw clip (ceiling) | 7.60 % | 58/763 | 6.70 |
+
+**9.04 % with 69 of 763 errors is bit-for-bit the one-shot figure**, so nothing in
+the persistent window's residual is segmentation any more: it is the 5-token
+rollback (`UNFIXED_TOKEN_NUM`) freezing an early mistake for the life of the
+window, and the 100 ms splice pad (9.57 %) was repairing a symptom of it. This
+also re-reads cycle 9's "decode mode 0.00 pp": that was true per 3 s utterance,
+where the window is one or two chunks and `unfixed_chunk_num=2` decodes
+prefix-free anyway; on a 12–15 s window the prefix is frozen on every chunk after
+the second and costs 3.15 pp. **`unfixed_token_num`/`unfixed_chunk_num` are still
+not threaded through `WhisperLiveKitConfig`** — that is the one-line follow-up
+this round identified but did not ship (it would be a second flag, and CL asked
+for one).
+
 Artefacts: `/tmp/wlkpersist/{analyze.py,cfg-*.json,runall.sh,run17b2.sh,run17b3.sh,runspeed0.sh,offline_decode.py}` + `runs/{persistent,baseline}-{en,fr,zh}.json`, `runs/offline.json`, `runs/17b-*-en.json`, `runs/06b-speed0-*-en.json`; `/tmp/wlkpad/{run_pad.py,pad_decode.py}` + `runs/pad100-persistent-en{,-report}.json`, `runs/pad-one-shot-0.6b-en.json`, `runs/17b-pad100-persistent-en{,-report}.json`, `audio/*.npy`, `runs/slices-en.jsonl`. Disk 3.3 GiB free when the last arm started (1.1 GB of unneeded FLEURS tarballs in the HF cache deleted mid-round); 2.6–3.1 GiB free through the arms; floor 1.5 GiB never approached.
