@@ -1324,3 +1324,136 @@ destroyed the Mandarin 150-clip control payload; it was re-measured under author
 returned the cycle-15 control to the error count, which doubles as the n = 150 same-arm
 replicate cycle 14 named as missing — **0 of 643 errors moved**. New naming convention
 `<language><sample-size>-<arm>` prevents a repeat.
+
+## Stage Report: implementation (cycle 17 — what the viewer actually reads: provisional accuracy, control vs H4+H1)
+
+Measurement only, **no source change**: worktree clean at `8d8baba` before and after, 0
+staged files, nothing pushed, no issue or PR comment. **No flag was built.** Scaffolding
+`/tmp/wlk17`; MLX only, cached model and corpora, `HF_HUB_OFFLINE=1`, `mlx-qwen3-asr`
+**0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`, `Qwen/Qwen3-ASR-0.6B`, `--warmup
+--repeats 1 --speed 1 --no-clean`, one MLX process per arm, **150/150 ok, 0 failed in all
+four arms**; wall clock 17:01–18:55 UTC (1806 / 1845 / 1555 / 1595 s); disk 4.3 → 3.8 GiB
+free (floor 1.5). Manifests byte-identical to the earlier 150-clip rounds (`5a893ca6…` en,
+`70bb5aa6…` zh), re-hashed from each payload's `corpus_sha256`.
+
+**The instrument is cycle 16's plus one passive recorder, and the addition is verified
+against the stock datum, not assumed.** `/tmp/wlk17/run_arm.py` = `/tmp/wlk155/run_arm.py`
+(sha256 `bd512f6c…`, the fixed instrument) with two path constants, a recorder chained onto
+`TestHarness.on_update`, and a `feed_t0` stamp on `TestHarness.load_audio`. What it
+snapshots is what the browser renders: `_collect_results` builds `TestState` from each
+`FrontData.to_dict()` and `TestState.text` is committed lines **plus**
+`buffer_transcription`. Three checks: per clip my first-visible timestamp equals the stock
+`first_visible_time_s` (3.230132999829948 vs 3.2301, same to 4 dp on every smoke clip);
+each arm's final-text score reproduces its stock weighted WER/CER to the last digit; and
+the two reused figures come back to the error count (zh control 11.08 % = 643/5805, en
+control 9.96 % = 335/3362, zh H4+H1 9.63 % = 559/5805, en H4+H1 7.20 % = 242/3362).
+Engagement read per arm: `persistent_window` false/false/true/true; pads 0 in both
+controls and 44.2 s at 442 slices (zh) / 37.9 s at 379 (en) in the H4+H1 arms; 0
+whole-clip decodes and 0 clean-decode records anywhere; updates/clip 16–114, median 42–51.
+
+### Verdict, first
+
+**The provisional text is not materially worse under H4+H1. In both languages it is level
+at first-visible and better over the provisional lifetime, and the one metric on which H4+H1
+is behind is a +0.93 pp point estimate whose interval straddles zero.** Mandarin: first-visible
+**76.37 → 75.47 % CER** (−0.90 pp, CI [−1.86, −0.07]), time-weighted **53.65 → 47.46 %**
+(−6.19 pp), prefix-matched pair **9.06 → 9.23 %** (+0.17, CI [−0.62, +0.98]) and
+**12.47 → 11.38 %** (−1.09, CI [−2.44, +0.09]). English: **75.76 → 76.06 % WER** (+0.30, CI
+[−0.45, +1.02]), time-weighted **52.59 → 48.91 %** (−3.68), prefix-matched **14.54 → 15.47 %**
+(+0.93, CI [−0.81, +2.89]) and **14.79 → 13.12 %** (−1.67, CI [−2.89, −0.44], excludes zero in
+H4+H1's favour). Nothing here undercuts the shipping recommendation. **Exposure grows far
+less than the brief assumed** — p50 ×1.25 (zh) and ×1.15 (en) — because the control was already
+committing at its last VAD pause, not as the words were spoken; and the provisional line
+changes *kind*: under H4+H1 **100.0 %** of it is an uncommitted buffer line in both languages
+(mean 24.0 zh / 14.2 en units) against 44.9 % / 57.6 % in the control.
+
+- DONE: Provisional accuracy is measured, not assumed: for control and H4+H1 in en and zh at 150 clips, the WER or CER of the text at first-visible, the time-weighted error rate across the lifetime of the provisional line, and the error rate of the final text, from snapshots taken at each update.
+  Tables below. Corpus-weighted, 150 clips per arm. Final text reproduces the stock report exactly in all four arms. Time-weighted = `Σ rate·s / Σ s` over `[first_visible, final_commit)`; a **prefix-matched companion** is reported beside it because the raw figure is mostly unarrived text — measured, not asserted: of the Mandarin control's 53.65 % time-weighted CER, **49.81 points are deletions** and 3.84 are sub+ins (en 47.00 / 5.60), so the raw column rewards whichever arm keeps the line on screen longer. Per-clip spread on the time-weighted prefix-matched metric: en 78 better / 25 equal / 47 worse (worst +64.8 pp `fleurs_en_1976…`, best −34.7 pp `fleurs_en_1977…`); zh 62 / 39 / 49 (worst +20.6 pp `fleurs_zh_1799…`, best −53.0 pp `fleurs_zh_1764…`). Subgroups (15 longest / 15 shortest exposure): en 19.01 → 16.37 % and 17.28 → 17.43 %; zh 13.68 → 13.21 % and 2.45 → 3.79 % — no subgroup where H4+H1 is materially worse.
+- DONE: The exposure is stated per arm: how long the provisional line stays on screen between first-visible and the final commit, because that is what the viewer reads when commits move to end-of-segment.
+  zh control p50/p95 5.55 / 12.87 s (mean 6.31) → H4+H1 **6.95 / 15.12 s** (mean 7.84), ×1.25 / ×1.18. en control 5.65 / 12.53 s (mean 6.51) → H4+H1 **6.51 / 13.12 s** (mean 7.19), ×1.15 / ×1.05. 0 zero-exposure clips in all four arms. First-visible itself is unchanged (stock p50/p95: zh 3.82/6.26 → 3.88/6.74, en 3.27/4.24 → 3.27/4.26). Share of the provisional lifetime already showing the final text: zh 0.1 → 4.7 %, en 0.3 → 3.5 %.
+- DONE: The MT question is written down rather than guessed: what the cascade needs in order to show whether later commits starve simultaneous translation, and whether these snapshots carry it, so the next round is specified from evidence.
+  **They do not carry it and cannot**: all four arms ran with no translation backend (`effective_config` holds only `mlx_qwen3_asr_persistent_window`), so `buffer_translation` is empty, no line has a `translation`, and `first_translation_time_s` is `None` in all 600 results. A separate cascade run is needed, on the tier-2 worktree, after porting this branch's persistent-window commit — details below.
+
+### zh — n = 150 clips, CER (weighted; errors/units), `--speed 1`
+
+| arm | first-visible CER | first-visible, prefix-matched | time-weighted CER | time-weighted, prefix-matched | final CER | exposure p50 / p95 (s) |
+|---|---|---|---|---|---|---|
+| zh150-control | 76.37 | 9.06 | 53.65 | 12.47 | 11.08 | 5.55 / 12.87 |
+| zh150-h4h1 | 75.47 | 9.23 | 47.46 | 11.38 | 9.63 | 6.95 / 15.12 |
+| **Δ (H4+H1 − control)** | **−0.90** [−1.86, −0.07] | +0.17 [−0.62, 0.98] | **−6.19** [−7.43, −5.04] | −1.09 [−2.44, 0.09] | **−1.45** [−2.30, −0.81] | ×1.25 / ×1.18 |
+
+### en — n = 150 clips, WER (weighted; errors/units), `--speed 1`
+
+| arm | first-visible WER | first-visible, prefix-matched | time-weighted WER | time-weighted, prefix-matched | final WER | exposure p50 / p95 (s) |
+|---|---|---|---|---|---|---|
+| en150-control | 75.76 | 14.54 | 52.59 | 14.79 | 9.96 | 5.65 / 12.53 |
+| en150-h4h1 | 76.06 | 15.47 | 48.91 | 13.12 | 7.20 | 6.51 / 13.12 |
+| **Δ (H4+H1 − control)** | +0.30 [−0.45, 1.02] | +0.93 [−0.81, 2.89] | **−3.68** [−4.55, −2.86] | **−1.67** [−2.89, −0.44] | **−2.77** [−4.05, −1.62] | ×1.15 / ×1.05 |
+
+Bootstrap intervals are paired clip bootstraps, 10 000 draws, on the corpus-weighted metric.
+Units on screen at first-visible: zh 9.8 (control) / 10.2 (H4+H1) of 38.7 reference units;
+en 6.1 / 6.0 of 22.4.
+
+### The MT question, written down
+
+**What the cascade needs.** `MlxLlmTranslationSimul` (`wants_hypothesis_tail = True`) takes
+the committed prefix via `insert_tokens` and drafts over `HypothesisTail`; its policy
+(`paper`/`argmax`/`mass`) publishes by attention mass over the *accessible* source, so the
+source it may translate is gated by the ASR commit cadence — and H4 moves that cadence to
+end-of-segment. A cascade arm must therefore record, per clip, on the same manifest and
+`--speed 1`: (1) `first_translation_time_s` (already a `SampleResult` field the stock
+`observe` fills from `buffer_translation`/line `translation`); (2) the **draft-vs-final
+translation pair with timestamps** — `buffer_translation` while the source was provisional
+vs the line's `translation` on commit — so `chrF(draft, final)` per clip is computable and
+each lag attributable; (3) **the source handed to the MT at each draft call** (committed
+prefix length, tail length), without which "starved" cannot be separated from "started later
+but drafted fine". What these snapshots *do* contribute as that run's input: under H4+H1 the
+tail is populated for **100 %** of the provisional lifetime in every clip (44.9 % / 57.6 % in
+the control), so a tail-hooking translator always has source to draft over; the open question
+is whether its *accessible* prefix advances.
+
+**Which direction to port.** Two-way, and the answer is "port the flag, not the cascade".
+`mlx_qwen3_asr_persistent_window` has **0 hits** in `config.py` on `integration-3` (`065a97b`)
+and on the tier-2 worktree (`df70358`); it arrives with `06e725c` (`asr_mlx_qwen3.py`,
+`config.py`, `parse_args.py`). H1's padding is not a flag anywhere (`--pad-ms` instrumentation
+only). Conversely this branch's `translation_mlx_llm_mt_simul.py` is the older text-frontier
+version, while `integration-3` carries `frontier_mode` (`text`|`time`) and `hold_back_s`,
+`TranslationProgress`, `config.mlx_llm_mt_simul_frontier` (`auto` → `time`) and
+`mlx_llm_mt_simul_hold_back_s`, the `AudioProcessor` cursor + `source_complete` wiring, and
+`caption_display.py`/`caption_events.py`. **That distinction is the experiment**: the text
+frontier is the only one under which H4 can starve the MT, because it advances on the commit
+cadence; the time frontier takes words the audio cursor has covered, which H4 does not move.
+So the matrix is `frontier_mode` ∈ {text, time} × commit cadence ∈ {per-pause, end-of-segment}
+on `5a893ca6…` / `70bb5aa6…`, and the text-frontier row is the answer to the captain's
+question. Port `06e725c` + the pad instrument into the tier-2 worktree; do not port the
+cascade here.
+
+### What this round does not cover
+
+One model (0.6B), one machine, `--speed 1`, FLEURS only, and `--no-clean` — which suppresses
+the extra decode inside `harness.finish()` that earlier cycles proved an instrument artefact,
+but also means the production two-pass `finalization_mode="accuracy"` re-decode is off, so
+*final* text here is not the shipping final text (provisional text is unaffected). Subgroup
+splits in the first checklist item are exploratory, not pre-registered.
+
+### Summary
+
+The provisional caption — 100 % of the viewer's screen time once commits move to
+end-of-segment — is **not worse under H4+H1**: level at first-visible (en +0.93 pp on the
+accuracy-isolated metric, CI straddling zero; zh +0.17 pp, CI straddling zero) and **better
+over the lifetime** (en −1.67 pp CI [−2.89, −0.44]; zh −1.09 pp CI [−2.44, +0.09]), so the
+manufactured risk that the shipping recommendation rests on worse visible text is not real
+on this sample. The raw first-visible and time-weighted figures (~76 % / ~53 %) are almost
+entirely unarrived text — 49.8 of zh's 53.7 time-weighted points are deletions — so they
+were reported as asked *and* paired with a prefix-matched companion that holds coverage
+fixed, and the whole comparison turns on that distinction. Exposure grows only ×1.25 / ×1.15
+on p50 because the control already committed at its last VAD pause. For the cascade, the
+snapshots prove the tail is now always populated (100 % of the window, 24.0 units zh) but
+carry no translation evidence at all, so the starvation question needs its own run on the
+tier-2 worktree after porting `06e725c` — and the text-vs-time `frontier_mode` cross is the
+experiment, because only the text frontier can be starved by a later commit.
+
+Artefacts: `/tmp/wlk17/{run_arm.py,analyze17.py,report17.py,run_arm_arm.sh,all.sh}`,
+`fleurs-150-{en,zh}.json`, `cfg-{control,h4h1}.json`,
+`runs/{en,zh}150-{control,h4h1}{,-report}.json`, `runs/analysis-{en,zh}.txt`,
+`runs/report-tables.md`, `runs/status.txt`. M4 / macOS 26.6.2.
