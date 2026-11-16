@@ -959,3 +959,92 @@ cycles 9-11 (`/tmp/wlkdiag9/run_diag.py`, `/tmp/wlkdiag9/analyze_diag.py`).
 M4 / macOS 26.6.2. Wall clock: live 6m28s, persistent 6m35s, wide 6m46s, diag
 7m12s, offline 3.5 s, the three Arm B arms 81 s each — the round finished inside
 its 120-minute budget with every arm run.
+
+## Stage Report: implementation (cycle 13 — the four empty ablation cells, en and zh)
+
+Measurement only, no source change: worktree clean at `8d8baba` before and after,
+nothing staged, nothing pushed, no issue or PR comment. Scaffolding in
+`/tmp/wlkablate` (`run_arm.py` = the cycle-10 splice instrument with two path
+constants changed, `run_arms.sh`, `cfg-*.json`, `analyze.py`); disk 2.0 → 1.6 GiB
+free (floor 1.5 GiB), arm audio deleted after the last arm. **No flag was built.**
+H2 and H4 are the branch flags (`--mlx-qwen3-asr-unfixed-token-num 100000` through
+`--config`; `--mlx-qwen3-asr-persistent-window`); **H1 has no flag on the branch**, so
+it is expressed by the cycle-10 out-of-tree instrument (`--pad-ms 100`, the same code
+that produced the 9.57 % padded arm), run with `--no-clean` so no extra decode touches
+the latency fields. One MLX process per arm; stock `BenchmarkRunner`,
+`whisperlivekit.metrics` scorer, `benchmarks/corpora/fleurs-90.json`
+(`corpus_sha256 95586eb7…`), `Qwen/Qwen3-ASR-0.6B`, `mlx-qwen3-asr` 0.4.4 on
+`PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`, `--warmup --repeats 1 --speed 1`, 30/30 ok
+0 failed in every arm. Anchors reproduce bit-for-bit: live en 13.76 % (105/763), live
+zh 11.15 % (145/1300).
+
+- DONE: The four empty grid cells are measured on both target languages: H2 alone, H1 alone, H1 plus H2, and all three switches, each named by its hypothesis, on the same 30 FLEURS clips for en and for zh at a live feed.
+  Eight new arms (`runs/{en,zh}-{h2,h1,h1h2,h4h1h2}-report.json`), 30/30 ok 0 failed each, `fleurs-90.json` `corpus_sha256 95586eb7…`, one MLX process per arm, 439–507 s each. en WER: control 13.76 · **H2 13.76** · **H1 12.98** · **H1+H2 12.71** · H4 12.19 · H4+H2 9.04 · H4+H1 9.57 · **H4+H1+H2 8.13**. zh CER: control 11.15 · **H2 11.00** · **H1 10.69** · **H1+H2 10.69** · H4 10.77 · H4+H2 10.54 · **H4+H1+H2 10.00** (H4+H1 zh has no anchor and was not run). Each switch's engagement is read back from the arm's own artefacts, not assumed: H2 → `effective_config` and the library's `rollbacks[].unfixed_tokens` both 100000 (H1-only arms show the default 5); H4 → `persistent_window: true`; H1 → 52 interior VAC gaps + 30 heads padded in en, 47 + 30 in zh.
+- DONE: Each arm reports its WER or CER and its first-visible, first-committed and finalisation latency at p50 and p95, so gain and cost sit in one row.
+  Two tables below; every row carries its weighted rate, errors/units, the delta against control with the word better/worse/level, all three latency pairs and the RTF. Cost is visible in the same row as gain: H2's 0.00 pp en costs RTF 0.123 → 0.263 and finalisation p95 0.31 → 2.09 s; H1's −0.79 pp costs RTF 0.205 and p95 1.19 s; H4+H1+H2's −5.64 pp costs first-committed p50 5.73 → 11.87 s (commit at EOF) and RTF 0.396. Falsifiable check: an arm whose flag did not reach the engine would show `null`/`5` in `effective_config` and `rollbacks[].unfixed_tokens`, which is exactly what the H1-only rows print — the columns distinguish "switch off" from "switch ineffective".
+- DONE: The attribution is stated: does the wide revision budget help without the persistent window, does padding help without it, and what each switch adds on top of the others, in points per language.
+  **H2 alone does nothing** (en +0.00 pp — 105/763 before and after, the 5 moved clips cancel exactly; zh −0.15 pp), so the persistent window stays necessary: H2 captures 0 of the −4.72 pp it shows with H4 and all of its value is gated behind a long window. **H1 alone is real but small** (en −0.79 pp, zh −0.46 pp — the largest single switch in zh, above H4's −0.38) and does not substitute for H4 (H1+H2 −1.05 / −0.46 vs H4+H1 −4.19). **en is strongly super-additive** (singles sum −2.36 pp, all three −5.64; H1 adds −0.92 over H4+H2, H2 adds −1.45 over H4+H1, H4 adds −4.59 over H1+H2), **zh roughly additive** (−0.99 sum vs −1.15, and in zh H1+H2 is byte-identical to H1 on 30/30 transcripts).
+
+### en — FLEURS 30 clips, WER (weighted; errors/units), `--speed 1`
+
+| arm (switches on) | WER | vs control | first-visible p50 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|
+| control (none) | 13.76 (105/763) | — | 3.26 | 5.73 / 9.77 | 0.04 / 0.31 | 0.123 |
+| **H2** (H2) | **13.76** (105/763) | **+0.00 pp — level** | 3.26 | 6.46 / 11.83 | 0.08 / 2.09 | 0.263 |
+| **H1** (H1) | **12.98** (99/763) | **−0.79 pp better** | 3.26 | 6.33 / 10.96 | 0.05 / 1.19 | 0.205 |
+| **H1+H2** (H1, H2) | **12.71** (97/763) | **−1.05 pp better** | 3.26 | 6.54 / 12.63 | 0.06 / 3.10 | 0.278 |
+| H4 (H4) | 12.19 (93/763) | −1.57 pp better | 3.26 | 10.69 / 19.95 | 0.26 / 0.37 | 0.134 |
+| H4+H2 (H4, H2) | 9.04 (69/763) | −4.72 pp better | — ᵃ | — ᵃ | 2.47 / 8.24 | 0.268 |
+| H4+H1 (H4, H1) | 9.57 (73/763) | −4.19 pp better | 3.25 | 11.34 / 21.32 ᵇ | 0.86 / 1.45 ᵇ | 0.187 |
+| **H4+H1+H2** (all three) | **8.13** (62/763) | **−5.64 pp better** | 3.27 | 11.87 / 24.61 | 1.46 / 4.44 | 0.396 |
+
+ᵃ cycle-11 arm, `--speed 0`: first-visible/first-committed undefined.
+ᵇ cycle-10 arm ran with the instrument's two extra decodes on, so finalisation is
+inflated — upper bound. Whole-clip one-shot ceiling 7.60 % (58/763).
+
+### zh — FLEURS cmn_hans_cn 30 clips, CER, `--speed 1`
+
+| arm (switches on) | CER | vs control | first-visible p50 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|
+| control (none) | 11.15 (145/1300) | — | 3.27 | 6.30 / 12.61 | 0.03 / 0.11 | 0.108 |
+| **H2** (H2) | **11.00** (143/1300) | **−0.15 pp better** | 3.42 | 6.72 / 15.48 | 0.12 / 2.20 | 0.223 |
+| **H1** (H1) | **10.69** (139/1300) | **−0.46 pp better** | 3.42 | 6.63 / 13.59 | 0.05 / 0.76 | 0.170 |
+| **H1+H2** (H1, H2) | **10.69** (139/1300) | **−0.46 pp better** | 3.38 | 6.72 / 14.94 | 0.15 / 2.17 | 0.222 |
+| H4 (H4) | 10.77 (140/1300) | −0.38 pp better | 3.75 | 11.61 / 20.36 | 0.29 / 0.36 | 0.110 |
+| H4+H2 (H4, H2) | 10.54 (137/1300) | −0.62 pp better | 3.75 | 12.00 / 21.14 | 0.61 / 1.07 | 0.174 |
+| **H4+H1+H2** (all three) | **10.00** (130/1300) | **−1.15 pp better** | 3.50 | 12.61 / 22.33 | 1.19 / 2.18 | 0.231 |
+
+Whole-clip one-shot ceiling 8.38 % (109/1300). H4+H1 (pad without the budget) has
+no zh anchor and was not run.
+
+### What the remaining cost is, and where the gain is concentrated
+
+Both directions put the residual cost in **first-committed, not finalisation**: the
+persistent window commits at EOF, so first-committed p50 roughly doubles (en
+5.73 → 11.87 s, zh 6.30 → 12.61 s) with p95 24.61 / 22.33 s, while the tail the wide
+budget adds is finalisation p95 4.44 / 2.18 s. **Concentration caveat:** half of en's
+−5.64 pp is one clip — `1850` 91.67 → 0.00 % (22 of the 43 errors removed; "eight zero
+two point one one a" becomes "802.11a") — and the same arm *worsens* `1713` 3.70 →
+11.11 (`Goma` → `Bagoma`). `1713` moves the other way per switch: H1 alone reads
+`Bogota`, H2 alone keeps `Goma`, so the pad is not uniformly good. With n = 30 the
+p50/p95 are descriptive, not tail estimates.
+
+### Summary
+
+The four missing cells say the two switches are not substitutes for the persistent
+window and are not independent of each other. **The wide revision budget alone is
+worth nothing** (en exactly 0.00 pp, zh −0.15 pp) at double the RTF; the persistent
+window keeps its 5.3 s first-commit price because nothing else recovers its 4.72 pp.
+**The splice pad alone is worth −0.79 pp in en and −0.46 pp in zh**, the largest
+single switch in Mandarin, but only reaches its −4.19 pp in English once the window
+persists, and in zh it makes the budget redundant (byte-identical transcripts). All
+three together are the best configuration measured in either direction — en 8.13 %
+(0.53 pp above the whole-clip ceiling, 92 % of the gap) and zh 10.00 % (42 % of the
+gap) — at the cost of the commit-at-EOF latency, and with half the English gain
+traceable to one clip.
+
+Artefacts: `/tmp/wlkablate/{run_arm.py,run_arms.sh,analyze.py,cfg-control.json,cfg-h2.json,cfg-h4-h1-h2.json}`,
+`runs/{en,zh}-{h2,h1,h1h2,h4h1h2}{-report,}.json`, `runs/analysis.txt`, `runs/status.txt`,
+`runs/slices.jsonl` + the eight arm logs. Instruments reused unchanged from cycle 10
+(`/tmp/wlkpad/run_pad.py`) and cycles 10–12 (anchor reports). M4 / macOS 26.6.2.
+Wall clock 75 min for eight arms; every arm landed inside the 120-minute budget.
