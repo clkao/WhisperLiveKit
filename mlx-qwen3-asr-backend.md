@@ -1133,3 +1133,149 @@ between runs through wall-clock-dependent decode trigger points.
 Artefacts: `/tmp/wlk150/{build_manifest.py,run_arm.py,run_arms.sh,analyze.py}`,
 `fleurs-150-{en,fr}.json`, `runs/{en,fr}-{control,h1}{,-report}.json`,
 `runs/analysis.txt`, `runs/status.txt`, arm logs. M4 / macOS 26.6.2.
+## Stage Report: implementation (cycle 15 — Mandarin at n = 150, and the grid re-run with the fixed instrument)
+
+Measurement only, **no source change**: worktree clean at `8d8baba` before and after, 0
+staged files, nothing pushed, no issue or PR comment. **No flag was built.** The
+instrument is cycle 14's `/tmp/wlk150/run_arm.py` with only its two path constants
+changed — the version whose `--no-clean` really suppresses the re-decode inside
+`harness.finish()` (`STATE["clean"] = bool(clean)`, its line 93). **Nothing from cycles
+10 or 13 is reused as a payload.** Scaffolding in `/tmp/wlk15` (`run_arm.py` = the
+fixed instrument, `build_manifest.py`, `part1_zh.sh`, `part2_grid.sh`, `analyze.py`,
+`analyze15_grid.py`, `runs/`), MLX only, cached model and corpora, `HF_HUB_OFFLINE=1`,
+`mlx-qwen3-asr` **0.4.4** on `PYTHONPATH=/tmp/wlk044:/tmp/wlkrunsite`,
+`Qwen/Qwen3-ASR-0.6B`, `--warmup --repeats 1 --speed 1 --no-clean`, one MLX process
+per arm, **0 failed clips in all fourteen arms**. Disk 3.7 GiB free at the end (floor
+1.5); `fleurs_test_full` untouched. Wall clock 08:56–09:26 UTC: Part 1 1806 / 1805 s,
+the twelve grid arms 369–389 s (en) and 388–407 s (zh).
+
+**The instrument is verified on my own arms, not assumed.** Every cycle-15 payload
+records **0** clean-decode records and **0** whole-clip decodes; the cycle-13 payloads
+record **82** `finals` re-decodes plus 30 whole-clip decodes on the same 30-clip arm
+(`/tmp/wlkablate/runs/en-h1.json` vs `/tmp/wlk150/runs/en-h1.json`), and each grid arm
+prints `clean-decode records 0`.
+
+- DONE: Mandarin is validated at 150 clips: the control and H1-alone arms on the same sampling rule as English and French, with the difference, its bootstrap interval and the per-clip spread, so the shipping direction has a number at the same sample size as the other two languages.
+  **zh −0.45 pp better** (11.08 % → 10.63 %, 643 → 617 errors of 5805), paired clip bootstrap 95 % CI **[−1.26, +0.16] pp** — it straddles zero. **Per clip: 18 better / 118 equal / 14 worse** (118 byte-identical), largest improvement `fleurs_zh_1850_388460991317794418` 50.00 → 0.00 (−50.00 pp, 18 → 0 errors), largest regression `fleurs_zh_1661_1868048601472473390` 0.00 → 10.71 (+10.71 pp, 0 → 3). **One clip carries the Mandarin result**: the top clip removes 18 of the net 26 errors (69 %) and the top three remove all 26 (100 %); without the top clip H1 reads 10.94 % (−0.14 pp). Sampling rule, identical to en/fr: universe = the 945 `zh` rows of `fleurs_test_full.manifest.json` in `file` order; **stratum A** = that language's 30 `fleurs-90.json` zh clips (all inside the split, the two cache copies SHA-256 identical, asserted at build time); **stratum B** = `random.Random(0).sample` of 120 from the remaining 915; manifest `70bb5aa6…`, 150 of 945, **1785.8 s**, written in file order and fed to both arms unchanged. **The join is measured**: this run's own 30-clip control reproduces the cycle-13 anchor **bit-for-bit, 11.15 % (145/1300)**, and its H1 half is 10.77 % (140/1300) against cycle 13's 10.69 % (139/1300) — a **1-error / 0.08 pp** self-swing, against English's 6-error / 0.79 pp. Engagement read from each arm's own payload: H1 inserted **442 pads / 44.2 s** of silence at zh's **292 interior splice gaps** (+150 trimmed heads); the control payload shows 0 pads and the *same* 292 gaps. `effective_config` is `persistent_window false`, `unfixed_token_num null` in both arms. Strata: 30-clip subset −0.38 pp, 120 random −0.47 pp.
+- DONE: The key grid cells are re-run with the fixed instrument at 30 clips: control, H2, H4, H4+H2, H4+H1 and all three, each with WER or CER and first-visible, first-committed and finalisation latency at p50 and p95, so the grid is internally consistent again.
+  Twelve arms, en and zh, on `benchmarks/corpora/fleurs-90.json` (`corpus_sha256 95586eb7…`), the same 30 clips as cycles 10 and 13, 369–407 s per arm, 30/30 ok 0 failed each. Tables below; **latency is clean now**, so cycle 13's footnote about instrument-inflated finalisation no longer applies. Switch engagement read back per arm: H2 → `unfixed_token_num 100000` in `effective_config`, H4 → `persistent_window true`, H1 → 82 pads / 8.2 s at 52 interior gaps (en) and 77 pads / 7.7 s at 47 (zh) in exactly the two padded arms, and 0 pads in the other four — the columns separate "switch off" from "switch ineffective".
+- DONE: Every re-run cell states how far it moved from its cycle-13 value, so it is clear which earlier conclusions survive the instrument fix and which do not.
+  **Eleven of the twelve cells reproduce their cycle-13 value to the error count; one moved.** en: control/ H2 / H4 / H4+H2 / H4+H1 all **+0.00 pp** (105, 105, 93, 69, 73 of 763 errors — the same integers), **H4+H1+H2 8.13 → 8.39 % (+0.26 pp worse, 62 → 64 errors)**. zh: control/H2/H4/H4+H2/all-three all **+0.00 pp** (145, 143, 140, 137, 130 of 1300). Two of the en cells being compared ran at a different speed in their anchor cycle (H4 and H4+H2 at `--speed 0`, cycle 11) and one at cycle 10; they still reproduce exactly, so speed did not matter to the text either. **zh H4+H1 had no cycle-13 anchor** (never run) and is a new measurement: **9.62 % (125/1300)**, −1.54 pp.
+
+### zh — FLEURS full-split sample, n = 150 clips, `--speed 1`, CER (weighted; errors/units)
+
+| arm | CER | vs control | first-visible p50/p95 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|
+| control | 11.08 (643/5805) | — | 3.78 / 6.25 | 6.20 / 10.62 | 0.03 / 0.08 | 0.095 |
+| **H1** | **10.63** (617/5805) | **−0.45 pp better** | 3.74 / 6.26 | 6.20 / 10.63 | 0.03 / 0.09 | 0.096 |
+
+H1 costs no measurable latency in Mandarin: the two arms' p50/p95 agree to within
+0.04 s at every seam, because the only audio H1 adds is 0.29 s/clip of silence. The
+three languages now read **en −0.92 pp [−1.59, −0.30]**, **fr +0.16 pp [−0.50, +0.82]**,
+**zh −0.45 pp [−1.26, +0.16]** — only English's interval excludes zero.
+
+### en — FLEURS 30 clips, WER (weighted; errors/units), `--speed 1`, fixed instrument
+
+| arm (switches on) | WER | vs control | cycle 13 | moved | first-visible p50/p95 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|---|---|
+| control (none) | 13.76 (105/763) | — | 13.76 | **+0.00** | 3.25 / 4.03 | 5.71 / 9.74 | 0.03 / 0.26 | 0.118 |
+| **H2** | 13.76 (105/763) | +0.00 pp level | 13.76 | **+0.00** | 3.26 / 4.00 | 5.90 / 10.56 | 0.03 / 0.50 | 0.146 |
+| H4 | 12.19 (93/763) | −1.57 pp better | 12.19 | **−0.00** | 3.25 / 4.30 | 10.70 / 19.99 | 0.26 / 0.31 | 0.128 |
+| H4+H2 | 9.04 (69/763) | −4.72 pp better | 9.04 | **+0.00** | 3.25 / 4.30 | 11.17 / 21.63 | 0.61 / 1.37 | 0.221 |
+| H4+H1 | 9.57 (73/763) | −4.19 pp better | 9.57 | **−0.00** | 3.25 / 4.23 | 10.68 / 20.00 | 0.27 / 0.35 | 0.137 |
+| **H4+H1+H2** | **8.39** (64/763) | −5.37 pp better | 8.13 | **+0.26 worse** | 3.25 / 4.24 | 11.12 / 21.19 | 0.65 / 1.27 | 0.225 |
+
+### zh — FLEURS 30 clips, CER (weighted; errors/units), `--speed 1`, fixed instrument
+
+| arm (switches on) | CER | vs control | cycle 13 | moved | first-visible p50/p95 | first-committed p50/p95 | finalisation p50/p95 | RTF |
+|---|---|---|---|---|---|---|---|---|
+| control (none) | 11.15 (145/1300) | — | 11.15 | **+0.00** | 3.29 / 5.77 | 6.29 / 12.63 | 0.03 / 0.09 | 0.106 |
+| **H2** | 11.00 (143/1300) | −0.15 pp better | 11.00 | **+0.00** | 3.28 / 5.78 | 6.38 / 13.17 | 0.04 / 0.41 | 0.133 |
+| H4 | 10.77 (140/1300) | −0.38 pp better | 10.77 | **−0.00** | 3.73 / 6.03 | 11.60 / 20.37 | 0.29 / 0.36 | 0.109 |
+| H4+H2 | 10.54 (137/1300) | −0.62 pp better | 10.54 | **−0.00** | 3.77 / 6.02 | 12.01 / 21.05 | 0.59 / 1.02 | 0.171 |
+| H4+H1 | 9.62 (125/1300) | −1.54 pp better | **never run** | — | 3.49 / 5.53 | 11.59 / 20.33 | 0.29 / 0.37 | 0.111 |
+| **H4+H1+H2** | **10.00** (130/1300) | −1.15 pp better | 10.00 | **+0.00** | 3.48 / 5.55 | 12.13 / 21.08 | 0.60 / 1.10 | 0.181 |
+
+### The two conclusions, tested again
+
+**1. Does H2 alone still do nothing? Yes — and now the "nothing" is 30 byte-identical
+transcripts rather than a single number.** en H2 alone is 13.76 % / 105 of 763 against
+13.76 % / 105 of 763, the *same integers*, and a per-clip diff of the two payloads
+shows **30/30 transcripts byte-identical** to the cycle-13 H2 arm; zh is 11.15 → 11.00
+(145 → 143 of 1300), two clips' worth of churn in a sample that this project has
+already shown to swing up to six errors against itself. It is not free: RTF rises
++24 % (en 0.118 → 0.146) and +25 % (zh 0.106 → 0.133) and finalisation p95 goes
+0.26 → 0.50 s (en) and 0.09 → 0.41 s (zh). The mechanism is unchanged and is why the
+result is stable across the instrument fix: with no persistent window every VAD pause
+still discards the decoder state, so a wider revision budget has no frozen prefix to
+re-open.
+
+**2. Is H4 still the expensive switch, and does the ordering hold? "H4 costly" holds;
+"H1 best value" needs a correction — at 30 clips H1 and H4 are level on accuracy and
+H1 wins only on cost — and H2 is useless *alone* but not inert.** H4 is where the
+latency price sits and it is now measured twice with a clean instrument: first-committed
+p50 5.71 → 10.70 s in en (×1.87) and 6.29 → 11.60 s in zh (×1.84), p95 to ~20–21 s,
+because the persistent window commits once at EOF (30 commits for 30 clips) instead of
+per pause. H2's price is throughput and the finalisation tail; H1's is 0.27 s/clip of
+inserted silence and nothing measurable at n = 150. The correction: **on these 30 clips
+H1 alone and H4 alone score identically** — en 12.19 % (93/763) for both (cycle 14's
+fixed-instrument H1 payload on the same 30 clips; H4 measured today), zh 10.77 %
+(140/1300) for both (Part 1's 30-clip subset today; H4 today) — so "H1 is the better
+value" survives on *cost*, not on accuracy, and cycle 13's −0.79 / −1.57 split between
+them does not. And the interaction is where the value actually is: H2 alone is worth
++0.00 pp (en) and −0.15 pp (zh), but H2 on top of H4 is worth a further **−3.15 pp**
+(en 12.19 → 9.04) and −0.23 pp (zh 10.77 → 10.54), while on top of H4+H1 it is
+**+0.38 pp worse** in zh (9.62 → 10.00). The new zh H4+H1 cell (9.62, −1.54 pp) is the
+best Mandarin cell measured at 30 clips and beats zh H4+H2 (10.54) by 0.92 pp — the
+mirror image of English, where H4+H2 (9.04) beats H4+H1 (9.57) by 0.53 pp.
+
+### Protocol notes worth recording
+
+**A same-name collision cost the Part-1 control payload, not its numbers.** Part 2's
+first zh cell is also called `zh-control`, so `runs/zh-control{-report,}.json` now hold
+the **30-clip** arm and the Part-1 150-clip control's per-clip JSON was overwritten
+(00:44). Its analysed numbers survive in `runs/analysis-part1-zh.txt`, written at
+00:00 before the collision: weighted CER 11.08 % (643/5805), the 30-clip subset
+11.15 % (145/1300), the 120-clip subset 11.05 % (498/4505), all three latency pairs,
+the per-clip spread and the bootstrap CI. The Part-1 `zh-h1` payload (740 KB, 00:00)
+is intact, so half the pair is still re-derivable clip by clip. Nothing else collides.
+**Fix for a next round**: suffix Part-1 stems with the sample size (`zh150-control`).
+
+**Latency columns are only like-for-like among today's twelve arms.** The cycle-13
+table re-used a cycle-11 arm for en H4 and H4+H2 (those ran at `--speed 0`) and a
+cycle-10 arm for en H4+H1, and H4+H1's cycle-13 finalisation (0.86 / 1.45 s) was the
+buggy instrument's two extra decodes. Today's H4+H2 finalisation is 0.61 / 1.37 s
+where the cycle-13 row said 2.47 / 8.24 s, and H4+H1 is 0.27 / 0.35 s where it said
+0.86 / 1.45 s — those two cycles' latency numbers should not be quoted beside today's.
+
+**What the instrument fix actually moved.** Of twelve like-for-like cells, one moved:
+en all-three, 62 → 64 errors, and a per-clip diff isolates it to a single clip,
+`fleurs_en_1735` 8.16 → 12.24 % (the same clip cycle 11 flagged when the wide budget
+first moved `1735` 16.33 → 12.24). So cycle 14's 6-error swing on the en *H1-alone*
+arm did not repeat as a systematic offset across the grid: the H1-bearing H4+H1 cell
+reproduced to the error count. The headline all-three figure is now **8.39 %, not
+8.13 %**, and that 2-error difference is the same order as the run-to-run churn
+already measured.
+
+### Summary
+
+Mandarin at n = 150 is **−0.45 pp better with H1** (11.08 → 10.63 % CER, CI
+[−1.26, +0.16]) — the right sign but an interval that straddles zero, and 69 % of the
+net 26-error gain is one clip, so H1 is not yet a shipped win in the shipping
+direction, and its 30-clip control reproduces the cycle-13 anchor bit-for-bit so the
+sample is honest. The grid re-run with the fixed instrument reproduces **eleven of
+twelve** cycle-13 cells to the error count (the twelfth, en all-three, moves 62 → 64
+errors = 8.13 → 8.39 %, on one clip), so the earlier grid conclusions stand rather
+than being artefacts of the `--no-clean` bug: H2 alone is still worth nothing (30/30
+byte-identical transcripts, +25 % RTF), H4 is still the switch that charges
+first-committed latency (p50 ×1.85 in both languages), and the ordering survives as a
+statement about switches alone — with the measured correction that H1 and H4 are
+*level* on accuracy at 30 clips and H1 wins only on cost, and that the new zh H4+H1
+cell (9.62 %, −1.54 pp) shows H2 on top of H4+H1 is worse in Mandarin while H2 on top
+of H4 is worth −3.15 pp in English.
+
+Artefacts: `/tmp/wlk15/{run_arm.py,build_manifest.py,part1_zh.sh,part2_grid.sh,analyze.py,analyze15_grid.py}`,
+`fleurs-150-zh.json`, `runs/analysis-part1-zh.txt`, `runs/analysis-part2-{en,zh,both}.txt`,
+`runs/zh-h1.json` (Part 1, n = 150),
+`runs/{en,zh}-{control,h2,h4,h4h2,h4h1,h4h1h2}{,-report}.json` + arm logs,
+`runs/status.txt`, `runs/slices.jsonl`. M4 / macOS 26.6.2.
