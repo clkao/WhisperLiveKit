@@ -1,15 +1,15 @@
 ---
 id: p0f67wa79kd56yh3bs0cca2e
 title: mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
-status: validation
+status: done
 source: WhisperLiveKit Apple-Silicon backend work
 started: 2026-08-25T15:52:13Z
-completed:
-verdict:
+completed: 2026-11-21T22:05:05Z
+verdict: PASSED
 score:
 worktree: .worktrees/spacedock-ensign-mlx-qwen3-asr-pr
 issue:
-pr:
+pr: "#425"
 gates:
     version: 1
     records:
@@ -136,7 +136,8 @@ gates:
                 reason: 'Captain directive 2026-11-21 (verbatim): "ok send the comment and push." Approves validation attempt-6: the glued-join defect is fixed at the PR head with the maintainer-visible reply drafted, and the branch is pushed to PR #425.'
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+mod-block:
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
