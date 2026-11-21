@@ -121,6 +121,11 @@ gates:
               application:
                 target-stage: done
                 state: superseded
+            - id: gate-attempt:p0f67wa79kd56yh3bs0cca2e-validation-6
+              briefing:
+                id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-6:revision-1
+                digest: sha256:736ee06c90abec76cc1f0e3d38ef5c85b750e007fcdd227cc4b845ace4bcadd3
+                room-ref: '@review/validation/briefing-6'
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer

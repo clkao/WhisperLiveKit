@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-6:revision-1",
+  "question": "Do the four commits on pr425-fix answer the maintainers 2026-11-21 review, and should the minimal set be pushed to PR #425?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-6:revision-1:item-1",
+      "uri": "git-root://state/8d504cafbbe3c80a5863dd9c2252080425f600e0/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:95565cb9264f367b333500714866ac6b35a1fef2d4a5c3ed45f4ef306227a17f",
+      "mediaType": "text/markdown",
+      "summary": "Validation PASSED at HEAD 8d8baba. The maintainer defect reproduces at the pushed head 91d2b01 (fr 13.9181 % weighted WER, his 13.92 %/119 to the digit, his three glued strings verbatim, 4/30 clips) and is absent at HEAD (13.0994 %, 112/855, 0/30 glued, 0 glue in 1655 client snapshots). Minimal set to push: 9d60aa8 plus 8d8baba; 06e725c and 30b1573 are inert unless asked for. Cost: commits per clip 4.93 to 2.03, first committed text p50 4.03 to 7.30 s, first visible unchanged, labelled non-interleaved. Not fixed: the revision is applied in place, so his 1893 and 1913 keep their error counts and the whole gain is 1739 and 1836. Named gaps: zh at HEAD unmeasured, interleaved latency skipped on the 5 GB disk floor, full CI skipped because it downloads a 5.9 GB checkpoint."
+    }
+  ]
+}
