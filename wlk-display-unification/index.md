@@ -665,3 +665,22 @@ transcription call sites only; the translation side keeps its own loop tests.
   in the PR: the log grew during the session (285 -> 3069 bytes before finish, 4097 after, 34
   lines, transcription_final only because the backend commits without drafts and translation
   was off).
+
+- Cycle 10 (2026-11-21 maintainer re-review on PR #449, head `98ca00b`): the six 2026-11-13
+  findings are confirmed addressed and CI is green. The one open ask is the consumer: a link to
+  the TUI client that reads the stream, which also answers which events and fields are actually
+  needed. Response performed: the consumer branch was restacked onto the current PR head (it had
+  been built on `a5cfcc4`, one commit behind `98ca00b`) -> `98ca00b` + 4 commits, tip `4b6240c`,
+  pushed to fork `spacedock-ensign/tui-model-view` (forced from the stale `ea438ea`, explicit
+  lease), and the reply posted (issuecomment-7067980158) with the compare link
+  `compare/98ca00b...spacedock-ensign/tui-model-view` and the field accounting below.
+  Finding for the contract: the display consumes `type` and `text` only. `t`/`audio_t` are
+  unused (the view steps its own clock, which is what makes replay deterministic) and
+  `committed`/`source`/`fresh` are unused (they describe draft provenance, i.e. measurement,
+  not rendering). No rendering consumer anywhere reads those five columns. The reply recommends
+  keeping them and offers to cut the payload to `type` + `text` (+ `t`) if the maintainer
+  prefers the leanest contract; the decision is the maintainer's and is now the only open item
+  on the PR. Verification at the new tip: 87 passed (test_tui_display + test_caption_display +
+  test_overlay_replay), 33 passed (test_caption_events + test_translation_emission +
+  test_asr_emission), ruff clean, and `python -m whisperlivekit.tui --replay
+  tests/golden/zh_long_time_frontier.jsonl` renders 52 events into 8 caption lines.
