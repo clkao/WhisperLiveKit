@@ -4,6 +4,7 @@ status: backlog
 score: 0.4
 source: follow-up from simulst-eval-harness validation cycle 2, finding 1
 id: ebbnkt7fwn907mjbf3n3ny7m
+archived: 2026-11-21T19:26:27Z
 ---
 
 `benchmarks/README.md`'s chrF bullet and the report's `measurement.chrf` note say both sides get the WER normalization and lose whitespace. They do not say how far that moves the number or what it means for the reader.
