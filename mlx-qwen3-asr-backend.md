@@ -126,6 +126,17 @@ gates:
                 id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-6:revision-1
                 digest: sha256:736ee06c90abec76cc1f0e3d38ef5c85b750e007fcdd227cc4b845ace4bcadd3
                 room-ref: '@review/validation/briefing-6'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:validation:6
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-6:revision-1
+                by: person:captain
+                at: "2026-11-21T22:04:08.156082Z"
+                decision: approve
+                reason: 'Captain directive 2026-11-21 (verbatim): "ok send the comment and push." Approves validation attempt-6: the glued-join defect is fixed at the PR head with the maintainer-visible reply drafted, and the branch is pushed to PR #425.'
+              application:
+                target-stage: done
+                state: pending
 ---
 
 # mlx-qwen3-asr ASR backend + generalized ASR wrapper layer
