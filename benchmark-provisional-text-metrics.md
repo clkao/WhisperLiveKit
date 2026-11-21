@@ -4,6 +4,17 @@ status: backlog
 score: 0.55
 source: adjacent to #477, which scores the translation; this scores the recognition text over time
 id: y0dy11789x4m29hbxwyd9awf
+gates:
+    version: 1
+    records:
+        - id: gate:y0dy11789x4m29hbxwyd9awf:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:y0dy11789x4m29hbxwyd9awf-backlog-1
+              briefing:
+                id: briefing:y0dy11789x4m29hbxwyd9awf:backlog:attempt-1:revision-1
+                digest: sha256:253ecc4b735e2038dc2e1191b0682119406f6dee88bf220a3a0f169f0db41406
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 The suite scores the final text and, after #477, reports when the first translation appeared. It cannot

@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:y0dy11789x4m29hbxwyd9awf:backlog:attempt-1:revision-1",
+  "question": "Does the provisional-text metrics task start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:y0dy11789x4m29hbxwyd9awf:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/cd49348249ee5b6e2f261a9ec80880fa467d273f/benchmark-provisional-text-metrics.md",
+      "rev": "sha256:9bbd7c92c235babd964a2ca40cc8116230f1e5938b8df1844732a11f7f951352",
+      "mediaType": "text/markdown",
+      "summary": "Adds the recognition-side companion to #477: record the per-update text series and report prefix-matched accuracy at first-visible, time-weighted error rate, visible changes split into appends and rewrites, clip-complete time, and a same-arm replicate. Commit-policy changes move these numbers while leaving the final score alone, so a report without them cannot tell two products apart."
+    }
+  ]
+}
