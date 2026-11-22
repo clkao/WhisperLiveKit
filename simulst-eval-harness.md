@@ -84,6 +84,11 @@ gates:
               application:
                 target-stage: done
                 state: superseded
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-validation-3
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-3:revision-1
+                digest: sha256:d7a80c4e3eb101c8356f241e5a18be05a7e7ef6dd51f250bd5a0136bb29fb335
+                room-ref: '@review/validation/briefing-3'
 started: 2026-08-27T19:46:38Z
 ---
 

@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-3:revision-1",
+  "question": "Tier 1 answers #477 as verified, with one guard outstanding: ship it, or bounce it for the fix?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-3:revision-1:item-1",
+      "uri": "git-root://state/3961e881f0bf9901f74c2fd6e622387279a2d261/simulst-eval-harness.md",
+      "rev": "sha256:917fe6b58d11d8b79a146373cd664a25eea7c838abed51c8ef59e70086a113f4",
+      "mediaType": "text/markdown",
+      "summary": "Validation reproduced every chrF value independently: 17 pairs, both corpus aggregates and all six checked-in rows match sacrebleu 2.6.0 exactly, five arithmetic mutations break the pinned tests, the join and corpus file verify, and the branch sits on current origin/main. One criterion clause fails: provisional_lead_s is gated on the buffer being non-empty rather than on the backend drafting, reproduced at 0.35 s. Three smaller findings on alignatt config, an unrecorded boundary row, and an undisclosed fallback."
+    }
+  ]
+}
