@@ -717,7 +717,7 @@ transcription call sites only; the translation side keeps its own loop tests.
 - DONE: docs/configuration.md documents that line shape and links the reference consumer next to --event-log
   The `--event-log` table row carries the branch link (https://github.com/clkao/WhisperLiveKit/tree/spacedock-ensign/tui-model-view), the section lists the five keys as shared by all four types ("a type adds no field of its own"), and the stale "loop does not read backend progress" sentence is replaced by "the translation loop receives no tap".
 - DONE: A log written by the new writer loads in the reference consumer, and the checked-in goldens match the new line shape instead of the old one
-  Consumer head `8964a27` (rebased onto `10e4319`): `load_caption_events` filters each row to the dataclass's fields (chosen over tolerating one known extra key — `session` is a row key for a shared log, and filtering by the dataclass keeps a log from a later writer loadable); `scripts/build_golden_streams.py` replays every golden through the real `EventTap` -> `EventLog` (`--check` reports stale ones; verified idempotent), so all five goldens carry `session` + `t/audio_t/type/text` with stream-relative `t`.
+  Consumer head `24355b5` (rebased onto `10e4319`): `load_caption_events` filters each row to the dataclass's fields (chosen over tolerating one known extra key — `session` is a row key for a shared log, and filtering by the dataclass keeps a log from a later writer loadable); `scripts/build_golden_streams.py` replays every golden through the real `EventTap` -> `EventLog` (`--check` reports stale ones; verified idempotent), so all five goldens carry `session` + `t/audio_t/type/text` with stream-relative `t`. The script puts the repo root on `sys.path` first, so `python scripts/build_golden_streams.py --check` works from any cwd without `PYTHONPATH` (verified from `/tmp`); without that it silently imported another checkout's `whisperlivekit`.
 
 ### Proof (exactly as run)
 
@@ -731,7 +731,7 @@ transcription call sites only; the translation side keeps its own loop tests.
 ### Branch state
 
 - PR: `wlk/caption-display-rebased` @ `10e4319` (base `98ca00b`), nothing pushed, PR untouched.
-- Consumer: `wlk/tui-model-view-v2` @ `8964a27` (6 commits on `10e4319`), nothing pushed.
+- Consumer: `wlk/tui-model-view-v2` @ `24355b5` (6 commits on `10e4319`), nothing pushed.
 
 ### Summary
 
