@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-7:revision-1",
+  "question": "Tier 1 answers #477 with every criterion verified: approve it for delivery, with the --config help string as the one open follow-up?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-7:revision-1:item-1",
+      "uri": "git-root://state/cbf6b40e59b9c5edcb4af4b9b002129084f832f1/simulst-eval-harness.md",
+      "rev": "sha256:61a188acc45c51f84c11432a8bcd5287794f25dc7bd43ab93d6124e87a0b1a5d",
+      "mediaType": "text/markdown",
+      "summary": "Fifth validation passes all three items by running code against the worktree tree, with the import path proven first. The bound rejects an unlisted backend at six entry points, and removing either half of the fix makes its case fail. The completeness test now passes alone, the fake derives its resolved config, and chrF, the corpus aggregation, the join, byte-unchanged corpus, alignatt record and schema stand. Five findings, all outside the criteria; the only material one is that the --config help still says JSON object while the flag reads a path."
+    }
+  ]
+}
