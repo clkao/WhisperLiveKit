@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-5:revision-1",
+  "question": "Validation passed tier 1 as specified but the default invocation still reports a null lead: fix that before the PR, or ship it as a follow-up?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-5:revision-1:item-1",
+      "uri": "git-root://state/ef2151c99c9bcffcbaf3e77fccf5d62f06577079/simulst-eval-harness.md",
+      "rev": "sha256:a4f2a92b35cdc9feef8fb8599446343e6145063ec670c90d437e87f6e72d1fb5",
+      "mediaType": "text/markdown",
+      "summary": "Third validation passes every checklist item by running code: the drafting set is right per backend including nllw, the completeness test fails when a CLI choice is added, chrF stays exact, and the diff is four files. One material defect sits outside the criteria: the predicate is fed requested kwargs, and the bench CLI omits translation_backend unless passed, so a default nllb run reports lead null while its report says backend nllb."
+    }
+  ]
+}

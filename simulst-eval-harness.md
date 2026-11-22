@@ -116,6 +116,11 @@ gates:
                 conn:
                     quote: send to back. boundary prose is fine
                     source: CL, direct instruction, 2026-11-21
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-validation-5
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-5:revision-1
+                digest: sha256:61d4a5c5e744c2e63a6ab9abbd8d716a3fa86e1e049db283df68d4f18cf28660
+                room-ref: '@review/validation/briefing-5'
 started: 2026-08-27T19:46:38Z
 ---
 
