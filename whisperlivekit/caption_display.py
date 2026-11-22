@@ -37,11 +37,15 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from whisperlivekit.caption_events import CaptionEvent
+
+# The payload fields a recorded line can carry into an event (see
+# ``load_caption_events``): whatever ``CaptionEvent`` declares, nothing more.
+_EVENT_FIELDS = frozenset(f.name for f in fields(CaptionEvent))
 
 # Hunyuan placeholder artifact (fullwidth-pipe-delimited token). The MT backend
 # emits its template marker into the text for some prompts; it is model
@@ -860,9 +864,14 @@ def load_caption_events(path) -> List[CaptionEvent]:
     the pipeline runs), so replay reads its output here: the events in the
     order they were emitted. Used by the replay instrument and the
     golden-stream regression tests.
+
+    A recorded line is a superset of ``CaptionEvent``: ``EventLog`` adds the
+    writing session's id, which is a row key for a shared log rather than part
+    of an event. Read the fields the dataclass declares and drop the rest, so a
+    log written by a later writer still loads here.
     """
     return [
-        CaptionEvent(**json.loads(line))
+        CaptionEvent(**{k: v for k, v in json.loads(line).items() if k in _EVENT_FIELDS})
         for line in Path(path).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
