@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-7:revision-1",
+  "question": "Do we deliver the rebuilt branch 91d2b01 plus the unit-aligned delta plus the model fix to PR #425, and send the maintainer the bounded reply?",
+  "artifacts": [
+    {
+      "id": "artifact:p0f67wa79kd56yh3bs0cca2e:validation:attempt-7:revision-1:item-1",
+      "uri": "git-root://state/0de0776a1dc0fe9708b0d7f99bfa80ff9c127d9d/mlx-qwen3-asr-backend.md",
+      "rev": "sha256:130c83ddabd02df2d17e844e3b02ee536e6356a2e9950e68556007eadd93ea3c",
+      "mediaType": "text/markdown",
+      "summary": "Validation PASSED on b057eea. The branch is exactly 91d2b01 -\u003e 36856ab (unit-aligned delta) -\u003e b057eea (model selection); the three experiment commits and both flags are gone; 30/30 tests pass and 18/30 fail against 91d2b01. French 13.2164 % (113/855) at HEAD against 13.9181 % (119/855) at 91d2b01; glued hypotheses 0/30 against 3/30 and client-snapshot glue 0 in 1547 against 69 in 1528; his four traces clean beside their references. Cadence on a labelled 180 s proxy is arm-identical: 3.50 s to first committed text, 81 commits, 2.00 s median gap, 13-word largest buffer, 379 against 380 committed words. Three of my own limit sentences did not survive the artefacts and are corrected: the 14.0 s no-commit stretch is arm-identical and is a streaming window-path loss rather than an ASR miss, the proxy's 2 VAD boundaries make its gap an effect of a 129 s segment rather than a floor, and the French +1 error is four mid-span rewrites netting +1 rather than the dropped last held unit. One deferred risk: a candidate inserting units inside the held region still re-sends the held tail (77/200 synthetic, against 200/200 at 91d2b01, pre-existing and unobserved in any artefact)."
+    }
+  ]
+}
