@@ -739,8 +739,9 @@ The maintainer's reduction is in: the payload is `session`/`t`/`audio_t`/`type`/
 
 - Cycle 12 (2026-11-21 delivery of the payload reduction): published under the captain's explicit
   "Push and post". PR head `spacedock-ensign/caption-display` moved `10e4319` -> `a634955` (the
-  cut plus a merge of current `origin/main` `edcbaef`; `merge-tree --write-tree origin/main
-  a634955` exits 0, so no rebase of the reviewed history — README `### Rework finish` rule 1).
+  cut plus a merge of current `origin/main` `edcbaef`, which keeps the reviewed history intact
+  as README `### Rework finish` rule 1 requires. `merge-tree --write-tree origin/main a634955`
+  exits 0, so the branch merges cleanly.
   Reference client `spacedock-ensign/tui-model-view` moved `24355b5` -> `4f88b48` (rebased onto
   `a634955`, forced with an explicit lease). Reply posted (issuecomment-7073664657): his two
   items named as closed, the `audio_t` semantics change under `Additional changes`, and the
