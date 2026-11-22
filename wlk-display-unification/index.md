@@ -685,3 +685,20 @@ transcription call sites only; the translation side keeps its own loop tests.
   test_overlay_replay), 33 passed (test_caption_events + test_translation_emission +
   test_asr_emission), ruff clean, and `python -m whisperlivekit.tui --replay
   tests/golden/zh_long_time_frontier.jsonl` renders 52 events into 8 caption lines.
+
+- Cycle 11 (2026-11-21 maintainer follow-up, issuecomment-7070988194): the consumer link landed
+  and he replayed a real log against it, which surfaced a defect on our side — a log written by
+  `98ca00b` does not load in the reference client
+  (`CaptionEvent.__init__() got an unexpected keyword argument 'session'` in
+  `load_caption_events`), because the goldens on the consumer branch still carry the old line
+  shape. His field decision, which supersedes our keep-them recommendation: keep `type`,
+  `text`, `session`, `t`, `audio_t`; drop `committed`, `source` and `fresh` from this PR, since
+  they describe one MT backend's draft internals and no reader in or outside the repo renders
+  them (our draft-path evaluation keeps them in our fork). With that cut and the docs updated
+  plus a reference-consumer link next to `--event-log`, he merges the stream. Dispatched as one
+  implementation cycle covering both branches: the PR cut (`CaptionEvent`, `TranslationProgress`
+  + `progress()` + `_ProgressReader` out, `provides_drafts` stays as the provisional gate,
+  provisional `audio_t` from `state.end_buffer`, tests, `docs/configuration.md`, AC-4 rewritten)
+  and the reference client (loader accepts the writer's lines, goldens regenerated against the
+  current writer, rebased onto the new PR head). Authorized by the captain's "continue
+  addressing pr449 comments"; FO publishes after the cycle lands.
