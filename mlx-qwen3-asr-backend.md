@@ -142,6 +142,17 @@ gates:
                 id: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-7:revision-1
                 digest: sha256:e2b7d10c9339011c7d4cde981e18414e63f064fb6d2bfe14de85745d0ae6258c
                 room-ref: '@review/validation/briefing-7'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:p0f67wa79kd56yh3bs0cca2e:validation:7
+                briefing: briefing:p0f67wa79kd56yh3bs0cca2e:validation:attempt-7:revision-1
+                by: person:captain
+                at: "2026-11-22T02:53:45.444245Z"
+                decision: approve
+                reason: 'Captain directive 2026-11-21 (verbatim): "Approved." Approves validation attempt-7 on b057eea: deliver the rebuilt branch (91d2b01 + unit-aligned delta + model fix) to PR #425 and reply to the maintainer within the validated bounds.'
+              application:
+                target-stage: done
+                state: pending
 mod-block:
 ---
 
