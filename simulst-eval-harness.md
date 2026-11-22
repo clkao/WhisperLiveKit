@@ -187,6 +187,7 @@ gates:
                 target-stage: done
                 state: pending
 started: 2026-08-27T19:46:38Z
+pr: "#483"
 ---
 
 A SimulST evaluation harness that runs our MLX ASR+MT cascade over the
