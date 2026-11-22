@@ -105,6 +105,17 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-4:revision-1
                 digest: sha256:bc67457a293ab6a3cf6b0939e4f4463442d4dbd93225de310cbb7c916c87590a
                 room-ref: '@review/validation/briefing-4'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:4
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-4:revision-1
+                by: agent:first-officer
+                at: "2026-11-22T05:40:20.556595Z"
+                decision: revise
+                reason: 'Validation verified chrF, the corpus aggregation, the join, the alignatt record and the disclosures independently, and confirmed the buffer gate is gone. One under-inclusion remains: nllb, the default backend, publishes a provisional target buffer, so the predicate suppresses a real lead while the README says such nulls mean no draft. CL also decided the boundary row stays prose only.'
+                conn:
+                    quote: send to back. boundary prose is fine
+                    source: CL, direct instruction, 2026-11-21
 started: 2026-08-27T19:46:38Z
 ---
 
