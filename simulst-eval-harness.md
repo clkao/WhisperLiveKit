@@ -100,6 +100,11 @@ gates:
                 conn:
                     quote: send it back
                     source: CL, direct instruction, 2026-11-21
+            - id: gate-attempt:8zdhkj86eqshqypzzme2v6ss-validation-4
+              briefing:
+                id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-4:revision-1
+                digest: sha256:bc67457a293ab6a3cf6b0939e4f4463442d4dbd93225de310cbb7c916c87590a
+                room-ref: '@review/validation/briefing-4'
 started: 2026-08-27T19:46:38Z
 ---
 

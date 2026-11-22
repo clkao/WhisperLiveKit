@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-4:revision-1",
+  "question": "Tier 1 now suppresses the default backend's lead: bounce it for one predicate entry, or ship with the limitation stated?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-4:revision-1:item-1",
+      "uri": "git-root://state/37cbcd4d56a3b3e8bd795363dd3798425ce3ab53/simulst-eval-harness.md",
+      "rev": "sha256:9abe872d9cbc9cbda8ce04005fdf0706630c44e78f141d3736c6d5dbb1dbf178",
+      "mediaType": "text/markdown",
+      "summary": "Everything verified independently: chrF exact against sacrebleu on 17 pairs and every report row, corpus figures equal both corpus_score and the summed-count score, join and byte-identical corpus confirm, the alignatt record names its endpoint, boundary row and disclosures present. One under-inclusion remains: the default nllb backend does publish a provisional target buffer, so the predicate suppresses a real lead and the README says such nulls mean no draft."
+    }
+  ]
+}
