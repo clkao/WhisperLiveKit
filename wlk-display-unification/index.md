@@ -106,12 +106,19 @@ Verified by: a processor built from args with `event_log=None` has
 only on the truthy path; it fails if a session allocates display state
 unconditionally.
 
-**AC-4 — Translation backends declare `provides_drafts` and `progress()`; a
-backend without drafts needs no change and never enters the draft path.**
+**AC-4 — Translation backends declare `provides_drafts`; a backend without
+that capability needs no change and never enters the provisional draft path.**
 Verified by: `tests/test_translation_emission.py::test_provisional_requires_provides_drafts`
-and `::test_base_backend_contract_defaults_are_honest`; they fail if a backend
-that declares no drafts emits a provisional or is forced to implement the
-contract.
+drives the loop over a backend class with `provides_drafts = False` whose
+`process()` returns a buffer holding untranslated source, then over a draft-capable
+mock with the same buffer shape — it fails if the gate is dropped from the
+emission condition (observed red: the un-translated buffer emitted as
+`translation_provisional` text `'raw untranslated source queue'`);
+`::test_base_backend_contract_defaults_are_honest` builds the real
+`MlxLlmTranslation` with no model load and asserts `provides_drafts is False`
+plus no provisional from an empty base-path batch — it fails if the base segment
+translator claims draft capability (observed red: `assert True is False` on
+`base.provides_drafts`) and if a `progress()` accessor returns.
 
 **AC-5 — No new suite failures versus `origin/main` at the same commit.**
 Verified by: full-suite counts on the branch compared against a detached
@@ -702,3 +709,30 @@ transcription call sites only; the translation side keeps its own loop tests.
   and the reference client (loader accepts the writer's lines, goldens regenerated against the
   current writer, rebased onto the new PR head). Authorized by the captain's "continue
   addressing pr449 comments"; FO publishes after the cycle lands.
+
+## Stage Report: implementation (cycle 4 — maintainer's payload reduction + reference-client fix)
+
+- DONE: The shipped payload carries exactly session (log line), t, audio_t, type, text: committed/source/fresh and the progress contract that fed them are gone, with no dead field or accessor left behind
+  PR head `10e4319`: `CaptionEvent` is four fields, `to_dict()` is `asdict`, `EventTap.translation_provisional(audio_t, text)`; `TranslationProgress` (timed_objects.py), `progress()` on both MlxLlm backends and `_ProgressReader`'s read/one-warning path are deleted. `provides_drafts` remains the gate (`getattr(translation, "provides_drafts", False)` read once per session); the provisional's `audio_t` is `state.end_buffer`, and `test_provisional_audio_t_is_the_asr_end_buffer` proves it on the loop's real `State` (end_buffer 12.5 vs the buffer's own end 1.0 — observed red with `assert 1.0 == 12.5` when reverted). `_mt_call_count` is left alone: it is write-only benchmark instrumentation at the merge-base (`git show 496b5f6:whisperlivekit/translation_mlx_llm_mt.py`), not surface this PR added.
+- DONE: docs/configuration.md documents that line shape and links the reference consumer next to --event-log
+  The `--event-log` table row carries the branch link (https://github.com/clkao/WhisperLiveKit/tree/spacedock-ensign/tui-model-view), the section lists the five keys as shared by all four types ("a type adds no field of its own"), and the stale "loop does not read backend progress" sentence is replaced by "the translation loop receives no tap".
+- DONE: A log written by the new writer loads in the reference consumer, and the checked-in goldens match the new line shape instead of the old one
+  Consumer head `8964a27` (rebased onto `10e4319`): `load_caption_events` filters each row to the dataclass's fields (chosen over tolerating one known extra key — `session` is a row key for a shared log, and filtering by the dataclass keeps a log from a later writer loadable); `scripts/build_golden_streams.py` replays every golden through the real `EventTap` -> `EventLog` (`--check` reports stale ones; verified idempotent), so all five goldens carry `session` + `t/audio_t/type/text` with stream-relative `t`.
+
+### Proof (exactly as run)
+
+- PR, `PYTHONPATH=. /Users/clkao/git/asr/WhisperLiveKit/.venv/bin/python -m pytest -q tests/test_caption_events.py tests/test_translation_emission.py tests/test_asr_emission.py -p no:randomly` -> `31 passed`. Falsifiers run: deleting `provides_drafts` from the gate -> `test_provisional_requires_provides_drafts` red (emitted `'raw untranslated source queue'`); reverting the provisional clock to the buffer -> `test_provisional_audio_t_is_the_asr_end_buffer` red; re-adding a field to `CaptionEvent` -> `test_line_shape_is_session_t_audio_t_type_text` red; `provides_drafts = True` on the base -> `test_base_backend_contract_defaults_are_honest` red.
+- `python -m ruff check whisperlivekit/ tests/` -> `All checks passed!`
+- `tests/test_asr_emission.py` is byte-identical in this commit (absent from `git show --stat HEAD`) and still passes; it never referenced the dropped fields or `progress()`.
+- Consumer, `PYTHONPATH=. ... -m pytest -q tests/test_caption_display.py tests/test_overlay_replay.py tests/test_tui_display.py tests/test_caption_events.py tests/test_translation_emission.py tests/test_asr_emission.py -p no:randomly` -> `120 passed` (89 display/view + 31 event stream). Load path over a file written by the real `EventLog`: `test_load_caption_events_reads_a_log_written_by_the_real_sink` (observed red with the unfiltered loader: `TypeError: CaptionEvent.__init__() got an unexpected keyword argument 'session'` — the maintainer's exact failure, reproduced pre-fix).
+- `python scripts/build_golden_streams.py --check` -> `5 goldens match the current writer` (exit 0); `test_golden_lines_carry_the_writers_shape` reads the files as raw JSON and goes red on an old-shape golden (`zh_long_ideal.jsonl: line shape is not the writer's`).
+- Broader subset (`test_pipeline.py test_streaming_lifecycle.py test_server.py test_backends.py`): `63 passed, 1 skipped, 39 errors`, every error `RuntimeError: Failed to download any test samples` (sandbox has no test-data download) — environment, pre-existing. A full-suite run was started and stalled at 16% in the same download path; it could not be killed from this sandbox (no process list), so no full-suite counts are claimed here — AC-5 still needs the validator's baseline comparison.
+
+### Branch state
+
+- PR: `wlk/caption-display-rebased` @ `10e4319` (base `98ca00b`), nothing pushed, PR untouched.
+- Consumer: `wlk/tui-model-view-v2` @ `8964a27` (6 commits on `10e4319`), nothing pushed.
+
+### Summary
+
+The maintainer's reduction is in: the payload is `session`/`t`/`audio_t`/`type`/`text`, the draft-progress contract that existed only to fill the dropped columns is gone, `provides_drafts` stays as the one gate, and the provisional reads its audio position from `state.end_buffer`. The reference consumer now loads a log its own writer produces and its goldens are generated by that writer instead of hand-edited. One open item for the validator: the full-suite/`origin/main` baseline (AC-5) was not run to completion here.
