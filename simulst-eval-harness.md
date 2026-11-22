@@ -1,6 +1,6 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: validation
+status: implementation
 worktree: .worktrees/simulst-eval-harness
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
@@ -83,7 +83,7 @@ gates:
                     source: MetaFO brief relaying CL's decisions, 2026-11-14
               application:
                 target-stage: done
-                state: pending
+                state: superseded
 started: 2026-08-27T19:46:38Z
 ---
 
@@ -768,3 +768,49 @@ Both findings the validation gate returned are fixed and executed rather than re
 ### Summary
 
 All three checklist items reproduce independently here: NOTES.md's `--config` correction is exact in both directions and the documented drafting command exits 0 on cached models, the beta-pinning unit case fails on mutation with the reported value, the rescoped AC-1/AC-2 match the code and both checked-in reports down to the row, and chrF's arithmetic is sacrebleu-identical with the divergence traced entirely to `normalize_text`. One documentation gap keeps a reader from judging comparability (finding 1). Recommendation: **PASSED** for delivery of the tier-1 harness, with finding 1 as a one-sentence fix and finding 2 left to the captain's PR call; finding 3 stays the deferred tier-2 risk.
+
+#### Cycle 5 — tier-1 acceptance criteria realigned to the upstream requirements (2026-11-21)
+
+The maintainer replied on issue #477 on 2026-11-21: he asked for the PR and listed what it must get
+right. CL approved adopting his list as the tier-1 criteria. The design does not change — the same
+`sentence_id` join, the same metric slots, the same schema 3.2 — so this is not a return to ideation; the
+pass conditions are restated below, and this entry is where the decision and its exact words live.
+
+**AC-1 — the translation is joined and scored at corpus level.**
+The reference is built at manifest load from the same `sentence_id`, and `benchmarks/corpora/fleurs-90.json`
+with its hashes stays unmodified. Every scored row carries `target_language` and a non-null `chrf` where
+both a translation and a reference exist, and the summary reports **corpus-level chrF**, computed from
+character n-gram statistics summed over all rows of the language pair; the per-row `chrf` is kept for
+inspection and is not the headline.
+*Falsified by:* a modified corpus file, a row whose reference differs from the manifest join, or a summary
+chrF equal to the mean of per-sentence scores.
+
+**AC-2 — the chrF implementation matches sacrebleu exactly.**
+Character order 6, word order 0, beta 2, whitespace removed. A unit test pins several sacrebleu values,
+computed once and hard-coded, so the implementation is checked against the reference library without
+depending on it at run time.
+*Falsified by:* a value that differs from pinned sacrebleu output on the same input, or a test that cannot
+fail when the arithmetic changes.
+
+**AC-3 — the provisional lead is honest and local.**
+`provisional_lead_s` is non-null only when the MT backend actually drafts, and is measured from the
+front-end snapshots the harness already sees, so nothing in this PR depends on #449. On a backend without
+drafts the field is null even when `buffer_translation` carries untranslated source text.
+*Falsified by:* a non-null lead on a non-drafting run, or an import that requires the #449 event stream.
+
+**AC-4 — the report says what ran.**
+Each report records both configurations: ASR backend and model, and MT backend, model and direction. The
+schema moves to 3.2. Reports already checked in under `benchmarks/evaluations/` stay as they are.
+*Falsified by:* a report that omits either configuration, or a schema that is not 3.2 in a new report.
+
+**AC-5 — the README states what chrF covers here.**
+One sentence in `benchmarks/README.md` saying that chrF scores ASR and MT together, so ASR errors flow
+into it.
+
+**The measured note is withdrawn.** The earlier note that tier 1 measures a mean chrF of 7.01 is the
+superseded variant's figure under the wrong aggregation; it is replaced by corpus-level values from the
+corrected implementation, with the sample size stated and no quality claim attached.
+
+**Delivery.** Rebase onto current `origin/main` first, then regenerate the demonstration reports through
+the corrected implementation, because their chrF values change. Tier 2 — XCOMET and LongYAAL on the IWSLT
+devset — remains our own work and is **not** part of the #477 PR.
