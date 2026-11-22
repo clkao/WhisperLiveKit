@@ -36,7 +36,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from whisperlivekit.caption_events import EventLog, EventTap
+# Import this checkout's package, not whatever ``whisperlivekit`` the running
+# interpreter happens to have installed: the whole point is to write the goldens
+# with THIS tree's writer.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from whisperlivekit.caption_events import EventLog, EventTap  # noqa: E402
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "tests" / "golden"
 
