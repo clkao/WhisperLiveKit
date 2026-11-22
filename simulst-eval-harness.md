@@ -121,6 +121,17 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-5:revision-1
                 digest: sha256:61d4a5c5e744c2e63a6ab9abbd8d716a3fa86e1e049db283df68d4f18cf28660
                 room-ref: '@review/validation/briefing-5'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:5
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-5:revision-1
+                by: agent:first-officer
+                at: "2026-11-22T06:08:44.811032Z"
+                decision: revise
+                reason: 'Third validation passed every checklist item by running code and cleared chrF, the corpus aggregation, the join, the alignatt record and the diff scope. One material defect remains outside the criteria: the predicate is fed requested kwargs, so a default nllb run (bench omits translation_backend) reports a null lead while its report names nllb. The same root cause has a second trigger: the bench flag has no choices, so an unlisted name runs nllw and reports null.'
+                conn:
+                    quote: send it back
+                    source: CL, direct instruction, 2026-11-22
 started: 2026-08-27T19:46:38Z
 ---
 
