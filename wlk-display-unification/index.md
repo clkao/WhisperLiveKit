@@ -5,6 +5,7 @@ score: 0.85
 id: 6yfnt6r6tx4mqj9p4dkrgaq8
 worktree: .worktrees/wlk-display-unification
 pr: "#449"
+started: 2026-11-22T00:11:37Z
 ---
 
 # Caption event stream for PR #449 (PR-A) — typed caption events and --event-log
