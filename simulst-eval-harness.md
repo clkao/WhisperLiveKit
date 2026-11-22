@@ -89,6 +89,17 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-3:revision-1
                 digest: sha256:d7a80c4e3eb101c8356f241e5a18be05a7e7ef6dd51f250bd5a0136bb29fb335
                 room-ref: '@review/validation/briefing-3'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:3
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-3:revision-1
+                by: agent:first-officer
+                at: "2026-11-22T05:15:00.520097Z"
+                decision: revise
+                reason: 'Validation reproduced every chrF value independently and cleared the join, reports, README and base, but AC-3''s second clause fails: drafted is derived from a non-empty buffer, so a non-drafting run carrying untranslated source reports a 0.35 s lead. That is the maintainer''s own requirement. Two smaller findings are in scope: alignatt reports record no MT model, and the km boundary row is unrecorded.'
+                conn:
+                    quote: send it back
+                    source: CL, direct instruction, 2026-11-21
 started: 2026-08-27T19:46:38Z
 ---
 
