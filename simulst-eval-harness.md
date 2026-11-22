@@ -153,6 +153,20 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-7:revision-1
                 digest: sha256:0c97138baaddd91c06192ba7abbe72676f3ab0b764cb22cf5a8a18a246033052
                 room-ref: '@review/validation/briefing-7'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:7
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-7:revision-1
+                by: agent:first-officer
+                at: "2026-11-22T08:30:40.396682Z"
+                decision: approve
+                reason: Fifth validation passed all three items by running code against the worktree tree, with the import path proven first. The backend bound holds at six entry points and each half is independently load-bearing. The completeness test passes alone, the cascade fake derives its resolved configuration, and chrF, the corpus aggregation, the join, the byte-unchanged corpus, the alignatt record and schema 3.2 all reproduce. Five findings sit outside the criteria; the material one is a pre-existing help string on --config.
+                conn:
+                    quote: Approve
+                    source: CL, direct instruction, 2026-11-22
+              application:
+                target-stage: done
+                state: pending
 started: 2026-08-27T19:46:38Z
 ---
 
