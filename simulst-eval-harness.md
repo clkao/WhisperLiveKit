@@ -169,29 +169,59 @@ scores WER/CER, and zero of 23 checked-in reports carry a non-null
 `first_translation_time_s` — so a harness is a capability other people run, not
 a number we consume.
 
-## Acceptance criteria (tiered; tier 1 rescoped in cycle 4)
+## Acceptance criteria (tiered; tier 1 restated from the maintainer's #477 reply in cycle 5)
 
-- **Tier 1 — local harness (AC-1..AC-3), the shippable #477 PR.** Met by a real
-  cascade run on `benchmarks/corpora/fleurs-90.json` whose references come from
-  the `sentence_id` join, with no download.
-  - **AC-1 (translation engaged, joined, scored).** A run with
-    `--target-language zh --translation-backend mlx-llm-mt` gives every scored
-    row a `target_language` of `zh`, a non-empty `translation_reference` taken
-    from the same `sentence_id` in the manifest, and a non-null `chrf` wherever
-    the row carries both a translation and a reference. *Falsified by:* a row
-    whose reference differs from the manifest join, or a null `chrf` on a row
-    that has both sides.
-  - **AC-2 (latency per run).** The same run carries a non-null
-    `first_translation_time_s` and a non-null `final_translation_time_s` on
-    every `status == "ok"` row, with `final >= first` wherever both exist;
-    `provisional_lead_s` is non-null on a drafting run and null on a
-    non-drafting one. *Falsified by:* a null field on an `ok` row, `final <
-    first`, or a non-null lead on a non-drafting run.
-  - Measured, not a floor: mean chrF **7.01** over three English FLEURS samples
-    without drafting and 7.13 over the same three with drafting, in
-    `benchmarks/evaluations/translation-fleurs-en-zh/`. Three samples carry no
-    quality claim, and tier 1 makes none.
-- **Tier 2 — the standard pair (AC-4..AC-6), `scripts/` only.** XCOMET(-XL) +
+Tier 1 is the shippable #477 PR. The five criteria below are transcribed word for
+word from `#### Cycle 5`, which records the maintainer's 2026-11-21 reply on
+issue #477 and the captain's approval of it as this entity's tier-1 criteria.
+
+**AC-1 — the translation is joined and scored at corpus level.**
+The reference is built at manifest load from the same `sentence_id`, and `benchmarks/corpora/fleurs-90.json`
+with its hashes stays unmodified. Every scored row carries `target_language` and a non-null `chrf` where
+both a translation and a reference exist, and the summary reports **corpus-level chrF**, computed from
+character n-gram statistics summed over all rows of the language pair; the per-row `chrf` is kept for
+inspection and is not the headline.
+*Falsified by:* a modified corpus file, a row whose reference differs from the manifest join, or a summary
+chrF equal to the mean of per-sentence scores.
+
+**AC-2 — the chrF implementation matches sacrebleu exactly.**
+Character order 6, word order 0, beta 2, whitespace removed. A unit test pins several sacrebleu values,
+computed once and hard-coded, so the implementation is checked against the reference library without
+depending on it at run time.
+*Falsified by:* a value that differs from pinned sacrebleu output on the same input, or a test that cannot
+fail when the arithmetic changes.
+
+**AC-3 — the provisional lead is honest and local.**
+`provisional_lead_s` is non-null only when the MT backend actually drafts, and is measured from the
+front-end snapshots the harness already sees, so nothing in this PR depends on #449. On a backend without
+drafts the field is null even when `buffer_translation` carries untranslated source text.
+*Falsified by:* a non-null lead on a non-drafting run, or an import that requires the #449 event stream.
+
+**AC-4 — the report says what ran.**
+Each report records both configurations: ASR backend and model, and MT backend, model and direction. The
+schema moves to 3.2. Reports already checked in under `benchmarks/evaluations/` stay as they are.
+*Falsified by:* a report that omits either configuration, or a schema that is not 3.2 in a new report.
+
+**AC-5 — the README states what chrF covers here.**
+One sentence in `benchmarks/README.md` saying that chrF scores ASR and MT together, so ASR errors flow
+into it.
+
+**The measured note is withdrawn.** The earlier note that tier 1 measures a mean chrF of 7.01 is the
+superseded variant's figure under the wrong aggregation; it is replaced by corpus-level values from the
+corrected implementation, with the sample size stated and no quality claim attached.
+
+**Delivery.** Rebase onto current `origin/main` first, then regenerate the demonstration reports through
+the corrected implementation, because their chrF values change. Tier 2 — XCOMET and LongYAAL on the IWSLT
+devset — remains our own work and is **not** part of the #477 PR.
+
+**Measured, not a floor.** The corrected implementation reports corpus-level
+chrF **8.59** over three English FLEURS samples without drafting and **9.32**
+over the same three with drafting, in
+`benchmarks/evaluations/translation-fleurs-en-zh/`. Their per-row means are 8.57
+and 9.67, which is the aggregation the withdrawn 7.01 figure used. Three samples
+carry no quality claim, and tier 1 makes none.
+
+- **Tier 2 — the standard pair (the cycle-2 AC-4..AC-6), `scripts/` only.** XCOMET(-XL) +
   LongYAAL CA/CU through `alignatt-eval` on the IWSLT devset: one wav
   round-trips, the 919-segment anchor runs, the flagship swaps a flag. Kept out
   of the #477 PR because it needs Alignatt4LLM, a COMET checkpoint and
@@ -814,3 +844,16 @@ corrected implementation, with the sample size stated and no quality claim attac
 **Delivery.** Rebase onto current `origin/main` first, then regenerate the demonstration reports through
 the corrected implementation, because their chrF values change. Tier 2 — XCOMET and LongYAAL on the IWSLT
 devset — remains our own work and is **not** part of the #477 PR.
+
+## Stage Report: implementation (cycle 5)
+
+- DONE: The tier-1 acceptance criteria in the entity body are transcribed from the Cycle 5 entry word for word, and the withdrawn mean-chrF note is replaced, so the code is judged against the maintainer's requirements rather than the superseded ones.
+  `## Acceptance criteria (tiered; tier 1 restated from the maintainer's #477 reply in cycle 5)` now carries the Cycle 5 block byte for byte — verified programmatically: the 38-line block extracted from `#### Cycle 5` is present verbatim in the section — covering AC-1 through AC-5, the withdrawal of the 7.01 note and the Delivery paragraph, every falsifier intact. The old tier-1 AC-1/AC-2 and the "Measured, not a floor: mean chrF 7.01" line are gone. In their place a measured line records the corrected implementation's corpus-level 8.59 (no drafting) and 9.32 (drafting) over three samples, names the per-row means 8.57 and 9.67 as the aggregation the withdrawn figure used, and attaches no quality claim. Tier 2 keeps its text, with its cycle-2 ids qualified so they cannot be read as the cycle-5 criteria of the same number. Frontmatter and status untouched.
+- DONE: The chrF implementation matches sacrebleu exactly with pinned tests, and the summary reports corpus-level chrF from summed n-gram statistics while per-row values stay for inspection, demonstrated by values that change from the old implementation.
+  `whisperlivekit/metrics.py` splits `chrf_statistics` (per-order hypothesis, reference and match counts over whitespace-free text, case and punctuation kept) from `chrf_score`, and `compute_chrf` is now `CHRF(char_order=6, word_order=0, beta=2)`. Checked against `sacrebleu 2.6.0` in `/Users/clkao/git/asr/WhisperLiveKit/.venv` as a one-time reference, never a dependency: identical to 1e-9 on 20 synthetic pairs — including `The Cat Sat`/`the cat sat` 17.361111 and `你好世界。`/`你好，世界！` 24.910180, both of which the old variant scored 100.0 — and on every row of both regenerated reports. `tests/test_benchmark.py` pins nine of those values hard-coded (38.888889, 87.5 for the beta-separating pair, 17.361111, 24.910180, 72.573464) plus sacrebleu's corpus score 59.093996 against the per-row mean 51.048780 for the same three segments: 8 passed. Falsifiers run, not argued, each restored to 8 passed afterwards: `beta_squared = CHRF_BETA` fails the pinned case (2 failed), WER normalization back inside `chrf_statistics` fails it (2 failed), returning `self.avg_chrf` as `corpus_chrf` fails the aggregation case (1 failed). `BenchmarkReport.corpus_chrf` sums the rows' counts and scores once, `avg_chrf` keeps its per-row mean with a docstring saying it is not the headline, and `measurement` separates `chrf`, `corpus_chrf` and `avg_chrf` in words.
+- DONE: The demonstration reports are regenerated through the corrected implementation on a branch rebased onto current origin/main, the README carries the one sentence on what chrF covers, and both configurations plus schema 3.2 are recorded per report.
+  Rebased clean onto `origin/main` (`edcbaef02f386d4774f978e4a87e59029337d045`, "Merge pull request #481: prepare 0.2.28"), no conflict, all 5 commits replayed. Code commit `06a902c`, reports `486a439`. Both reports retaken at `--speed 1` on the same three English FLEURS samples, offline (`HF_HUB_OFFLINE=1`), from one subset manifest so both now carry the same `corpus_sha256`: corpus chrF 8.59 and 9.32; per-row 5.58, 14.67, 5.46 and 8.76, 14.76, 5.49; `provisional_lead_s` null 3/3 without drafting and 1.36 / 8.80 / 6.84 s with it; `final >= first` on every row. `config.asr` names the recognizer and model, `config.translation` the source languages, target language, backend, model and drafting flag; schema 3.2 in both; `git_dirty false`. `benchmarks/README.md` states chrF is sacrebleu's, that it scores ASR and MT together so ASR errors flow into it, and that `corpus_chrf` is the figure to quote; `NOTES.md` states the sample size, retires 7.01 and carries no quality claim. `benchmarks/corpora/fleurs-90.json` is unchanged against `origin/main`, and both m5 evaluation directories are unchanged against the base.
+
+### Summary
+
+The tier-1 criteria now state the maintainer's #477 requirements verbatim, and the code meets them. chrF had been applying the WER normalization (NFC, lowercase, punctuation stripped), which is why it sat 0.28 to 2.64 points below sacrebleu; it is now sacrebleu's `CHRF(char_order=6, word_order=0, beta=2)` exactly — whitespace removed, case and punctuation kept — with the n-gram counts exposed so the report sums them over the language pair and scores once. The headline became `corpus_chrf` (8.59 without drafting, 9.32 with it) while per-row `chrf` and their mean (8.57, 9.67) stay for inspection, which also retires the 7.01 figure: it was the per-sentence variant's mean, not a corpus score. Both demonstration reports were regenerated on the same three cached clips after a clean rebase onto `edcbaef`, name both configurations, and claim no quality. No download, no push, no issue comment, targeted test file only, disk 7.1 GiB free before and after.
