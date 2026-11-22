@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-6:revision-1",
+  "question": "Validation passes as specified but --config still routes an unlisted name to a drafting backend: fix that before the PR, or ship with it noted?",
+  "artifacts": [
+    {
+      "id": "artifact:8zdhkj86eqshqypzzme2v6ss:validation:attempt-6:revision-1:item-1",
+      "uri": "git-root://state/578c52e09bae4c12de1538bbc150559cc03b186e/simulst-eval-harness.md",
+      "rev": "sha256:0dd0df9746e8f8358c811d99db5d03c3d91161cb30a9a2a168bce6c3c7beb33f",
+      "mediaType": "text/markdown",
+      "summary": "Fourth validation passes every item by running code: the lead gate reads the configuration the engine resolved, proven against the old failure; the two CLIs share one backend list, so neither holds a literal; every previously valid invocation parses identically; the completeness check fails on an undriven choice. One material defect survives outside the criteria: --config validates keys only, so an unlisted translation_backend resolves through core to nllw and reports a null lead beside a drafting translator."
+    }
+  ]
+}
