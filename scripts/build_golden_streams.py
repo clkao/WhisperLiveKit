@@ -91,11 +91,12 @@ def write_stream(rows, dest: Path, session: str) -> None:
     dest.unlink(missing_ok=True)  # EventLog appends
     log = EventLog(str(dest))
     log.session = session  # pinned, so the checked-in bytes are stable
+    origin = rows[0]["t"]
     tap = EventTap(
         sink=log,
-        clock=_ReplayClock(
-            [round(rows[0]["t"], 3)] + [round(row["t"], 3) for row in rows]
-        ),
+        # the tap's origin is 0 and each reading is the recorded offset from the
+        # stream's first event, so the arithmetic stays exact in float64
+        clock=_ReplayClock([0.0] + [round(row["t"] - origin, 3) for row in rows]),
     )
     try:
         for row in rows:

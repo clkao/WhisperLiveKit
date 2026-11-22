@@ -54,8 +54,8 @@ def is_bright(state):
     return bool(state.current) and all(s.style != PROVISIONAL for s in state.current)
 
 
-def event(kind, text, audio_t=1.0, **kw):
-    return CaptionEvent(t=0.0, audio_t=audio_t, type=kind, text=text, **kw)
+def event(kind, text, audio_t=1.0):
+    return CaptionEvent(t=0.0, audio_t=audio_t, type=kind, text=text)
 
 
 # ---- provisional ----
@@ -787,8 +787,7 @@ def test_emit_drives_one_utterance_through_the_display():
     assert m.state().partial == "今天我們討論皮膚科"
     assert plain(m.state()) == ""
 
-    m.emit(event("translation_provisional", "Today we", audio_t=1.5,
-                 committed="今天我們", source="今天我們討論皮膚科。", fresh=True))
+    m.emit(event("translation_provisional", "Today we", audio_t=1.5))
     m.tick()
     assert plain(m.state()) == "Today we"
     assert not is_bright(m.state())

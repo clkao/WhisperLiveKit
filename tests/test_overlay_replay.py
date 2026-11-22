@@ -183,3 +183,59 @@ def test_no_committed_caption_leaves_the_queue_unshown(golden, hold):
     rebuild — evicts an unshown committed caption the reader was owed."""
     unshown = _unshown_committed(golden, hold=hold)
     assert unshown == [], f"committed captions dropped without displaying: {unshown}"
+
+
+# ---- the recorded line shape is the writer's, and a real log loads ----
+
+def test_golden_lines_carry_the_writers_shape():
+    """Every checked-in golden line is what ``--event-log`` writes today: the
+    five keys ``EventLog``/``CaptionEvent`` produce, a per-file session id, and
+    a ``t`` that starts at the stream's beginning.
+
+    Reads the file as JSON rather than through the loader on purpose — the
+    loader tolerates extra keys, so only a raw read can catch a golden that
+    drifted back to a hand-edited shape. Fails if a golden is stale (re-run
+    ``scripts/build_golden_streams.py``, or ``--check`` to see it reported).
+    """
+    import json
+
+    written_keys = {"session", "t", "audio_t", "type", "text"}
+    for golden in sorted(GOLDEN_DIR.glob("*.jsonl")):
+        rows = [json.loads(line) for line in
+                golden.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert rows, f"{golden.name}: empty stream"
+        assert [set(row) for row in rows] == [written_keys] * len(rows), (
+            f"{golden.name}: line shape is not the writer's"
+        )
+        assert len({row["session"] for row in rows}) == 1, (
+            f"{golden.name}: one recording, one session id"
+        )
+        assert len(rows[0]["session"]) == 8
+        times = [row["t"] for row in rows]
+        assert times[0] == 0.0, f"{golden.name}: t is not stream-relative"
+        assert times == sorted(times), f"{golden.name}: t goes backwards"
+
+
+def test_load_caption_events_reads_a_log_written_by_the_real_sink(tmp_path):
+    """The load path against the actual writer: a log produced by ``EventLog``
+    (which tags every line with its session id) reads back into events.
+
+    Fails with ``TypeError: CaptionEvent.__init__() got an unexpected keyword
+    argument 'session'`` — the failure a real ``--event-log`` replay hit — if
+    the loader stops filtering the writer's row keys.
+    """
+    from whisperlivekit.caption_events import CaptionEvent, EventLog
+
+    path = tmp_path / "session.jsonl"
+    log = EventLog(str(path))
+    log.emit(CaptionEvent(0.0, 1.5, "transcription_provisional", "今天我們"))
+    log.emit(CaptionEvent(0.4, 1.7, "translation_provisional", "Today we"))
+    log.emit(CaptionEvent(0.9, 1.9, "translation_final", "Today we discuss lasers."))
+    log.close()
+
+    events = load_caption_events(path)
+    assert [e.type for e in events] == [
+        "transcription_provisional", "translation_provisional", "translation_final",
+    ]
+    assert [e.text for e in events] == ["今天我們", "Today we", "Today we discuss lasers."]
+    assert [e.audio_t for e in events] == [1.5, 1.7, 1.9]
