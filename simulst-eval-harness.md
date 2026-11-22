@@ -1,6 +1,6 @@
 ---
 title: SimulST eval harness — MLX IWSLT anchor + flagship compare
-status: validation
+status: implementation
 worktree: .worktrees/simulst-eval-harness
 id: 8zdhkj86eqshqypzzme2v6ss
 gates:
@@ -166,7 +166,7 @@ gates:
                     source: CL, direct instruction, 2026-11-22
               application:
                 target-stage: done
-                state: pending
+                state: superseded
 started: 2026-08-27T19:46:38Z
 ---
 
