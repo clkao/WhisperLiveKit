@@ -172,6 +172,20 @@ gates:
                 id: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-8:revision-1
                 digest: sha256:554a4eeef8c8a3ec761f91cb2354473c89b364b48cce83541c375a936edd75a0
                 room-ref: '@review/validation/briefing-8'
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:8zdhkj86eqshqypzzme2v6ss:validation:8
+                briefing: briefing:8zdhkj86eqshqypzzme2v6ss:validation:attempt-8:revision-1
+                by: agent:first-officer
+                at: "2026-11-22T18:00:31.699708Z"
+                decision: approve
+                reason: 'Small-change validation of the help fix with each side of the binding broken in an isolated copy: the wording pin fails on revert, the read pin fails on an inline object and on a permissive read, and the unmutated copy is green. The diff is exactly two files, one parser field differs, both reports are byte-identical, and tier 1''s spot checks reproduce. Findings are polish, a coupling note, and a pre-existing field-bypass.'
+                conn:
+                    quote: approve
+                    source: CL, direct instruction, 2026-11-22
+              application:
+                target-stage: done
+                state: pending
 started: 2026-08-27T19:46:38Z
 ---
 
