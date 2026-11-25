@@ -4,6 +4,17 @@ status: backlog
 source: architecture — session finding from the Apple-Silicon port (the provisional-loss bug)
 score: 0.5
 id: 1c05jaab4vbzknwkv4y2qarp
+gates:
+    version: 1
+    records:
+        - id: gate:1c05jaab4vbzknwkv4y2qarp:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:1c05jaab4vbzknwkv4y2qarp-backlog-1
+              briefing:
+                id: briefing:1c05jaab4vbzknwkv4y2qarp:backlog:attempt-1:revision-1
+                digest: sha256:ebca23d19fb9e5c058cc57c8d95018f4d34bf732f2ed450b35c6e9b4908cb5b7
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 The display sinks (the web client, the terminal, the overlay) read `TestState` fields

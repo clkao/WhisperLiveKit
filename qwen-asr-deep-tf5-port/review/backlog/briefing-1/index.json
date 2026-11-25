@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:epw1ee1k2gma0yv5yb8ynynk:backlog:attempt-1:revision-1",
+  "question": "Does the deep transformers 5.x port start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:epw1ee1k2gma0yv5yb8ynynk:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/qwen-asr-deep-tf5-port/index.md",
+      "rev": "sha256:81c5baf854f8d664aaab16cb406b2b2c79d418901bdbb6d54c7674f4e7749b98",
+      "mediaType": "text/markdown",
+      "summary": "Finishes the port of the qwen-asr backend to transformers 5.x: model load and transcribe. The seed records what the current shallow port cannot do. Design starts only if the remaining work is worth it against the shallow path already in use."
+    }
+  ]
+}

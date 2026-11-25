@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:y0dy11789x4m29hbxwyd9awf:backlog:attempt-2:revision-1",
+  "question": "Does the provisional-text metrics task start at design, now required to demonstrate a tradeoff?",
+  "artifacts": [
+    {
+      "id": "artifact:y0dy11789x4m29hbxwyd9awf:backlog:attempt-2:revision-1:item-1",
+      "uri": "git-root://state/d16b1aa9b863097233350faa9dc8af9b9431bafd/benchmark-provisional-text-metrics.md",
+      "rev": "sha256:1d4740ec0cc8ba18eb7dbedfbf49e939d97905526a95d459bed33261bac23563",
+      "mediaType": "text/markdown",
+      "summary": "Two criteria added at CL's request: the deliverable must show one worked comparison of two commit policies in a single table, and state what that comparison cannot support because the sample is single-sentence read speech. The motivation carries the measured case: same accuracy, final commit 4.2 to 5.2 seconds later, and appends turning into 95 to 97 percent rewrites."
+    }
+  ]
+}

@@ -4,6 +4,17 @@ status: backlog
 score: 0.75
 id: 363r2jw8saepdjbtgk9ej322
 worktree: .
+gates:
+    version: 1
+    records:
+        - id: gate:363r2jw8saepdjbtgk9ej322:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:363r2jw8saepdjbtgk9ej322-backlog-1
+              briefing:
+                id: briefing:363r2jw8saepdjbtgk9ej322:backlog:attempt-1:revision-1
+                digest: sha256:7bd458bc5f80cb1959031d7c8ce91ea9f132054479e933f8914bcb27e32f4e13
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 # Task E — #444 follow-through + harness adoption

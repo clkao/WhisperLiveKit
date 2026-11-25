@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:anjv5dgtjrmh17ypd2dsfv3t:backlog:attempt-1:revision-1",
+  "question": "Do the decode-granularity switches start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:anjv5dgtjrmh17ypd2dsfv3t:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/db3c710a3e445b33834f752f95411119dbdd7c5a/mlx-qwen3-asr-decode-granularity.md",
+      "rev": "sha256:058c810db325d306f6e12f1b57784b11c84890a1e419e09c2a59c83be5331fb4",
+      "mediaType": "text/markdown",
+      "summary": "The switches cut from #425, with the case for them: 9.96 to 7.20 English and 11.08 to 9.63 Mandarin on 150 clips per language, intervals excluding zero, one flip instead of the whole gap. The trade is stated in the same table: first-visible unchanged, first-committed plus four to five seconds, and visible changes going from half appends to 95 to 97 percent rewrites. The caveat that decides it is that every measurement is single-sentence FLEURS audio."
+    }
+  ]
+}

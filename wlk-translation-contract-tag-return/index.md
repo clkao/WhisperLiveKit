@@ -4,6 +4,17 @@ status: backlog
 source: architecture — session finding from the Apple-Silicon port (the provisional-loss bug)
 score: 0.6
 id: h730gcxpw0qce6c849fypwrx
+gates:
+    version: 1
+    records:
+        - id: gate:h730gcxpw0qce6c849fypwrx:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:h730gcxpw0qce6c849fypwrx-backlog-1
+              briefing:
+                id: briefing:h730gcxpw0qce6c849fypwrx:backlog:attempt-1:revision-1
+                digest: sha256:5f0a30e41c355ffdde7fe8e16b48b014333e7735f6226c4070c8373f6b2bc821
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 The translation backend `process()` method returns `(Optional[Translation], TimedText)`.

@@ -19,6 +19,11 @@ gates:
                 by: agent:first-officer
                 at: "2026-11-22T05:26:49.6748Z"
                 reason: Seed amended to require a worked comparison that demonstrates the tradeoff, not only the fields
+            - id: gate-attempt:y0dy11789x4m29hbxwyd9awf-backlog-2
+              briefing:
+                id: briefing:y0dy11789x4m29hbxwyd9awf:backlog:attempt-2:revision-1
+                digest: sha256:d4b64311458cb6828fe4d67515e4e08d710d4bc6ffd85823092a6510de663416
+                room-ref: '@review/backlog/briefing-2'
 ---
 
 The suite scores the final text and, after #477, reports when the first translation appeared. It cannot

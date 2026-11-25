@@ -4,6 +4,17 @@ status: backlog
 score: 0.8
 id: 42hrs23073ghtq0wgzrg36k4
 worktree: .
+gates:
+    version: 1
+    records:
+        - id: gate:42hrs23073ghtq0wgzrg36k4:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:42hrs23073ghtq0wgzrg36k4-backlog-1
+              briefing:
+                id: briefing:42hrs23073ghtq0wgzrg36k4:backlog:attempt-1:revision-1
+                digest: sha256:6ea1983b07e19b11a0dc2266f17e159f5dda9d426e16b73c4c3166b8c9c991dd
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 # Task C — wlk-tui: standalone terminal caption client package

@@ -4,6 +4,17 @@ status: backlog
 score: 0.7
 id: yaafd2mdnb4c00kvthvcd6e7
 worktree: .
+gates:
+    version: 1
+    records:
+        - id: gate:yaafd2mdnb4c00kvthvcd6e7:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:yaafd2mdnb4c00kvthvcd6e7-backlog-1
+              briefing:
+                id: briefing:yaafd2mdnb4c00kvthvcd6e7:backlog:attempt-1:revision-1
+                digest: sha256:bb5b524e712a63133cfbd72e2d98b97055b6eb60b9ea1a2770f8869ae009e31d
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 # Task G — fixture gate semantics decision

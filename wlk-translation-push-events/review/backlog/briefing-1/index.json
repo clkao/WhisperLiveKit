@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:1c05jaab4vbzknwkv4y2qarp:backlog:attempt-1:revision-1",
+  "question": "Does the translation push-events task start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:1c05jaab4vbzknwkv4y2qarp:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-translation-push-events/index.md",
+      "rev": "sha256:3c4c662d8c1ac91ef8c1a5ceb0632245fa0fde63344e78cf051da6e2cc2ef856",
+      "mediaType": "text/markdown",
+      "summary": "Moves translation from pull to push delivery to display sinks. The seed states the coupling it removes and what it costs."
+    }
+  ]
+}

@@ -4,6 +4,17 @@ status: backlog
 source: prototype — measure the simultaneous-MT latency win
 score: 0.7
 id: eqej2ksxzg8wzvg52m5d72eg
+gates:
+    version: 1
+    records:
+        - id: gate:eqej2ksxzg8wzvg52m5d72eg:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:eqej2ksxzg8wzvg52m5d72eg-backlog-1
+              briefing:
+                id: briefing:eqej2ksxzg8wzvg52m5d72eg:backlog:attempt-1:revision-1
+                digest: sha256:49b2776767992a6bb5f92f4949ebc4b0a452ba44b492f440605bbcf89aa04159
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 The simultaneous MT (Tier B, AlignAtt pattern) overlaps MT with the ASR tail to cut caption latency. We measured a ~1.4s win in livecaption. Once mlx-llm-mt ships Tier B, we need a simple A/B compare Tier A (translate-on-close) vs Tier B (simultaneous) on the same audio. This task depends on the mlx-llm-mt Tier B work; it stays in backlog until Tier B lands.

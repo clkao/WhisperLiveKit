@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:yaafd2mdnb4c00kvthvcd6e7:backlog:attempt-1:revision-1",
+  "question": "Does the fixture gate semantics task start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:yaafd2mdnb4c00kvthvcd6e7:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-fixture-gate-semantics/index.md",
+      "rev": "sha256:eb15043e9580976e8834f2b14e0b2b8fa676344bb147e33d57292681b630d2ea",
+      "mediaType": "text/markdown",
+      "summary": "Decides whether fixture gate coverage is measured per final or pooled across drafts. The seed names the ambiguity and the two readings, and asks for the one the suite should enforce."
+    }
+  ]
+}

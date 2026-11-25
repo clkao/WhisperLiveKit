@@ -4,6 +4,17 @@ status: backlog
 score: 0.85
 id: kmjvq6k0q7c2p265xgbj56cm
 worktree: .
+gates:
+    version: 1
+    records:
+        - id: gate:kmjvq6k0q7c2p265xgbj56cm:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:kmjvq6k0q7c2p265xgbj56cm-backlog-1
+              briefing:
+                id: briefing:kmjvq6k0q7c2p265xgbj56cm:backlog:attempt-1:revision-1
+                digest: sha256:08420320f22564d9bde763773ae9eb64df449b949d7eabaea92ca370c122ff51
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 # Task D — simul PR: the time-frontier stack onto upstream main

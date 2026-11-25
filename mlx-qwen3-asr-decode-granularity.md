@@ -4,6 +4,17 @@ status: backlog
 score: 0.6
 source: measured on 150 FLEURS clips per language while evaluating #425; the switches were cut from that PR
 id: anjv5dgtjrmh17ypd2dsfv3t
+gates:
+    version: 1
+    records:
+        - id: gate:anjv5dgtjrmh17ypd2dsfv3t:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:anjv5dgtjrmh17ypd2dsfv3t-backlog-1
+              briefing:
+                id: briefing:anjv5dgtjrmh17ypd2dsfv3t:backlog:attempt-1:revision-1
+                digest: sha256:586112a19e2ccfe361cc4b2cf14f9412ea4b1f0e6ccbe45bc19040a343eafa20
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 Decode granularity is the dominant quality lever we found in the mlx-qwen3-asr adapter, worth more than

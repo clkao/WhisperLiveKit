@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:h730gcxpw0qce6c849fypwrx:backlog:attempt-1:revision-1",
+  "question": "Does the translation-contract tag task start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:h730gcxpw0qce6c849fypwrx:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-translation-contract-tag-return/index.md",
+      "rev": "sha256:cd300f250bbc57614afa6760f35f82b772285ad34ee77944c55ee693d1dd9a4e",
+      "mediaType": "text/markdown",
+      "summary": "Replaces the overloaded None return of the translation process() with an explicit tag. Small interface change with a compatibility question for existing backends."
+    }
+  ]
+}

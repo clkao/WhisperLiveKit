@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:42hrs23073ghtq0wgzrg36k4:backlog:attempt-1:revision-1",
+  "question": "Does the standalone wlk-tui package start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:42hrs23073ghtq0wgzrg36k4:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-tui-package/index.md",
+      "rev": "sha256:269a6ef0aed1e412aa0e916cd4dc2693708ed513ed4ddc9f9a99741f8226277b",
+      "mediaType": "text/markdown",
+      "summary": "Turns the terminal caption client into its own package instead of shipped view code. The seed asks for the packaging boundary and what stays in the library."
+    }
+  ]
+}

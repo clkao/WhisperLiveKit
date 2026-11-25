@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:kmjvq6k0q7c2p265xgbj56cm:backlog:attempt-1:revision-1",
+  "question": "Does the simultaneous-MT time-frontier stack go upstream as a PR?",
+  "artifacts": [
+    {
+      "id": "artifact:kmjvq6k0q7c2p265xgbj56cm:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-simul-time-frontier-pr/index.md",
+      "rev": "sha256:6af9431f79bbaccaeddf4b84e636c9a8700e2a0c0abcc99759f36df9c3e4ce78",
+      "mediaType": "text/markdown",
+      "summary": "Three pieces of the calibrated-frontier stack meant for upstream: the time-based frontier, the drain clamp, and the default flip. Held at backlog until the Spacedock gate-room defect stops blocking gate preparation on this entity."
+    }
+  ]
+}

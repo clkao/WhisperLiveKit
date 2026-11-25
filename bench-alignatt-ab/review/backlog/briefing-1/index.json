@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:eqej2ksxzg8wzvg52m5d72eg:backlog:attempt-1:revision-1",
+  "question": "Does the with/without simultaneous-MT A/B benchmark start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:eqej2ksxzg8wzvg52m5d72eg:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/bench-alignatt-ab/index.md",
+      "rev": "sha256:268ba0f9147dff42faf5f861bf84e7f64143981ecbf34d203ffca3d6ca03aa0c",
+      "mediaType": "text/markdown",
+      "summary": "A side-by-side latency comparison of translate-on-close against simultaneous MT on the same audio. It stays small: one script, interleaved runs only, because batched runs are thermally contaminated."
+    }
+  ]
+}

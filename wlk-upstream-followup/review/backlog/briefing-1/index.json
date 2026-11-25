@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:363r2jw8saepdjbtgk9ej322:backlog:attempt-1:revision-1",
+  "question": "Does the upstream follow-through task start at design?",
+  "artifacts": [
+    {
+      "id": "artifact:363r2jw8saepdjbtgk9ej322:backlog:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/6f150805378e5afca72f8d67028b05883473266b/wlk-upstream-followup/index.md",
+      "rev": "sha256:229969d823518a97e6ad02afeef45d06bdb2438383831161213ec1e2a44c0f69",
+      "mediaType": "text/markdown",
+      "summary": "Carries the three follow-ups that outlived their PRs: the #444 M5 evaluation, the nemotron rewrite review, and harness adoption. Each has a named artifact already on disk."
+    }
+  ]
+}

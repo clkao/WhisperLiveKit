@@ -4,6 +4,17 @@ status: backlog
 source: follow-up to qwen-asr-tf5-compat-fork (AC-1 only; model load blocked)
 score: 0.85
 id: epw1ee1k2gma0yv5yb8ynynk
+gates:
+    version: 1
+    records:
+        - id: gate:epw1ee1k2gma0yv5yb8ynynk:backlog
+          stage: backlog
+          attempts:
+            - id: gate-attempt:epw1ee1k2gma0yv5yb8ynynk-backlog-1
+              briefing:
+                id: briefing:epw1ee1k2gma0yv5yb8ynynk:backlog:attempt-1:revision-1
+                digest: sha256:a0f6ce52e0e6ab82e71a781d6962f6f30f4f18f437bc90d6c7e0e339b8b5c809
+                room-ref: '@review/backlog/briefing-1'
 ---
 
 The qwen-asr-tf5-compat-fork task fixed the import (AC-1) but discovered qwen_asr 0.0.6 has multiple transformers 5.x incompatibilities. Three are fixed in the fork; model load still fails at Qwen3ASRThinkerConfig.pad_token_id (a 4th), with more likely to follow. This task completes the deep port so the model loads and transcribes on transformers 5.11.0.
